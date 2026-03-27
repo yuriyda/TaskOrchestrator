@@ -1,0 +1,24 @@
+{
+  "identifier": "default",
+  "description": "Default capability — grants access to core Tauri APIs and SQLite plugin",
+  "local": true,
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "sql:allow-load",
+    "sql:allow-execute",
+    "sql:allow-select",
+    "sql:allow-close",
+    "dialog:allow-open",
+    "fs:allow-copy-file",
+    "fs:allow-remove",
+    "fs:allow-exists",
+    "fs:scope-home-recursive",
+    "opener:allow-reveal-item-in-dir",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+    },
+    "fs:allow-read-dir"
+  ]
+}

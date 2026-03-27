@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Tauri / Vite build artifacts
+tauri-app/dist/
+tauri-app/src-tauri/target/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Dev container
+.devcontainer/
+
+# Working files
+do_not_commit/
+
+# Editors
+.vscode/
+.idea/
+*.swp
