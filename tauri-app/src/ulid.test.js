@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Tests for ULID generator — the core identity function for all entities.
  *

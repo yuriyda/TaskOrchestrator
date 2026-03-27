@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Tests for parseDateInput — the central date-string normalizer.
  *

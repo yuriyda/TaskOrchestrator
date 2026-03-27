@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * Schema consistency tests for useTauriTaskStore.
  *

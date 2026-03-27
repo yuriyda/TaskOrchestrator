@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * SQLite Transaction Behavior Tests
  *

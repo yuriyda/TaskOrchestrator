@@ -23,6 +23,15 @@ export default defineConfig({
     },
   },
 
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.js'],
+    include: ['src/**/*.test.{js,jsx}'],
+    // Existing node-only tests (schema, ulid, transactions) specify
+    // their own environment via comment or work in both environments.
+  },
+
   // ── Tauri-specific settings ───────────────────────────────────────────────
   // Prevent Vite from obscuring Rust errors
   clearScreen: false,
