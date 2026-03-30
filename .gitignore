@@ -1,6 +1,17 @@
 # Dependencies
 node_modules/
 
+# Internal project docs — never commit
+do_not_commit/
+docs/
+CLAUDE.md
+claude.md
+memory.md
+AUDIT.md
+
+# HTML prototype (superseded by JSX)
+task-orchestrator.html
+
 # Tauri / Vite build artifacts
 tauri-app/dist/
 tauri-app/src-tauri/target/
@@ -11,9 +22,6 @@ Thumbs.db
 
 # Dev container
 .devcontainer/
-
-# Working files
-do_not_commit/
 
 # Editors
 .vscode/

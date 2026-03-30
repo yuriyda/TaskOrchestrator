@@ -1,37 +1,10 @@
-// @vitest-environment node
 /**
  * Tests for parseDateInput — the central date-string normalizer.
  *
- * The function lives inside task-orchestrator.jsx (not importable directly),
- * so we extract it from source and eval it in a clean scope.
+ * Now imported directly from the extracted core/date module.
  */
-import { describe, it, expect, beforeAll } from 'vitest'
-import fs from 'fs'
-import path from 'path'
-
-const JSX_SRC = fs.readFileSync(path.resolve(__dirname, '../../task-orchestrator.jsx'), 'utf8')
-
-let parseDateInput
-let localIsoDate
-
-beforeAll(() => {
-  // Extract localIsoDate
-  const lidMatch = JSX_SRC.match(/function localIsoDate\(d\)\s*\{([\s\S]*?)\n\}/)
-  if (!lidMatch) throw new Error('localIsoDate not found in source')
-
-  // Extract parseDateInput
-  const pdiMatch = JSX_SRC.match(/function parseDateInput\(str\)\s*\{([\s\S]*?)\n\}/)
-  if (!pdiMatch) throw new Error('parseDateInput not found in source')
-
-  // Build both functions together so parseDateInput can call localIsoDate
-  const combined = new Function('str',
-    `function localIsoDate(d) {${lidMatch[1]}}\n` +
-    pdiMatch[1]
-  )
-  parseDateInput = combined
-
-  localIsoDate = new Function('d', lidMatch[1])
-})
+import { describe, it, expect } from 'vitest'
+import { parseDateInput, localIsoDate } from './core/date.js'
 
 // Helper: today's ISO date in local timezone
 function todayISO() { return localIsoDate(new Date()) }
