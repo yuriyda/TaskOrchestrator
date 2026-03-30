@@ -13,8 +13,8 @@ import { ulid } from './ulid.js'
 import { safeIsoDate, localDateStr } from './core/date.js'
 import { nextDue } from './core/recurrence.js'
 import { VALID_STATUSES, VALID_PRIORITIES } from './core/constants.js'
-import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_V5, MIGRATIONS_V6, LATEST_SCHEMA_VERSION } from './store/migrations.js'
-import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, withTransaction, fetchAll, activateDependents, spawnNextOccurrence } from './store/helpers.js'
+import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_V5, MIGRATIONS_V6, MIGRATIONS_V7, LATEST_SCHEMA_VERSION } from './store/migrations.js'
+import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, withTransaction, fetchAll, activateDependents, spawnNextOccurrence, logChange, nextLamport } from './store/helpers.js'
 import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
 
@@ -82,6 +82,19 @@ async function openDb() {
     }
     await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','6')")
   }
+  if (version < 7) {
+    for (const sql of MIGRATIONS_V7) {
+      try { await _db.execute(sql) } catch (_) { /* column/table already exists */ }
+    }
+    // Initialize vector_clock for this device
+    const [devRow] = await _db.select("SELECT value FROM meta WHERE key='device_id'")
+    if (devRow) {
+      await _db.execute('INSERT OR IGNORE INTO vector_clock (device_id, counter) VALUES (?, 0)', [devRow.value])
+    }
+    // Backfill lamport_ts from rowid order for existing tasks
+    try { await _db.execute("UPDATE tasks SET lamport_ts = rowid WHERE lamport_ts = 0") } catch (_) {}
+    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','7')")
+  }
 
   return _db
 }
@@ -100,11 +113,16 @@ export function useTauriTaskStore() {
   const [dbPath,       setDbPath]       = useState('')
   const [dbKey,        setDbKey]        = useState(0)
   const dbRef = useRef(null)
+  const deviceIdRef = useRef(null)
 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
     openDb().then(async db => {
       dbRef.current = db
+
+      // Cache device_id for sync_log writes
+      const [devRow] = await db.select("SELECT value FROM meta WHERE key='device_id'")
+      deviceIdRef.current = devRow?.value || null
 
       // Resolve and expose the current DB path
       const customPath = localStorage.getItem(DB_PATH_KEY)
@@ -177,6 +195,8 @@ export function useTauriTaskStore() {
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const addTask = useCallback((data, cur) => mutate(cur, async db => {
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     const task = {
       id: ulid(), title: data.title || '', status: data.status || 'inbox',
       priority: data.priority || 4, list: data.list || null,
@@ -185,7 +205,7 @@ export function useTauriTaskStore() {
       tags: data.tags || [], personas: data.personas || [],
       url: data.url || null, dateStart: data.dateStart || null,
       estimate: data.estimate || null, postponed: 0, rtmSeriesId: null,
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString(), lamportTs: lts,
     }
     await withTransaction(db, async () => {
       await db.execute(TASK_INSERT, taskToRow(task))
@@ -194,6 +214,11 @@ export function useTauriTaskStore() {
       for (const p of task.personas) await db.execute('INSERT OR IGNORE INTO personas VALUES (?)', [p])
       if (task.flowId) await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [task.flowId])
     })
+    await logChange(db, 'tasks', task.id, 'insert', task, lts, did)
+    if (task.list)   await logChange(db, 'lists', task.list, 'insert', { name: task.list }, lts, did)
+    for (const t of task.tags)     await logChange(db, 'tags', t, 'insert', { name: t }, lts, did)
+    for (const p of task.personas) await logChange(db, 'personas', p, 'insert', { name: p }, lts, did)
+    if (task.flowId) await logChange(db, 'flows', task.flowId, 'insert', { name: task.flowId }, lts, did)
     refreshRef()
   }), [mutate, refreshRef])
 
@@ -201,6 +226,8 @@ export function useTauriTaskStore() {
     let activatedNames = []
     let skippedBlocked = 0
     const promise = mutate(cur, async db => {
+      const did = deviceIdRef.current
+      const lts = await nextLamport(db, did)
       const isBlocked = async (id) => {
         const [row] = await db.select('SELECT depends_on FROM tasks WHERE id=?', [id])
         if (!row?.depends_on) return false
@@ -208,15 +235,17 @@ export function useTauriTaskStore() {
         return !!dep
       }
 
+      const changedIds = []
       await withTransaction(db, async () => {
         if (status === 'active' || status === 'done') {
           for (const id of [...ids]) {
             if (await isBlocked(id)) { skippedBlocked++; continue }
-            await db.execute('UPDATE tasks SET status=? WHERE id=?', [status, id])
+            await db.execute('UPDATE tasks SET status=?, lamport_ts=? WHERE id=?', [status, lts, id])
+            changedIds.push(id)
             if (status === 'done') {
               await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [new Date().toISOString(), id])
-              await spawnNextOccurrence(db, id)
-              const names = await activateDependents(db, id)
+              await spawnNextOccurrence(db, id, lts, did)
+              const names = await activateDependents(db, id, lts, did)
               activatedNames.push(...names)
             } else {
               await db.execute('UPDATE tasks SET completed_at=NULL WHERE id=?', [id])
@@ -224,11 +253,15 @@ export function useTauriTaskStore() {
           }
         } else {
           const ph = [...ids].map(() => '?').join(',')
-          await db.execute(`UPDATE tasks SET status=? WHERE id IN (${ph})`, [status, ...[...ids]])
+          await db.execute(`UPDATE tasks SET status=?, lamport_ts=? WHERE id IN (${ph})`, [status, lts, ...[...ids]])
           await db.execute(`UPDATE tasks SET completed_at=NULL WHERE id IN (${ph})`, [...ids])
+          changedIds.push(...ids)
         }
         await touchUpdatedAt(db, ids)
       })
+      for (const id of changedIds) {
+        await logChange(db, 'tasks', id, 'update', { status }, lts, did)
+      }
     })
     return promise.then(() => ({ activated: activatedNames, skippedBlocked }))
   }, [mutate])
@@ -236,8 +269,11 @@ export function useTauriTaskStore() {
   const bulkCycle = useCallback((ids, cur) => {
     let activatedNames = []
     const promise = mutate(cur, async db => {
+      const did = deviceIdRef.current
+      const lts = await nextLamport(db, did)
       const FULL_CYCLE    = ['inbox', 'active', 'done', 'cancelled']
       const BLOCKED_CYCLE = ['inbox', 'cancelled']
+      const changes = []
       await withTransaction(db, async () => {
         for (const id of ids) {
           const [row] = await db.select('SELECT status, depends_on FROM tasks WHERE id=?', [id])
@@ -250,16 +286,20 @@ export function useTauriTaskStore() {
           const cycle = blocked ? BLOCKED_CYCLE : FULL_CYCLE
           const curIdx = cycle.indexOf(row.status)
           const next = cycle[(curIdx + 1) % cycle.length]
-          await db.execute('UPDATE tasks SET status=? WHERE id=?', [next, id])
+          await db.execute('UPDATE tasks SET status=?, lamport_ts=? WHERE id=?', [next, lts, id])
           await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [next === 'done' ? new Date().toISOString() : null, id])
+          changes.push({ id, status: next })
           if (next === 'done') {
-            await spawnNextOccurrence(db, id)
-            const names = await activateDependents(db, id)
+            await spawnNextOccurrence(db, id, lts, did)
+            const names = await activateDependents(db, id, lts, did)
             activatedNames.push(...names)
           }
         }
         await touchUpdatedAt(db, ids)
       })
+      for (const c of changes) {
+        await logChange(db, 'tasks', c.id, 'update', { status: c.status }, lts, did)
+      }
     })
     return promise.then(() => ({ activated: activatedNames }))
   }, [mutate])
@@ -268,6 +308,8 @@ export function useTauriTaskStore() {
     const idArr = [...ids]
     const ph    = idArr.map(() => '?').join(',')
     await mutate(cur, async db => {
+      const did = deviceIdRef.current
+      const lts = await nextLamport(db, did)
       await withTransaction(db, async () => {
         const rows = await db.select(`SELECT id, rtm_series_id FROM tasks WHERE id IN (${ph})`, idArr)
         for (const row of rows) {
@@ -279,22 +321,34 @@ export function useTauriTaskStore() {
         await db.execute(`DELETE FROM tags      WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.tags))`)
         await db.execute(`DELETE FROM personas  WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.personas))`)
       })
+      for (const id of idArr) {
+        await logChange(db, 'tasks', id, 'delete', null, lts, did)
+      }
       await db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
     })
     await refreshRef()
   }, [mutate, refreshRef])
 
   const bulkPriority = useCallback((ids, priority, cur) => mutate(cur, async db => {
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     const ph = [...ids].map(() => '?').join(',')
-    await db.execute(`UPDATE tasks SET priority=? WHERE id IN (${ph})`, [priority, ...[...ids]])
+    await db.execute(`UPDATE tasks SET priority=?, lamport_ts=? WHERE id IN (${ph})`, [priority, lts, ...[...ids]])
     await touchUpdatedAt(db, ids)
+    for (const id of ids) {
+      await logChange(db, 'tasks', id, 'update', { priority }, lts, did)
+    }
   }), [mutate])
 
   const bulkDueShift = useCallback((ids, cur) => mutate(cur, async db => {
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     for (const id of ids) {
       const [row] = await db.select('SELECT due FROM tasks WHERE id=?', [id])
       if (!row) continue
-      await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1 WHERE id=?', [shiftDue(row.due), id])
+      const newDue = shiftDue(row.due)
+      await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1, lamport_ts=? WHERE id=?', [newDue, lts, id])
+      await logChange(db, 'tasks', id, 'update', { due: newDue }, lts, did)
     }
     await touchUpdatedAt(db, ids)
   }), [mutate])
@@ -302,6 +356,8 @@ export function useTauriTaskStore() {
   // Snooze: shift due by `days` days and/or `months` months; increment postponed by 1.
   // If the task has no due date, base is today.
   const bulkSnooze = useCallback((ids, days, months, cur) => mutate(cur, async db => {
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     const today = new Date().toISOString().slice(0, 10)
     await withTransaction(db, async () => {
       for (const id of ids) {
@@ -313,17 +369,21 @@ export function useTauriTaskStore() {
         if (months) base.setMonth(base.getMonth() + months)
         if (days)   base.setDate(base.getDate() + days)
         const newDue = base.toISOString().slice(0, 10)
-        await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1 WHERE id=?', [newDue, id])
+        await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1, lamport_ts=? WHERE id=?', [newDue, lts, id])
+        await logChange(db, 'tasks', id, 'update', { due: newDue }, lts, did)
       }
       await touchUpdatedAt(db, ids)
     })
   }), [mutate])
 
   const bulkAssignToday = useCallback((ids, cur) => mutate(cur, async db => {
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     const today = new Date().toISOString().slice(0, 10)
     await withTransaction(db, async () => {
       for (const id of ids) {
-        await db.execute("UPDATE tasks SET status='active', due=? WHERE id=?", [today, id])
+        await db.execute("UPDATE tasks SET status='active', due=?, lamport_ts=? WHERE id=?", [today, lts, id])
+        await logChange(db, 'tasks', id, 'update', { status: 'active', due: today }, lts, did)
       }
       await touchUpdatedAt(db, ids)
     })
@@ -333,6 +393,8 @@ export function useTauriTaskStore() {
   const updateTask = useCallback((id, changes, cur) => {
     let activatedNames = []
     const promise = mutate(cur, async db => {
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     const COL = {
       title: 'title', status: 'status', priority: 'priority',
       list: 'list_name', due: 'due', recurrence: 'recurrence',
@@ -351,9 +413,11 @@ export function useTauriTaskStore() {
       const v = DATE_COLS.has(key) ? safeIsoDate(val) : (JSON_COLS.has(key) ? JSON.stringify(val ?? []) : (val ?? null))
       values.push(v)
     }
-    // Always update updated_at on any change
+    // Always update updated_at and lamport_ts on any change
     setClauses.push('updated_at = ?')
     values.push(new Date().toISOString())
+    setClauses.push('lamport_ts = ?')
+    values.push(lts)
     if (setClauses.length) {
       values.push(id)
       await db.execute(`UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`, values)
@@ -369,8 +433,8 @@ export function useTauriTaskStore() {
     if (changes.personas) for (const p   of changes.personas)     await db.execute('INSERT OR IGNORE INTO personas VALUES (?)', [p])
     if (changes.flowId)   await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [changes.flowId])
     if (changes.status === 'done') {
-      await spawnNextOccurrence(db, id)
-      const names = await activateDependents(db, id)
+      await spawnNextOccurrence(db, id, lts, did)
+      const names = await activateDependents(db, id, lts, did)
       activatedNames.push(...names)
     }
     // Sync notes: use rtm_series_id if present, otherwise task id
@@ -384,6 +448,12 @@ export function useTauriTaskStore() {
           'INSERT INTO notes (id, task_series_id, content, created_at) VALUES (?,?,?,?)',
           [note.id, seriesKey, note.content || '', ts]
         )
+      }
+    }
+    await logChange(db, 'tasks', id, 'update', changes, lts, did)
+    if (changes.notes !== undefined) {
+      for (const note of (changes.notes || [])) {
+        await logChange(db, 'notes', note.id, 'insert', { content: note.content, createdAt: note.createdAt }, lts, did)
       }
     }
     refreshRef()
@@ -412,6 +482,8 @@ export function useTauriTaskStore() {
     if (onProgress) onProgress(0, total)
 
     // Insert tasks
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     let inserted = 0
     await withTransaction(db, async () => {
       for (const t of tasksToImport) {
@@ -435,8 +507,10 @@ export function useTauriTaskStore() {
           estimate:     t.estimate != null ? String(t.estimate) : null,
           postponed:    t.postponed || 0,
           rtmSeriesId:  t.series_id || null,
+          lamportTs:    lts,
         }
         await db.execute(TASK_INSERT_IGN, taskToRow(task))
+        await logChange(db, 'tasks', task.id, 'insert', task, lts, did)
         if (task.list) await db.execute('INSERT OR IGNORE INTO lists VALUES (?)', [task.list])
         for (const tag of task.tags) await db.execute('INSERT OR IGNORE INTO tags VALUES (?)', [tag])
         inserted++
@@ -491,6 +565,8 @@ export function useTauriTaskStore() {
   const updateFlow = useCallback(async (name, changes) => {
     const db = dbRef.current
     if (!db) return
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     // Ensure flow exists in flows table
     await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [name])
     // Upsert flow_meta
@@ -500,6 +576,7 @@ export function useTauriTaskStore() {
         'INSERT INTO flow_meta (name, description, color, deadline) VALUES (?,?,?,?)',
         [name, changes.description || '', changes.color || '', changes.deadline || null]
       )
+      await logChange(db, 'flow_meta', name, 'insert', { name, ...changes }, lts, did)
     } else {
       const sets = []
       const vals = []
@@ -510,6 +587,7 @@ export function useTauriTaskStore() {
         vals.push(name)
         await db.execute(`UPDATE flow_meta SET ${sets.join(', ')} WHERE name=?`, vals)
       }
+      await logChange(db, 'flow_meta', name, 'update', changes, lts, did)
     }
     await refreshRef()
   }, [refreshRef])
@@ -517,10 +595,18 @@ export function useTauriTaskStore() {
   const deleteFlow = useCallback(async (name) => {
     const db = dbRef.current
     if (!db) return
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
     await db.execute('DELETE FROM flow_meta WHERE name=?', [name])
     await db.execute('DELETE FROM flows WHERE name=?', [name])
     // Clear flowId on tasks that reference this flow
-    await db.execute('UPDATE tasks SET flow_id=NULL WHERE flow_id=?', [name])
+    const affected = await db.select('SELECT id FROM tasks WHERE flow_id=?', [name])
+    await db.execute('UPDATE tasks SET flow_id=NULL, lamport_ts=? WHERE flow_id=?', [lts, name])
+    await logChange(db, 'flow_meta', name, 'delete', null, lts, did)
+    await logChange(db, 'flows', name, 'delete', null, lts, did)
+    for (const row of affected) {
+      await logChange(db, 'tasks', row.id, 'update', { flowId: null }, lts, did)
+    }
     setTasks(await fetchAll(db))
     await refreshRef()
   }, [refreshRef])
@@ -530,6 +616,13 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db) return
     await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", [key, value])
+    // Log sync-relevant settings (skip internal keys)
+    const INTERNAL_KEYS = new Set(['schema_version', 'device_id'])
+    if (!INTERNAL_KEYS.has(key)) {
+      const did = deviceIdRef.current
+      const lts = await nextLamport(db, did)
+      await logChange(db, 'meta', key, 'update', { key, value }, lts, did)
+    }
   }, [])
 
   // ── Clear All ──────────────────────────────────────────────────────────────

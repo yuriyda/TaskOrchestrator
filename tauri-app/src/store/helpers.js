@@ -3,7 +3,7 @@ import { ulid } from '../ulid.js'
 import { VALID_STATUSES, VALID_PRIORITIES } from '../core/constants.js'
 import { nextDue } from '../core/recurrence.js'
 
-// Canonical column list for INSERT INTO tasks — must match schema (v1–v6).
+// Canonical column list for INSERT INTO tasks — must match schema (v1–v7).
 // Using explicit columns prevents breakage when new columns are added via migrations.
 export const TASK_COLUMNS = [
   'id', 'title', 'status', 'priority', 'list_name', 'due', 'recurrence',
@@ -11,6 +11,7 @@ export const TASK_COLUMNS = [
   'url', 'date_start', 'estimate', 'postponed', 'rtm_series_id',
   'personas', 'completed_at',
   'updated_at', 'deleted_at', 'device_id',
+  'lamport_ts',
 ]
 export const TASK_INSERT     = `INSERT INTO tasks (${TASK_COLUMNS.join(', ')}) VALUES (${TASK_COLUMNS.map(() => '?').join(', ')})`
 export const TASK_INSERT_IGN = `INSERT OR IGNORE INTO tasks (${TASK_COLUMNS.join(', ')}) VALUES (${TASK_COLUMNS.map(() => '?').join(', ')})`
@@ -43,11 +44,12 @@ export function rowToTask(row, notesMap = {}) {
     updatedAt:    row.updated_at   || null,
     deletedAt:    row.deleted_at   || null,
     deviceId:     row.device_id    || null,
+    lamportTs:    row.lamport_ts   || 0,
     notes:        notesMap[row.rtm_series_id || row.id] || [],
   }
 }
 
-// Returns array of values matching INSERT column order (21 columns)
+// Returns array of values matching INSERT column order (22 columns)
 export function taskToRow(task) {
   const now = new Date().toISOString()
   return [
@@ -72,7 +74,33 @@ export function taskToRow(task) {
     task.updatedAt   || now,
     task.deletedAt   || null,
     task.deviceId    || null,
+    task.lamportTs   || 0,
   ]
+}
+
+// Increment and return the next Lamport timestamp for this device.
+// Also updates the vector_clock table.
+export async function nextLamport(db, deviceId) {
+  await db.execute(
+    'UPDATE vector_clock SET counter = counter + 1 WHERE device_id = ?',
+    [deviceId]
+  )
+  const [row] = await db.select(
+    'SELECT counter FROM vector_clock WHERE device_id = ?',
+    [deviceId]
+  )
+  return row?.counter || 1
+}
+
+// Write a change record to sync_log.
+// entity: 'tasks' | 'notes' | 'lists' | 'tags' | 'flows' | 'personas' | 'flow_meta' | 'meta'
+// action: 'insert' | 'update' | 'delete'
+// data: JSON-serializable snapshot of the entity (null for deletes)
+export async function logChange(db, entity, entityId, action, data, lamportTs, deviceId) {
+  await db.execute(
+    'INSERT INTO sync_log (id, entity, entity_id, action, lamport_ts, device_id, data) VALUES (?,?,?,?,?,?,?)',
+    [ulid(), entity, entityId, action, lamportTs, deviceId, data != null ? JSON.stringify(data) : null]
+  )
 }
 
 // Touch updated_at for a set of task IDs
@@ -121,7 +149,8 @@ export async function fetchAll(db) {
 
 // Activate tasks that depend on the just-completed task and have all deps satisfied.
 // Returns array of activated task titles (for toast).
-export async function activateDependents(db, completedTaskId) {
+// When lamportTs and deviceId are provided, writes to sync_log.
+export async function activateDependents(db, completedTaskId, lamportTs, deviceId) {
   // Find tasks that depend on the completed task and are still in 'inbox'
   const dependents = await db.select(
     "SELECT id, title, depends_on FROM tasks WHERE depends_on = ? AND status = 'inbox'",
@@ -135,15 +164,20 @@ export async function activateDependents(db, completedTaskId) {
       [dep.depends_on]
     )
     if (!blocker) {
-      await db.execute("UPDATE tasks SET status = 'active', updated_at = ? WHERE id = ?", [new Date().toISOString(), dep.id])
+      await db.execute("UPDATE tasks SET status = 'active', updated_at = ?, lamport_ts = ? WHERE id = ?",
+        [new Date().toISOString(), lamportTs || 0, dep.id])
       activated.push(dep.title)
+      if (lamportTs && deviceId) {
+        await logChange(db, 'tasks', dep.id, 'update', { status: 'active' }, lamportTs, deviceId)
+      }
     }
   }
   return activated
 }
 
 // Reads task from DB and inserts next occurrence if task has recurrence.
-export async function spawnNextOccurrence(db, taskId) {
+// When lamportTs and deviceId are provided, writes to sync_log.
+export async function spawnNextOccurrence(db, taskId, lamportTs, deviceId) {
   const [row] = await db.select('SELECT * FROM tasks WHERE id=?', [taskId])
   if (!row || !row.recurrence) return
   const newDue = nextDue(row.due, row.recurrence)
@@ -166,6 +200,10 @@ export async function spawnNextOccurrence(db, taskId) {
     postponed:   0,
     rtmSeriesId: row.rtm_series_id || null,
     createdAt:   new Date().toISOString(),
+    lamportTs:   lamportTs || 0,
   }
   await db.execute(TASK_INSERT, taskToRow(next))
+  if (lamportTs && deviceId) {
+    await logChange(db, 'tasks', next.id, 'insert', next, lamportTs, deviceId)
+  }
 }

@@ -120,7 +120,7 @@ describe('Sync preparation fields (v6)', () => {
 
   it('sync_log table is defined in migrations', () => {
     expect(MIGRATIONS_SRC).toContain('CREATE TABLE IF NOT EXISTS sync_log')
-    expect(MIGRATIONS_SRC).toContain('idx_sync_log_timestamp')
+    expect(MIGRATIONS_SRC).toContain('idx_sync_log_lamport')
     expect(MIGRATIONS_SRC).toContain('idx_sync_log_entity')
   })
 

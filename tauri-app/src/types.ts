@@ -48,6 +48,7 @@ export interface Task {
   updatedAt: ISODateTime | null
   deletedAt: ISODateTime | null
   deviceId: string | null
+  lamportTs: number
   notes: Note[]
   subtasks: unknown[]
   createdAt: ISODateTime
