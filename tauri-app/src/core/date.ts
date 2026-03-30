@@ -1,9 +1,11 @@
 // ─── Date utilities ─────────────────────────────────────────────────────────
 // Extracted from task-orchestrator.jsx and useTauriTaskStore.js
 
-export const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
+import type { ISODate } from '../types'
 
-export function safeIsoDate(v) {
+export const ISO_DATE_RE: RegExp = /^\d{4}-\d{2}-\d{2}$/
+
+export function safeIsoDate(v: string | null | undefined): ISODate | null {
   if (!v) return null
   if (ISO_DATE_RE.test(v)) return v
   console.warn('[TaskStore] Rejected non-ISO date value:', v)
@@ -12,19 +14,19 @@ export function safeIsoDate(v) {
 
 // Convert a timestamp (ms) to a local YYYY-MM-DD string.
 // Using toISOString() would give UTC date and shift the day back for UTC+ timezones.
-export function localDateStr(ts) {
+export function localDateStr(ts: number): ISODate {
   const d = new Date(ts)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-export function localIsoDate(d) {
+export function localIsoDate(d: Date): ISODate {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
 
-export function parseDateInput(str) {
+export function parseDateInput(str: string | null | undefined): string | null {
   const s = (str || "").trim().toLowerCase();
   if (!s) return "";
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s; // already ISO
@@ -53,7 +55,7 @@ export function parseDateInput(str) {
   return null; // unparseable
 }
 
-export function fmtDate(iso, format, locale) {
+export function fmtDate(iso: string | null, format: string, locale: string): string {
   if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return iso || "";
   const [y, m, d] = iso.split("-");
   if (format === "dmy")   return `${d}-${m}-${y}`;

@@ -1,7 +1,9 @@
 // ─── Recurrence utilities ───────────────────────────────────────────────────
 // Extracted from task-orchestrator.jsx and useTauriTaskStore.js
 
-export function ruPlural(n, one, few, many) {
+import type { ISODate } from '../types'
+
+export function ruPlural(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10, mod100 = n % 100;
   if (mod100 >= 11 && mod100 <= 14) return many;
   if (mod10 === 1) return one;
@@ -9,12 +11,12 @@ export function ruPlural(n, one, few, many) {
   return many;
 }
 
-export function humanRecurrence(value, locale) {
+export function humanRecurrence(value: string | null | undefined, locale: string): string | null {
   if (!value) return null;
   const isRu = locale === "ru";
 
   // Simple keyword shortcuts (used in quick entry and seed data)
-  const SIMPLE = {
+  const SIMPLE: Record<string, { en: string; ru: string }> = {
     daily:    { en: "Every day",    ru: "Каждый день"    },
     weekly:   { en: "Every week",   ru: "Каждую неделю"  },
     monthly:  { en: "Every month",  ru: "Каждый месяц"   },
@@ -27,7 +29,7 @@ export function humanRecurrence(value, locale) {
 
   // Parse RRULE (with or without the "RRULE:" prefix)
   const ruleStr = value.startsWith("RRULE:") ? value.slice(6) : value;
-  const p = {};
+  const p: Record<string, string> = {};
   for (const seg of ruleStr.split(";")) {
     const eq = seg.indexOf("=");
     if (eq > 0) p[seg.slice(0, eq).toUpperCase()] = seg.slice(eq + 1);
@@ -36,31 +38,31 @@ export function humanRecurrence(value, locale) {
   const freq = p["FREQ"]?.toUpperCase();
   if (!freq) return value; // unknown format — show as-is
 
-  const interval = parseInt(p["INTERVAL"] || "1");
-  const byDay    = p["BYDAY"];
-  const byMonth  = p["BYMONTH"];
+  const interval: number = parseInt(p["INTERVAL"] || "1");
+  const byDay: string | undefined = p["BYDAY"];
+  const byMonth: string | undefined = p["BYMONTH"];
 
-  const DAY = {
+  const DAY: Record<string, Record<string, string>> = {
     en: { MO: "Mon", TU: "Tue", WE: "Wed", TH: "Thu", FR: "Fri", SA: "Sat", SU: "Sun" },
     ru: { MO: "Пн",  TU: "Вт",  WE: "Ср",  TH: "Чт",  FR: "Пт",  SA: "Сб",  SU: "Вс"  },
   };
-  const MONTH = {
+  const MONTH: Record<string, string[]> = {
     en: ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"],
     ru: ["янв","фев","мар","апр","май","июн","июл","авг","сен","окт","ноя","дек"],
   };
-  const dayNames = isRu ? DAY.ru : DAY.en;
+  const dayNames: Record<string, string> = isRu ? DAY.ru : DAY.en;
 
   // Parses BYDAY day list like "MO,WE,FR" or "1MO,-1FR"
-  const parseDays = (raw) =>
-    raw.split(",").map(d => {
+  const parseDays = (raw: string): string =>
+    raw.split(",").map((d: string) => {
       const m = d.match(/([A-Z]{2})$/);
       return m ? (dayNames[m[1]] ?? m[1]) : d;
     }).join(", ");
 
   // Ordinal strings for BYDAY with numeric prefix (monthly recurrence)
-  const ORD_EN = { "1":"1st","2":"2nd","3":"3rd","4":"4th","-1":"Last" };
-  const ORD_RU = { "1":"Первый","2":"Второй","3":"Третий","4":"Четвёртый","-1":"Последний" };
-  const ordStr = (n) => (isRu ? ORD_RU[n] : ORD_EN[n]) ?? (isRu ? n : `${n}th`);
+  const ORD_EN: Record<string, string> = { "1":"1st","2":"2nd","3":"3rd","4":"4th","-1":"Last" };
+  const ORD_RU: Record<string, string> = { "1":"Первый","2":"Второй","3":"Третий","4":"Четвёртый","-1":"Последний" };
+  const ordStr = (n: string): string => (isRu ? ORD_RU[n] : ORD_EN[n]) ?? (isRu ? n : `${n}th`);
 
   switch (freq) {
     case "DAILY": {
@@ -108,14 +110,14 @@ export function humanRecurrence(value, locale) {
 // Returns next due date string for a recurring task, or null for unknown recurrence.
 // Handles both simple strings ("daily","weekly","monthly") and iCal RRULE
 // ("FREQ=DAILY;INTERVAL=1;WKST=SU" etc.) as stored from RTM import.
-export function nextDue(due, recurrence) {
+export function nextDue(due: ISODate | null, recurrence: string | null): ISODate | null {
   if (!recurrence) return null
-  const today = new Date().toISOString().slice(0, 10)
-  const base  = (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) ? due : today
+  const today: string = new Date().toISOString().slice(0, 10)
+  const base: string  = (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) ? due : today
   const d = new Date(base + 'T12:00:00')
 
-  let freq     = recurrence.toLowerCase()  // default: treat whole string as freq
-  let interval = 1
+  let freq: string | null = recurrence.toLowerCase()  // default: treat whole string as freq
+  let interval: number = 1
 
   if (recurrence.includes('FREQ=')) {
     const fm = recurrence.match(/FREQ=([A-Z]+)/i)
@@ -130,8 +132,8 @@ export function nextDue(due, recurrence) {
   else if (freq === 'yearly')  d.setFullYear(d.getFullYear() + interval)
   else return null
 
-  const y  = d.getFullYear()
-  const mo = String(d.getMonth() + 1).padStart(2, '0')
-  const dy = String(d.getDate()).padStart(2, '0')
+  const y: number  = d.getFullYear()
+  const mo: string = String(d.getMonth() + 1).padStart(2, '0')
+  const dy: string = String(d.getDate()).padStart(2, '0')
   return `${y}-${mo}-${dy}`
 }

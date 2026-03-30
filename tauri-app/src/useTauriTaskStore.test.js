@@ -15,7 +15,7 @@ import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow } from
 
 // Read source files for schema consistency checks
 const HELPERS_SRC = fs.readFileSync(path.resolve(__dirname, 'store/helpers.js'), 'utf8')
-const MIGRATIONS_SRC = fs.readFileSync(path.resolve(__dirname, 'store/migrations.js'), 'utf8')
+const MIGRATIONS_SRC = fs.readFileSync(path.resolve(__dirname, 'store/migrations.ts'), 'utf8')
 const STORE_SRC = fs.readFileSync(path.resolve(__dirname, 'useTauriTaskStore.js'), 'utf8')
 
 // ── Extract schema columns from migrations source ───────────────────────────

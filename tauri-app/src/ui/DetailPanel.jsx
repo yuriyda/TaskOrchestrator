@@ -214,7 +214,7 @@ export function DetailPanel({ selected, tasks, onUpdate, onEditFull }) {
           <div className="flex flex-wrap gap-1 mt-0.5">
             {task.tags.length > 0
               ? task.tags.map(tag => <span key={tag} className="text-xs text-sky-400 bg-sky-400/10 px-1.5 py-0.5 rounded">#{tag}</span>)
-              : <span className={`text-xs italic ${TC.textMuted}`}>\u2014</span>
+              : <span className={`text-xs italic ${TC.textMuted}`}>{"\u2014"}</span>
             }
           </div>
         </Row>
@@ -262,7 +262,7 @@ export function DetailPanel({ selected, tasks, onUpdate, onEditFull }) {
         </Row>
         {task.postponed > 0 && (
           <Row icon={Repeat} label={t("detail.postponed")}>
-            <span className={TC.textSec}>{task.postponed}\u00d7</span>
+            <span className={TC.textSec}>{task.postponed}{"\u00d7"}</span>
           </Row>
         )}
         <Row icon={Calendar} label={t("detail.created")}>
@@ -354,7 +354,7 @@ export function DetailPanel({ selected, tasks, onUpdate, onEditFull }) {
                 className="px-4 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 bg-sky-600 hover:bg-sky-500 text-white transition-colors"
               >
                 {t("note.save")}
-                <kbd className="text-xs px-1.5 py-0.5 rounded border border-white/30 opacity-70 font-mono">Ctrl+\u21b5</kbd>
+                <kbd className="text-xs px-1.5 py-0.5 rounded border border-white/30 opacity-70 font-mono">{"Ctrl+\u21b5"}</kbd>
               </button>
             </div>
           </div>

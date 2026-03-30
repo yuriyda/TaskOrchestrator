@@ -15,7 +15,8 @@ import { OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG, overdueLevel } from "./ta
 import { ruPlural, humanRecurrence } from "./tauri-app/src/core/recurrence.js";
 import { CHIP_STYLE, parseShorthand, getSuggestions, getTokenType, tryCommitToken, buildFromChips } from "./tauri-app/src/parse/quickEntry.js";
 import { MOCK_LISTS, MOCK_TAGS, MOCK_FLOWS, MOCK_PERSONAS, INITIAL_TASKS, buildDemoTasks } from "./tauri-app/src/core/demo.js";
-export { useTaskStore } from "./tauri-app/src/store/memoryStore.js";
+import { useTaskStore } from "./tauri-app/src/store/memoryStore.js";
+export { useTaskStore };
 
 import { AppContext, useApp } from "./tauri-app/src/ui/AppContext.jsx";
 import { PanelLeftIcon, PanelRightIcon, AutoThemeIcon, themeOptions } from "./tauri-app/src/ui/icons.jsx";

@@ -3,7 +3,7 @@
  * Migrations are idempotent (CREATE IF NOT EXISTS / ADD COLUMN safe).
  * v6 adds sync preparation fields (updated_at, deleted_at, device_id, sync_log).
  */
-export const MIGRATIONS_V1 = [
+export const MIGRATIONS_V1: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS lists (
      name TEXT PRIMARY KEY
    )`,
@@ -43,7 +43,7 @@ export const MIGRATIONS_V1 = [
    )`,
 ]
 
-export const MIGRATIONS_V2 = [
+export const MIGRATIONS_V2: readonly string[] = [
   `ALTER TABLE tasks ADD COLUMN url          TEXT`,
   `ALTER TABLE tasks ADD COLUMN date_start   TEXT`,
   `ALTER TABLE tasks ADD COLUMN estimate     TEXT`,
@@ -51,11 +51,11 @@ export const MIGRATIONS_V2 = [
   `ALTER TABLE tasks ADD COLUMN rtm_series_id TEXT`,
 ]
 
-export const MIGRATIONS_V3 = [
+export const MIGRATIONS_V3: readonly string[] = [
   `ALTER TABLE tasks ADD COLUMN personas TEXT NOT NULL DEFAULT '[]'`,
 ]
 
-export const MIGRATIONS_V4 = [
+export const MIGRATIONS_V4: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS flow_meta (
      name        TEXT PRIMARY KEY,
      description TEXT NOT NULL DEFAULT '',
@@ -64,11 +64,11 @@ export const MIGRATIONS_V4 = [
    )`,
 ]
 
-export const MIGRATIONS_V5 = [
+export const MIGRATIONS_V5: readonly string[] = [
   `ALTER TABLE tasks ADD COLUMN completed_at TEXT`,
 ]
 
-export const MIGRATIONS_V6 = [
+export const MIGRATIONS_V6: readonly string[] = [
   `ALTER TABLE tasks ADD COLUMN updated_at TEXT`,
   `ALTER TABLE tasks ADD COLUMN deleted_at TEXT`,
   `ALTER TABLE tasks ADD COLUMN device_id TEXT`,
@@ -85,4 +85,4 @@ export const MIGRATIONS_V6 = [
   `CREATE INDEX IF NOT EXISTS idx_sync_log_entity ON sync_log(entity, entity_id)`,
 ]
 
-export const LATEST_SCHEMA_VERSION = 6
+export const LATEST_SCHEMA_VERSION: number = 6
