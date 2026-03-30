@@ -60,7 +60,7 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel })
   const saveNote = () => {
     if (!noteContent.trim()) return;
     if (editingNoteId === "new") {
-      const newNote = { id: ulid(), title: "", content: noteContent.trim(), createdAt: new Date().toISOString() };
+      const newNote = { id: ulid(), content: noteContent.trim(), createdAt: new Date().toISOString() };
       set("notes", [...form.notes, newNote]);
     } else {
       set("notes", form.notes.map(n => n.id === editingNoteId ? { ...n, content: noteContent.trim() } : n));
@@ -90,7 +90,7 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel })
     let finalNotes = form.notes;
     if (editingNoteId && noteContent.trim()) {
       if (editingNoteId === "new") {
-        const newNote = { id: ulid(), title: "", content: noteContent.trim(), createdAt: new Date().toISOString() };
+        const newNote = { id: ulid(), content: noteContent.trim(), createdAt: new Date().toISOString() };
         finalNotes = [...form.notes, newNote];
       } else {
         finalNotes = form.notes.map(n => n.id === editingNoteId ? { ...n, content: noteContent.trim() } : n);

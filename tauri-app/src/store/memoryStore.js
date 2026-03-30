@@ -95,7 +95,7 @@ export function useTaskStore() {
       const notesBySeries = {};
       for (const n of (data.notes || [])) {
         if (!notesBySeries[n.series_id]) notesBySeries[n.series_id] = [];
-        notesBySeries[n.series_id].push({ id: n.id, title: n.title || "", content: n.content || "", createdAt: new Date(n.date_created).toISOString() });
+        notesBySeries[n.series_id].push({ id: n.id, content: n.content || "", createdAt: new Date(n.date_created).toISOString() });
       }
       const rtmTasks = data.tasks || [];
       const toImport = rtmTasks.filter(t => includeCompleted ? true : !(t.date_completed || t.date_trashed));

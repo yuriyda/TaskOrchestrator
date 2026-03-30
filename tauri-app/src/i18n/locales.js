@@ -52,7 +52,7 @@ export const LOCALES = {
     "detail.estimate": "Estimate", "detail.postponed": "Postponed",
     "detail.notes": "Notes",
     "note.add": "Add note", "note.edit": "Edit", "note.delete": "Delete",
-    "note.title": "Title (optional)", "note.content": "Content",
+    "note.content": "Content",
     "note.save": "Save", "note.cancel": "Cancel", "note.dblclick": "Double-click to edit",
     // edit
     "edit.title": "Edit Task", "edit.save": "Save", "edit.hint": "Double-click a task to edit",
@@ -302,7 +302,7 @@ export const LOCALES = {
     "detail.completedAt": "Завершена",
     "detail.notes": "Заметки",
     "note.add": "Добавить заметку", "note.edit": "Изменить", "note.delete": "Удалить",
-    "note.title": "Заголовок (необязательно)", "note.content": "Содержимое",
+    "note.content": "Содержимое",
     "note.save": "Сохранить", "note.cancel": "Отмена", "note.dblclick": "Двойной клик — редактировать",
     // edit
     "edit.title": "Редактировать задачу", "edit.save": "Сохранить", "edit.hint": "Двойной клик по задаче — открыть редактор",

@@ -112,7 +112,6 @@ export async function fetchAll(db) {
     if (!notesMap[n.task_series_id]) notesMap[n.task_series_id] = []
     notesMap[n.task_series_id].push({
       id:        n.id,
-      title:     n.title,
       content:   n.content,
       createdAt: new Date(n.created_at).toISOString(),
     })

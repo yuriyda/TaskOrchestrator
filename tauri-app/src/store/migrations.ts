@@ -32,7 +32,6 @@ export const MIGRATIONS_V1: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS notes (
      id             TEXT PRIMARY KEY,
      task_series_id TEXT NOT NULL,
-     title          TEXT NOT NULL DEFAULT '',
      content        TEXT NOT NULL DEFAULT '',
      created_at     INTEGER NOT NULL
    )`,

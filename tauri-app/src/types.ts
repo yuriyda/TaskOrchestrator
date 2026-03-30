@@ -23,7 +23,6 @@ export type TaskPriority = 1 | 2 | 3 | 4
 
 export interface Note {
   id: string
-  title?: string
   content: string
   createdAt: ISODateTime
 }

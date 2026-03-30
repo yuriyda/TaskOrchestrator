@@ -381,8 +381,8 @@ export function useTauriTaskStore() {
       for (const note of changes.notes) {
         const ts = note.createdAt ? new Date(note.createdAt).getTime() : Date.now()
         await db.execute(
-          'INSERT INTO notes VALUES (?,?,?,?,?)',
-          [note.id, seriesKey, note.title || '', note.content || '', ts]
+          'INSERT INTO notes (id, task_series_id, content, created_at) VALUES (?,?,?,?)',
+          [note.id, seriesKey, note.content || '', ts]
         )
       }
     }
@@ -445,8 +445,8 @@ export function useTauriTaskStore() {
 
       for (const n of (jsonData.notes || [])) {
         await db.execute(
-          'INSERT OR IGNORE INTO notes VALUES (?,?,?,?,?)',
-          [n.id, n.series_id, n.title || '', n.content || '', n.date_created]
+          'INSERT OR IGNORE INTO notes (id, task_series_id, content, created_at) VALUES (?,?,?,?)',
+          [n.id, n.series_id, n.content || '', n.date_created]
         )
       }
     })
@@ -475,8 +475,8 @@ export function useTauriTaskStore() {
         if (task.rtmSeriesId && task.notes?.length) {
           for (const note of task.notes) {
             await db.execute(
-              'INSERT OR IGNORE INTO notes VALUES (?,?,?,?,?)',
-              [note.id, task.rtmSeriesId, note.title || '', note.content || '', new Date(note.createdAt).getTime()]
+              'INSERT OR IGNORE INTO notes (id, task_series_id, content, created_at) VALUES (?,?,?,?)',
+              [note.id, task.rtmSeriesId, note.content || '', new Date(note.createdAt).getTime()]
             )
           }
         }
