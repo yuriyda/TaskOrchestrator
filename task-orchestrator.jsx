@@ -659,7 +659,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   };
 
   const handleAdd = (taskData) => {
-    if (settings.newTaskActiveToday && !taskData.status) {
+    if (settings.newTaskActiveToday && (!taskData.status || taskData.status === "inbox")) {
       const today = new Date().toISOString().slice(0, 10);
       store.addTask({ ...taskData, status: "active", due: taskData.due || today }, tasks);
     } else {
