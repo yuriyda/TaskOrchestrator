@@ -20,6 +20,14 @@
       "identifier": "opener:allow-open-url",
       "allow": [{ "url": "https://*" }, { "url": "http://*" }]
     },
-    "fs:allow-read-dir"
+    "fs:allow-read-dir",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://accounts.google.com/**" },
+        { "url": "https://oauth2.googleapis.com/**" },
+        { "url": "https://www.googleapis.com/**" }
+      ]
+    }
   ]
 }

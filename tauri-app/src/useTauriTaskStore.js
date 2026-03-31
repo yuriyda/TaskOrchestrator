@@ -18,6 +18,7 @@ import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touch
 import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
 import { exportDeltas, clearSyncLog, getVectorClock, buildSyncRequest, computeSyncPackage, importSyncPackage } from './store/sync.js'
+import { isConnected as gdriveIsConnected, connect as gdriveConnect, disconnect as gdriveDisconnect, syncWithDrive, hasSyncFile as gdriveHasSyncFile, deleteSyncFile as gdriveDeleteSyncFile, loadTokens as gdriveLoadTokens } from './store/googleDrive.js'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -287,7 +288,7 @@ export function useTauriTaskStore() {
           const cycle = blocked ? BLOCKED_CYCLE : FULL_CYCLE
           const curIdx = cycle.indexOf(row.status)
           const next = cycle[(curIdx + 1) % cycle.length]
-          await db.execute('UPDATE tasks SET status=?, lamport_ts=? WHERE id=?', [next, lts, id])
+          await db.execute('UPDATE tasks SET status=?, lamport_ts=?, device_id=? WHERE id=?', [next, lts, did, id])
           await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [next === 'done' ? new Date().toISOString() : null, id])
           changes.push({ id, status: next })
           if (next === 'done') {
@@ -657,8 +658,8 @@ export function useTauriTaskStore() {
       await db.execute('DELETE FROM flows')
       await db.execute('DELETE FROM flow_meta')
       await db.execute('DELETE FROM personas')
-      await db.execute('DELETE FROM sync_log')
-      await db.execute('DELETE FROM vector_clock')
+      // sync_log and vector_clock are NOT cleared — clearAll is a local operation.
+      // Sync data survives so that next sync can restore tasks from cloud.
     })
     try { await db.execute('PRAGMA wal_checkpoint(TRUNCATE)') } catch {}
     setTasks([])
@@ -936,6 +937,54 @@ export function useTauriTaskStore() {
     return { ...stats, responseCount: response.tasks.length }
   }, [refreshRef])
 
+  // ── Google Drive sync ───────────────────────────────────────────────────────
+
+  const gdriveCheckConnection = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return false
+    return gdriveIsConnected(db)
+  }, [])
+
+  const gdriveConnectAccount = useCallback(async (clientId, clientSecret) => {
+    const db = dbRef.current
+    if (!db) return false
+    return gdriveConnect(db, clientId, clientSecret)
+  }, [])
+
+  const gdriveDisconnectAccount = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return
+    await gdriveDisconnect(db)
+  }, [])
+
+  const gdriveSyncNow = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return null
+    const result = await syncWithDrive(db, computeSyncPackage, importSyncPackage)
+    setTasks(await fetchAll(db))
+    await refreshRef()
+    return result
+  }, [refreshRef])
+
+  const gdriveGetConfig = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return null
+    const tokens = await gdriveLoadTokens(db)
+    return { clientId: tokens.client_id, hasToken: !!tokens.access_token }
+  }, [])
+
+  const gdriveCheckSyncFile = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return false
+    return gdriveHasSyncFile(db)
+  }, [])
+
+  const gdrivePurgeSyncFile = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return false
+    return gdriveDeleteSyncFile(db)
+  }, [])
+
   const importSync = useCallback(async () => {
     const db = dbRef.current
     if (!db) return null
@@ -979,6 +1028,7 @@ export function useTauriTaskStore() {
     dbPath, revealDb, openNewDb, createNewDb, moveCurrentDb,
     createBackup, listBackups, restoreBackup,
     exportSync, importSync, exportSyncRequest, handleSyncRequest, importSyncClipboard, getSyncLog, getSyncStats, clearSyncData,
+    gdriveCheckConnection, gdriveConnectAccount, gdriveDisconnectAccount, gdriveSyncNow, gdriveGetConfig, gdriveCheckSyncFile, gdrivePurgeSyncFile,
     openUrl: createSafeOpenUrl(openUrl),
   }
 }

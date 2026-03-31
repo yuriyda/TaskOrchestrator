@@ -136,7 +136,11 @@ export async function importSyncPackage(db, pkg) {
         // Incoming is newer — full update
         await fullUpdateTask(db, task)
         applied++
+      } else if ((task.lamportTs || 0) === existing.lamport_ts) {
+        // Same version — already applied, skip
+        skipped++
       } else {
+        // Incoming is older — local wins, real conflict
         conflicts++
       }
     }

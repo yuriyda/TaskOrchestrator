@@ -81,6 +81,11 @@ export function taskToRow(task) {
 // Increment and return the next Lamport timestamp for this device.
 // Also updates the vector_clock table.
 export async function nextLamport(db, deviceId) {
+  // Ensure row exists (handles post-clearAll or first-run scenarios)
+  await db.execute(
+    'INSERT OR IGNORE INTO vector_clock (device_id, counter) VALUES (?, 0)',
+    [deviceId]
+  )
   await db.execute(
     'UPDATE vector_clock SET counter = counter + 1 WHERE device_id = ?',
     [deviceId]
