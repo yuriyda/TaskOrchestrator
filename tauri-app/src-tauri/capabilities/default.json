@@ -10,6 +10,7 @@
     "sql:allow-select",
     "sql:allow-close",
     "dialog:allow-open",
+    "dialog:allow-save",
     "fs:allow-copy-file",
     "fs:allow-remove",
     "fs:allow-exists",

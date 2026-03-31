@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Database from '@tauri-apps/plugin-sql'
 import { appDataDir, join } from '@tauri-apps/api/path'
-import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
+import { open as openFileDialog, save as saveFileDialog } from '@tauri-apps/plugin-dialog'
 import { copyFile, remove, exists, readDir } from '@tauri-apps/plugin-fs'
 import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import { ulid } from './ulid.js'
@@ -17,6 +17,7 @@ import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_
 import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, withTransaction, fetchAll, activateDependents, spawnNextOccurrence, logChange, nextLamport } from './store/helpers.js'
 import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
+import { exportDeltas, clearSyncLog, getVectorClock, buildSyncRequest, computeSyncPackage, importSyncPackage } from './store/sync.js'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -205,7 +206,7 @@ export function useTauriTaskStore() {
       tags: data.tags || [], personas: data.personas || [],
       url: data.url || null, dateStart: data.dateStart || null,
       estimate: data.estimate || null, postponed: 0, rtmSeriesId: null,
-      createdAt: new Date().toISOString(), lamportTs: lts,
+      createdAt: new Date().toISOString(), lamportTs: lts, deviceId: did,
     }
     await withTransaction(db, async () => {
       await db.execute(TASK_INSERT, taskToRow(task))
@@ -240,7 +241,7 @@ export function useTauriTaskStore() {
         if (status === 'active' || status === 'done') {
           for (const id of [...ids]) {
             if (await isBlocked(id)) { skippedBlocked++; continue }
-            await db.execute('UPDATE tasks SET status=?, lamport_ts=? WHERE id=?', [status, lts, id])
+            await db.execute('UPDATE tasks SET status=?, lamport_ts=?, device_id=? WHERE id=?', [status, lts, did, id])
             changedIds.push(id)
             if (status === 'done') {
               await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [new Date().toISOString(), id])
@@ -253,7 +254,7 @@ export function useTauriTaskStore() {
           }
         } else {
           const ph = [...ids].map(() => '?').join(',')
-          await db.execute(`UPDATE tasks SET status=?, lamport_ts=? WHERE id IN (${ph})`, [status, lts, ...[...ids]])
+          await db.execute(`UPDATE tasks SET status=?, lamport_ts=?, device_id=? WHERE id IN (${ph})`, [status, lts, did, ...[...ids]])
           await db.execute(`UPDATE tasks SET completed_at=NULL WHERE id IN (${ph})`, [...ids])
           changedIds.push(...ids)
         }
@@ -310,21 +311,22 @@ export function useTauriTaskStore() {
     await mutate(cur, async db => {
       const did = deviceIdRef.current
       const lts = await nextLamport(db, did)
+      const now = new Date().toISOString()
       await withTransaction(db, async () => {
-        const rows = await db.select(`SELECT id, rtm_series_id FROM tasks WHERE id IN (${ph})`, idArr)
-        for (const row of rows) {
-          await db.execute('DELETE FROM notes WHERE task_series_id=?', [row.rtm_series_id || row.id])
-        }
-        await db.execute(`DELETE FROM tasks WHERE id IN (${ph})`, idArr)
-        await db.execute(`DELETE FROM lists     WHERE name NOT IN (SELECT DISTINCT list_name FROM tasks WHERE list_name IS NOT NULL)`)
-        await db.execute(`DELETE FROM flows WHERE name NOT IN (SELECT DISTINCT flow_id FROM tasks WHERE flow_id IS NOT NULL) AND name NOT IN (SELECT name FROM flow_meta)`)
-        await db.execute(`DELETE FROM tags      WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.tags))`)
-        await db.execute(`DELETE FROM personas  WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.personas))`)
+        // Soft-delete: set deleted_at instead of removing rows (for sync propagation)
+        await db.execute(
+          `UPDATE tasks SET deleted_at=?, lamport_ts=?, device_id=?, updated_at=? WHERE id IN (${ph})`,
+          [now, lts, did, now, ...idArr]
+        )
+        // Clean up orphaned lookup entries (only count non-deleted tasks)
+        await db.execute(`DELETE FROM lists    WHERE name NOT IN (SELECT DISTINCT list_name FROM tasks WHERE list_name IS NOT NULL AND deleted_at IS NULL)`)
+        await db.execute(`DELETE FROM flows    WHERE name NOT IN (SELECT DISTINCT flow_id FROM tasks WHERE flow_id IS NOT NULL AND deleted_at IS NULL) AND name NOT IN (SELECT name FROM flow_meta)`)
+        await db.execute(`DELETE FROM tags     WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.tags) WHERE tasks.deleted_at IS NULL)`)
+        await db.execute(`DELETE FROM personas WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.personas) WHERE tasks.deleted_at IS NULL)`)
       })
       for (const id of idArr) {
         await logChange(db, 'tasks', id, 'delete', null, lts, did)
       }
-      await db.execute('PRAGMA wal_checkpoint(TRUNCATE)')
     })
     await refreshRef()
   }, [mutate, refreshRef])
@@ -333,7 +335,7 @@ export function useTauriTaskStore() {
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
     const ph = [...ids].map(() => '?').join(',')
-    await db.execute(`UPDATE tasks SET priority=?, lamport_ts=? WHERE id IN (${ph})`, [priority, lts, ...[...ids]])
+    await db.execute(`UPDATE tasks SET priority=?, lamport_ts=?, device_id=? WHERE id IN (${ph})`, [priority, lts, did, ...[...ids]])
     await touchUpdatedAt(db, ids)
     for (const id of ids) {
       await logChange(db, 'tasks', id, 'update', { priority }, lts, did)
@@ -347,7 +349,7 @@ export function useTauriTaskStore() {
       const [row] = await db.select('SELECT due FROM tasks WHERE id=?', [id])
       if (!row) continue
       const newDue = shiftDue(row.due)
-      await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1, lamport_ts=? WHERE id=?', [newDue, lts, id])
+      await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1, lamport_ts=?, device_id=? WHERE id=?', [newDue, lts, did, id])
       await logChange(db, 'tasks', id, 'update', { due: newDue }, lts, did)
     }
     await touchUpdatedAt(db, ids)
@@ -369,7 +371,7 @@ export function useTauriTaskStore() {
         if (months) base.setMonth(base.getMonth() + months)
         if (days)   base.setDate(base.getDate() + days)
         const newDue = base.toISOString().slice(0, 10)
-        await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1, lamport_ts=? WHERE id=?', [newDue, lts, id])
+        await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1, lamport_ts=?, device_id=? WHERE id=?', [newDue, lts, did, id])
         await logChange(db, 'tasks', id, 'update', { due: newDue }, lts, did)
       }
       await touchUpdatedAt(db, ids)
@@ -382,7 +384,7 @@ export function useTauriTaskStore() {
     const today = new Date().toISOString().slice(0, 10)
     await withTransaction(db, async () => {
       for (const id of ids) {
-        await db.execute("UPDATE tasks SET status='active', due=?, lamport_ts=? WHERE id=?", [today, lts, id])
+        await db.execute("UPDATE tasks SET status='active', due=?, lamport_ts=?, device_id=? WHERE id=?", [today, lts, did, id])
         await logChange(db, 'tasks', id, 'update', { status: 'active', due: today }, lts, did)
       }
       await touchUpdatedAt(db, ids)
@@ -418,6 +420,8 @@ export function useTauriTaskStore() {
     values.push(new Date().toISOString())
     setClauses.push('lamport_ts = ?')
     values.push(lts)
+    setClauses.push('device_id = ?')
+    values.push(did)
     if (setClauses.length) {
       values.push(id)
       await db.execute(`UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`, values)
@@ -536,22 +540,45 @@ export function useTauriTaskStore() {
   const loadDemoData = useCallback(async (data) => {
     const db = dbRef.current
     if (!db || !data) return
+    const did = deviceIdRef.current
     const { tasks: demoTasks, lists: demoLists, tags: demoTags, flows: demoFlows, personas: demoPersonas } = data
 
     await withTransaction(db, async () => {
-      for (const n of demoLists)    await db.execute('INSERT OR IGNORE INTO lists    VALUES (?)', [n])
-      for (const n of demoTags)     await db.execute('INSERT OR IGNORE INTO tags     VALUES (?)', [n])
-      for (const n of demoFlows)    await db.execute('INSERT OR IGNORE INTO flows    VALUES (?)', [n])
-      for (const n of demoPersonas) await db.execute('INSERT OR IGNORE INTO personas VALUES (?)', [n])
+      for (const n of demoLists) {
+        const lts = await nextLamport(db, did)
+        await db.execute('INSERT OR IGNORE INTO lists VALUES (?)', [n])
+        await logChange(db, 'lists', n, 'insert', { name: n }, lts, did)
+      }
+      for (const n of demoTags) {
+        const lts = await nextLamport(db, did)
+        await db.execute('INSERT OR IGNORE INTO tags VALUES (?)', [n])
+        await logChange(db, 'tags', n, 'insert', { name: n }, lts, did)
+      }
+      for (const n of demoFlows) {
+        const lts = await nextLamport(db, did)
+        await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [n])
+        await logChange(db, 'flows', n, 'insert', { name: n }, lts, did)
+      }
+      for (const n of demoPersonas) {
+        const lts = await nextLamport(db, did)
+        await db.execute('INSERT OR IGNORE INTO personas VALUES (?)', [n])
+        await logChange(db, 'personas', n, 'insert', { name: n }, lts, did)
+      }
 
       for (const task of demoTasks) {
+        const lts = await nextLamport(db, did)
+        task.lamportTs = lts
+        task.deviceId = did
         await db.execute(TASK_INSERT_IGN, taskToRow(task))
+        await logChange(db, 'tasks', task.id, 'insert', task, lts, did)
         if (task.rtmSeriesId && task.notes?.length) {
           for (const note of task.notes) {
+            const nLts = await nextLamport(db, did)
             await db.execute(
               'INSERT OR IGNORE INTO notes (id, task_series_id, content, created_at) VALUES (?,?,?,?)',
               [note.id, task.rtmSeriesId, note.content || '', new Date(note.createdAt).getTime()]
             )
+            await logChange(db, 'notes', note.id, 'insert', note, nLts, did)
           }
         }
       }
@@ -601,7 +628,7 @@ export function useTauriTaskStore() {
     await db.execute('DELETE FROM flows WHERE name=?', [name])
     // Clear flowId on tasks that reference this flow
     const affected = await db.select('SELECT id FROM tasks WHERE flow_id=?', [name])
-    await db.execute('UPDATE tasks SET flow_id=NULL, lamport_ts=? WHERE flow_id=?', [lts, name])
+    await db.execute('UPDATE tasks SET flow_id=NULL, lamport_ts=?, device_id=? WHERE flow_id=?', [lts, did, name])
     await logChange(db, 'flow_meta', name, 'delete', null, lts, did)
     await logChange(db, 'flows', name, 'delete', null, lts, did)
     for (const row of affected) {
@@ -616,13 +643,6 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db) return
     await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", [key, value])
-    // Log sync-relevant settings (skip internal keys)
-    const INTERNAL_KEYS = new Set(['schema_version', 'device_id'])
-    if (!INTERNAL_KEYS.has(key)) {
-      const did = deviceIdRef.current
-      const lts = await nextLamport(db, did)
-      await logChange(db, 'meta', key, 'update', { key, value }, lts, did)
-    }
   }, [])
 
   // ── Clear All ──────────────────────────────────────────────────────────────
@@ -637,6 +657,8 @@ export function useTauriTaskStore() {
       await db.execute('DELETE FROM flows')
       await db.execute('DELETE FROM flow_meta')
       await db.execute('DELETE FROM personas')
+      await db.execute('DELETE FROM sync_log')
+      await db.execute('DELETE FROM vector_clock')
     })
     try { await db.execute('PRAGMA wal_checkpoint(TRUNCATE)') } catch {}
     setTasks([])
@@ -681,6 +703,17 @@ export function useTauriTaskStore() {
     if (!selected) return false
     await _closeDb()
     _reinit(typeof selected === 'string' ? selected : selected[0])
+    return true
+  }, [_closeDb, _reinit])
+
+  const createNewDb = useCallback(async () => {
+    const selected = await saveFileDialog({
+      filters: [{ name: 'SQLite Database', extensions: ['db'] }],
+      defaultPath: 'tasks.db',
+    })
+    if (!selected) return false
+    await _closeDb()
+    _reinit(selected)
     return true
   }, [_closeDb, _reinit])
 
@@ -778,6 +811,164 @@ export function useTauriTaskStore() {
     _reinit()
   }, [dbPath, _closeDb, _reinit])
 
+  // ── Sync: export/import deltas to/from file ────────────────────────────────
+
+  const getSyncLog = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return []
+    const rows = await db.select('SELECT * FROM sync_log ORDER BY lamport_ts DESC')
+    return rows.map(r => ({
+      id: r.id, entity: r.entity, entityId: r.entity_id,
+      action: r.action, lamportTs: r.lamport_ts,
+      deviceId: r.device_id, data: r.data ? JSON.parse(r.data) : null,
+    }))
+  }, [])
+
+  const getSyncStats = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return null
+    const [countRow] = await db.select('SELECT COUNT(*) as count FROM sync_log')
+    const [lastRow] = await db.select("SELECT value FROM meta WHERE key='last_sync_lamport'")
+    const vc = await getVectorClock(db)
+    const did = deviceIdRef.current
+    const pendingCount = lastRow?.value
+      ? (await db.select('SELECT COUNT(*) as count FROM sync_log WHERE lamport_ts > ?', [parseInt(lastRow.value)]))[0].count
+      : countRow.count
+    return {
+      totalEntries: countRow.count,
+      pendingCount,
+      lastSyncTs: lastRow?.value ? parseInt(lastRow.value) : null,
+      vectorClock: vc,
+      deviceId: did,
+    }
+  }, [])
+
+  const clearSyncData = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return
+    await db.execute('DELETE FROM sync_log')
+    await db.execute("DELETE FROM meta WHERE key='last_sync_lamport'")
+  }, [])
+
+  const exportSync = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return null
+
+    // Read last sync timestamp
+    const [lastRow] = await db.select("SELECT value FROM meta WHERE key='last_sync_lamport'")
+    const sinceTs = parseInt(lastRow?.value || '0')
+
+    const pkg = await exportDeltas(db, sinceTs)
+    if (pkg.deltas.length === 0) return { count: 0 }
+
+    const json = JSON.stringify(pkg, null, 2)
+
+    // Save via File System Access API
+    if (typeof window.showSaveFilePicker === 'function') {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: `sync-${pkg.deviceId || 'export'}.json`,
+          types: [{ description: 'Sync Package', accept: { 'application/json': ['.json'] } }],
+        })
+        const writable = await handle.createWritable()
+        await writable.write(json)
+        await writable.close()
+
+        // Remember last exported lamport_ts
+        const maxTs = Math.max(...pkg.deltas.map(d => d.lamportTs))
+        await db.execute("INSERT OR REPLACE INTO meta VALUES ('last_sync_lamport', ?)", [String(maxTs)])
+
+        return { count: pkg.deltas.length }
+      } catch (e) {
+        if (e.name === 'AbortError') return null // user cancelled
+        throw e
+      }
+    }
+
+    // Fallback: anchor download
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `sync-${pkg.deviceId || 'export'}.json`
+    a.click()
+    URL.revokeObjectURL(url)
+
+    const maxTs = Math.max(...pkg.deltas.map(d => d.lamportTs))
+    await db.execute("INSERT OR REPLACE INTO meta VALUES ('last_sync_lamport', ?)", [String(maxTs)])
+
+    return { count: pkg.deltas.length }
+  }, [])
+
+  // Phase 1: copy sync request (our VC) to clipboard
+  const exportSyncRequest = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return null
+    const req = await buildSyncRequest(db)
+    await navigator.clipboard.writeText(JSON.stringify(req))
+    return req
+  }, [])
+
+  // Phase 2: responder received a sync_request → compute package for requester
+  const handleSyncRequest = useCallback(async (req) => {
+    const db = dbRef.current
+    if (!db || !req || req.type !== 'sync_request') return null
+    const pkg = await computeSyncPackage(db, req.vectorClock || {})
+    await navigator.clipboard.writeText(JSON.stringify(pkg))
+    return { count: pkg.tasks.length, notesCount: pkg.notes.length }
+  }, [])
+
+  // Phase 3-4: apply a sync_package and auto-copy response
+  const importSyncClipboard = useCallback(async (pkg) => {
+    const db = dbRef.current
+    if (!db || !pkg || pkg.type !== 'sync_package') return null
+
+    const { stats, response } = await importSyncPackage(db, pkg)
+
+    // Auto-copy response to clipboard (what sender needs from us)
+    if (response.tasks.length > 0 || response.notes.length > 0) {
+      await navigator.clipboard.writeText(JSON.stringify(response))
+    }
+
+    setTasks(await fetchAll(db))
+    await refreshRef()
+
+    return { ...stats, responseCount: response.tasks.length }
+  }, [refreshRef])
+
+  const importSync = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return null
+
+    // Open file picker
+    const selected = await openFileDialog({
+      filters: [{ name: 'Sync Package', extensions: ['json'] }],
+      multiple: false,
+    })
+    if (!selected) return null
+
+    const filePath = typeof selected === 'string' ? selected : selected[0]
+
+    // Read file via fetch (works for Tauri asset protocol paths)
+    let pkg
+    try {
+      const { readTextFile } = await import('@tauri-apps/plugin-fs')
+      const text = await readTextFile(filePath)
+      pkg = JSON.parse(text)
+    } catch (e) {
+      console.error('Failed to read sync file:', e)
+      return null
+    }
+
+    const result = await importDeltas(db, pkg)
+
+    // Refresh state
+    setTasks(await fetchAll(db))
+    await refreshRef()
+
+    return result
+  }, [refreshRef])
+
   return {
     tasks, lists, tags, flows, flowMeta, personas,
     addTask, updateTask, bulkStatus, bulkCycle, bulkDelete, bulkPriority, bulkDueShift, bulkSnooze, bulkAssignToday,
@@ -785,8 +976,9 @@ export function useTauriTaskStore() {
     importRtm, clearAll, loadDemoData,
     undo, canUndo: history.length > 0,
     metaSettings, saveMeta,
-    dbPath, revealDb, openNewDb, moveCurrentDb,
+    dbPath, revealDb, openNewDb, createNewDb, moveCurrentDb,
     createBackup, listBackups, restoreBackup,
+    exportSync, importSync, exportSyncRequest, handleSyncRequest, importSyncClipboard, getSyncLog, getSyncStats, clearSyncData,
     openUrl: createSafeOpenUrl(openUrl),
   }
 }

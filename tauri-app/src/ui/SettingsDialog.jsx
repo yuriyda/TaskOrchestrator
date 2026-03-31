@@ -9,7 +9,8 @@ import { useApp } from "./AppContext";
 import {
   Settings, Globe, Sun, Moon, Monitor, Upload, Download,
   Trash2, Info, HardDrive, FolderOpen, Copy, ExternalLink,
-  X, Zap, AlertTriangle,
+  X, Zap, AlertTriangle, RefreshCw,
+  Plus, Pencil, Trash, CheckSquare, ListTodo, Tag, Users, Workflow, StickyNote, Cog,
 } from "lucide-react";
 import { Combobox } from "./Combobox";
 import { FONTS, DATE_FORMATS, CSV_FIELDS } from "../core/constants";
@@ -30,7 +31,7 @@ export function SettingRow({ label, description, children }) {
   );
 }
 
-export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll, dbPath, onRevealDb, onOpenDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup }) {
+export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData }) {
   const { t, locale, setLocale, theme, setTheme, TC, settings, updateSetting } = useApp();
   const [activeTab, setActiveTab] = useState("general");
   const [clearStep, setClearStep] = useState(0);
@@ -38,6 +39,9 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
   const [csvFields, setCsvFields] = useState(() => new Set(CSV_FIELDS.map(f => f.key)));
   const [pathCopied, setPathCopied] = useState(false);
   const [backups, setBackups] = useState(null); // null = not loaded, [] = empty
+  const [syncStatus, setSyncStatus] = useState(null); // null | string
+  const [syncInput, setSyncInput] = useState(""); // textarea content
+  const [syncPreview, setSyncPreview] = useState(null); // parsed preview
 
   useEffect(() => {
     if (activeTab === "maintenance" && backups === null && onListBackups) {
@@ -57,6 +61,7 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
     { key: "ai",         label: t("settings.tab.ai"),         Icon: Zap,            danger: false },
     { key: "import",     label: t("settings.tab.import"),     Icon: Upload,         danger: false },
     { key: "export",     label: t("settings.tab.export"),     Icon: Download,       danger: false },
+    { key: "sync",         label: t("settings.tab.sync"),         Icon: RefreshCw,     danger: false },
     { key: "about",        label: t("settings.tab.about"),        Icon: Info,          danger: false },
     { key: "maintenance",  label: t("settings.tab.maintenance"),  Icon: HardDrive,     danger: false },
     { key: "danger",       label: t("settings.tab.danger"),       Icon: AlertTriangle, danger: true  },
@@ -319,6 +324,255 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
     </div>
   );
 
+  // ── Sync tab state ─────────────────────────────────────────────────────────
+  const [syncLog, setSyncLog] = useState(null);
+  const [syncStats, setSyncStats] = useState(null);
+
+  useEffect(() => {
+    if (activeTab === "sync") {
+      onGetSyncStats?.().then(setSyncStats);
+      onGetSyncLog?.().then(setSyncLog);
+    }
+  }, [activeTab]);
+
+  const reloadSync = async () => {
+    setSyncStats(await onGetSyncStats?.());
+    setSyncLog(await onGetSyncLog?.());
+  };
+
+  const ENTITY_ICONS = {
+    tasks: CheckSquare, notes: StickyNote, lists: ListTodo,
+    tags: Tag, flows: Workflow, personas: Users,
+    flow_meta: Workflow, meta: Cog,
+  };
+  const ACTION_COLORS = {
+    insert: "bg-emerald-500/20 text-emerald-400",
+    update: "bg-sky-500/20 text-sky-400",
+    delete: "bg-red-500/20 text-red-400",
+  };
+  const ACTION_ICONS = { insert: Plus, update: Pencil, delete: Trash };
+
+  const renderSync = () => (
+    <div>
+      <h2 className={`text-base font-semibold mb-4 ${TC.text}`}>{t("sync.title")}</h2>
+      <p className={`text-xs mb-4 ${TC.textMuted}`}>{t("sync.desc")}</p>
+
+      {/* Actions */}
+      <div className={`rounded-lg border p-4 mb-4 ${TC.elevated} ${TC.borderClass}`}>
+        <div className={`text-[10px] font-semibold uppercase tracking-wider mb-2 ${TC.textMuted}`}>{t("sync.phase1")}</div>
+        <div className="flex gap-2 mb-3">
+          {onExportSyncRequest && (
+            <button
+              onClick={async () => {
+                setSyncStatus(null);
+                const result = await onExportSyncRequest();
+                if (result === null) return;
+                setSyncStatus(t("sync.requestCopied"));
+                await reloadSync();
+              }}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>
+              <Copy size={14} />
+              {t("sync.copyRequest")}
+            </button>
+          )}
+        </div>
+        <div className={`text-[10px] font-semibold uppercase tracking-wider mb-2 ${TC.textMuted}`}>{t("sync.phase2")}</div>
+        {(onHandleSyncRequest || onImportSyncClipboard) && (
+          <div className="mb-3">
+            <div className="flex gap-2 mb-2">
+              <textarea
+                value={syncInput}
+                onChange={(e) => {
+                  setSyncInput(e.target.value);
+                  setSyncPreview(null);
+                  setSyncStatus(null);
+                  try {
+                    const parsed = JSON.parse(e.target.value);
+                    if (parsed?.type === "sync_request") {
+                      setSyncPreview({ type: "request", deviceId: parsed.deviceId, vcKeys: Object.keys(parsed.vectorClock || {}).length });
+                    } else if (parsed?.type === "sync_package") {
+                      setSyncPreview({ type: "package", deviceId: parsed.deviceId, tasks: parsed.tasks?.length || 0, notes: parsed.notes?.length || 0 });
+                    }
+                  } catch {}
+                }}
+                placeholder={t("sync.inputPlaceholder")}
+                className={`flex-1 h-20 px-3 py-2 rounded-lg text-xs font-mono resize-none border ${TC.surface} ${TC.borderClass} ${TC.textSec} focus:outline-none focus:ring-1 focus:ring-sky-500`}
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  try {
+                    const text = await navigator.clipboard.readText();
+                    if (!text || !text.trim()) { setSyncPreview(null); setSyncStatus(t("sync.clipboardEmpty")); return; }
+                    setSyncInput(text);
+                    let parsed;
+                    try { parsed = JSON.parse(text); } catch { setSyncPreview(null); setSyncStatus(t("sync.clipboardNotJson")); return; }
+                    if (parsed?.type === "sync_request") {
+                      setSyncPreview({ type: "request", deviceId: parsed.deviceId, vcKeys: Object.keys(parsed.vectorClock || {}).length });
+                    } else if (parsed?.type === "sync_package") {
+                      setSyncPreview({ type: "package", deviceId: parsed.deviceId, tasks: parsed.tasks?.length || 0, notes: parsed.notes?.length || 0 });
+                    } else {
+                      setSyncPreview(null);
+                      setSyncStatus(t("sync.clipboardNotSync"));
+                    }
+                  } catch { setSyncStatus(t("sync.clipboardEmpty")); }
+                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>
+                <Download size={12} />
+                {t("sync.pasteBtn")}
+              </button>
+              {syncPreview?.type === "request" && (
+                <>
+                  <div className={`flex-1 text-xs ${TC.textMuted}`}>
+                    {t("sync.previewRequest")
+                      .replace("{device}", (syncPreview.deviceId?.slice(0, 8) || "?") + "…")
+                      .replace("{devices}", syncPreview.vcKeys)}
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setSyncStatus(null);
+                      let req;
+                      try { req = JSON.parse(syncInput); } catch { setSyncStatus(t("sync.clipboardNotJson")); return; }
+                      if (!req || req.type !== "sync_request") { setSyncStatus(t("sync.clipboardNotSync")); return; }
+                      const result = await onHandleSyncRequest(req);
+                      if (result === null) return;
+                      setSyncStatus(
+                        t("sync.packageGenerated")
+                          .replace("{tasks}", result.count)
+                          .replace("{notes}", result.notesCount)
+                      );
+                      setSyncInput("");
+                      setSyncPreview(null);
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors bg-amber-600 hover:bg-amber-500 text-white">
+                    {t("sync.generatePackage")}
+                  </button>
+                </>
+              )}
+              {syncPreview?.type === "package" && (
+                <>
+                  <div className={`flex-1 text-xs ${TC.textMuted}`}>
+                    {t("sync.preview")
+                      .replace("{device}", (syncPreview.deviceId?.slice(0, 8) || "?") + "…")
+                      .replace("{tasks}", syncPreview.tasks)
+                      .replace("{notes}", syncPreview.notes)}
+                  </div>
+                  <button
+                    onClick={async () => {
+                      setSyncStatus(null);
+                      let pkg;
+                      try { pkg = JSON.parse(syncInput); } catch { setSyncStatus(t("sync.clipboardNotJson")); return; }
+                      if (!pkg || pkg.type !== "sync_package") { setSyncStatus(t("sync.clipboardNotSync")); return; }
+                      const result = await onImportSyncClipboard(pkg);
+                      if (result === null) { setSyncStatus(t("sync.clipboardNotSync")); return; }
+                      setSyncStatus(
+                        result.responseCount > 0
+                          ? t("sync.appliedWithResponse")
+                              .replace("{applied}", result.applied)
+                              .replace("{conflicts}", result.conflicts)
+                              .replace("{responseCount}", result.responseCount)
+                          : t("sync.appliedNoResponse")
+                              .replace("{applied}", result.applied)
+                              .replace("{conflicts}", result.conflicts)
+                      );
+                      setSyncInput("");
+                      setSyncPreview(null);
+                      await reloadSync();
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors bg-sky-600 hover:bg-sky-500 text-white">
+                    {t("sync.apply")}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+        {syncStatus && (
+          <div className={`text-xs px-3 py-2 rounded-md ${TC.surface} ${TC.textMuted}`}>{syncStatus}</div>
+        )}
+      </div>
+
+      {/* Device info & stats */}
+      {syncStats && (
+        <div className={`rounded-lg border p-4 mb-4 ${TC.elevated} ${TC.borderClass}`}>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div>
+              <div className={`font-semibold uppercase tracking-wider mb-1 ${TC.textMuted}`}>{t("sync.device")}</div>
+              <div className={`font-mono text-[11px] ${TC.textSec}`}>{syncStats.deviceId?.slice(0, 12) || "—"}…</div>
+            </div>
+            <div>
+              <div className={`font-semibold uppercase tracking-wider mb-1 ${TC.textMuted}`}>{t("sync.pending")}</div>
+              <div className={`text-sm font-bold ${syncStats.pendingCount > 0 ? "text-sky-400" : TC.textSec}`}>
+                {syncStats.pendingCount}
+              </div>
+            </div>
+            <div>
+              <div className={`font-semibold uppercase tracking-wider mb-1 ${TC.textMuted}`}>{t("sync.totalLog")}</div>
+              <div className={`text-sm font-bold ${TC.textSec}`}>{syncStats.totalEntries}</div>
+            </div>
+            <div>
+              <div className={`font-semibold uppercase tracking-wider mb-1 ${TC.textMuted}`}>{t("sync.vectorClock")}</div>
+              <div className={`font-mono text-[10px] leading-relaxed ${TC.textSec}`}>
+                {Object.entries(syncStats.vectorClock).map(([dev, cnt]) => (
+                  <div key={dev}>{dev.slice(0, 8)}… = {cnt}</div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delta log */}
+      <div className={`rounded-lg border ${TC.elevated} ${TC.borderClass}`}>
+        <div className={`flex items-center justify-between px-4 py-3 border-b ${TC.borderClass}`}>
+          <div className={`text-sm font-medium ${TC.text}`}>{t("sync.deltaLog")}</div>
+          {syncLog?.length > 0 && (
+            <button
+              onClick={async () => {
+                if (confirm(t("sync.clearConfirm"))) {
+                  await onClearSyncData?.();
+                  await reloadSync();
+                }
+              }}
+              className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-colors text-red-400 hover:bg-red-500/10`}>
+              <Trash size={10} />
+              {t("sync.clearLog")}
+            </button>
+          )}
+        </div>
+        <div className="max-h-72 overflow-y-auto">
+          {!syncLog || syncLog.length === 0 ? (
+            <div className={`px-4 py-6 text-center text-xs ${TC.textMuted}`}>{t("sync.empty")}</div>
+          ) : (
+            syncLog.map((entry) => {
+              const EntityIcon = ENTITY_ICONS[entry.entity] || Cog;
+              const ActionIcon = ACTION_ICONS[entry.action] || Pencil;
+              const actionCls = ACTION_COLORS[entry.action] || "";
+              const label = entry.data?.title || entry.data?.name || entry.data?.key || entry.entityId?.slice(0, 12);
+              return (
+                <div key={entry.id} className={`flex items-center gap-3 px-4 py-2 border-b last:border-b-0 ${TC.borderClass} hover:${TC.hoverBg}`}>
+                  <EntityIcon size={14} className={TC.textMuted} />
+                  <div className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold ${actionCls}`}>
+                    <ActionIcon size={10} />
+                    {t(`sync.action.${entry.action}`)}
+                  </div>
+                  <div className={`flex-1 text-xs truncate ${TC.textSec}`}>
+                    <span className={`font-medium ${TC.text}`}>{t(`sync.entity.${entry.entity}`)}</span>
+                    {label && <span className="ml-1.5 opacity-70">{label}</span>}
+                  </div>
+                  <div className={`text-[10px] font-mono tabular-nums ${TC.textMuted}`}>
+                    #{entry.lamportTs}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   const renderMaintenance = () => {
     const copyPath = () => {
       if (!dbPath) return;
@@ -353,18 +607,28 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
           </div>
         </div>
 
-        {/* Open another DB */}
-        {onOpenDb && (
+        {/* Open / Create DB */}
+        {(onOpenDb || onCreateNewDb) && (
           <div className={`rounded-lg border p-4 mb-3 ${TC.elevated} ${TC.borderClass}`}>
             <div className="flex items-start justify-between gap-4">
               <div>
                 <div className={`text-sm font-medium mb-1 ${TC.text}`}>{t("settings.maintenance.open.label")}</div>
                 <div className={`text-xs ${TC.textMuted}`}>{t("settings.maintenance.open.desc")}</div>
               </div>
-              <button onClick={() => { onOpenDb(); onClose(); }}
-                className={`flex-shrink-0 px-4 py-1.5 rounded text-sm font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>
-                {t("settings.maintenance.open.btn")}
-              </button>
+              <div className="flex gap-2 flex-shrink-0">
+                {onOpenDb && (
+                  <button onClick={() => { onOpenDb(); onClose(); }}
+                    className={`px-4 py-1.5 rounded text-sm font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>
+                    {t("settings.maintenance.open.btn")}
+                  </button>
+                )}
+                {onCreateNewDb && (
+                  <button onClick={() => { onCreateNewDb(); onClose(); }}
+                    className={`px-4 py-1.5 rounded text-sm font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>
+                    {t("settings.maintenance.create.btn")}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -488,6 +752,7 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
       case "ai":         return renderAI();
       case "import":     return renderImport();
       case "export":     return renderExport();
+      case "sync":         return renderSync();
       case "about":        return renderAbout();
       case "maintenance":  return renderMaintenance();
       case "danger":       return renderDanger();

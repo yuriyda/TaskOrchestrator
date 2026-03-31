@@ -131,7 +131,7 @@ export async function withTransaction(db, fn) {
 
 export async function fetchAll(db) {
   const [taskRows, noteRows] = await Promise.all([
-    db.select('SELECT * FROM tasks ORDER BY priority, created_at'),
+    db.select('SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY priority, created_at'),
     db.select('SELECT * FROM notes ORDER BY created_at'),
   ])
   // Build series_id → notes[]
@@ -164,8 +164,8 @@ export async function activateDependents(db, completedTaskId, lamportTs, deviceI
       [dep.depends_on]
     )
     if (!blocker) {
-      await db.execute("UPDATE tasks SET status = 'active', updated_at = ?, lamport_ts = ? WHERE id = ?",
-        [new Date().toISOString(), lamportTs || 0, dep.id])
+      await db.execute("UPDATE tasks SET status = 'active', updated_at = ?, lamport_ts = ?, device_id = ? WHERE id = ?",
+        [new Date().toISOString(), lamportTs || 0, deviceId || null, dep.id])
       activated.push(dep.title)
       if (lamportTs && deviceId) {
         await logChange(db, 'tasks', dep.id, 'update', { status: 'active' }, lamportTs, deviceId)
@@ -201,6 +201,7 @@ export async function spawnNextOccurrence(db, taskId, lamportTs, deviceId) {
     rtmSeriesId: row.rtm_series_id || null,
     createdAt:   new Date().toISOString(),
     lamportTs:   lamportTs || 0,
+    deviceId:    deviceId || null,
   }
   await db.execute(TASK_INSERT, taskToRow(next))
   if (lamportTs && deviceId) {
