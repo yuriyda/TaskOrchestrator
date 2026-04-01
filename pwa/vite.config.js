@@ -20,8 +20,8 @@ export default defineConfig({
   plugins: [tsExtensionPlugin(), react()],
   resolve: {
     alias: [
-      // Share code from tauri-app
-      { find: '@shared', replacement: path.resolve(__dirname, '../tauri-app/src') },
+      // Shared modules (monorepo root)
+      { find: '@shared', replacement: path.resolve(__dirname, '../shared') },
       // Main app component
       { find: '@app', replacement: path.resolve(__dirname, '..') },
       // Resolve relative imports from task-orchestrator.jsx (which lives at /workspace/)

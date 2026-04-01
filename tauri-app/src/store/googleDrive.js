@@ -240,7 +240,7 @@ export async function deleteSyncFile(db) {
  * 1. Download remote sync file → treat as incoming sync_package
  * 2. Compute our package for the remote → upload updated sync file
  *
- * Returns { applied, conflicts, uploaded }
+ * Returns { applied, outdated, uploaded }
  */
 export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageFn) {
   // Find or create the sync file on Drive
@@ -252,7 +252,7 @@ export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageF
   }
 
   let applied = 0
-  let conflicts = 0
+  let outdated = 0
 
   // Import remote changes if any
   if (remotePkg && remotePkg.type === 'sync_package') {
@@ -264,7 +264,7 @@ export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageF
     })
     const result = await importSyncPackageFn(db, remotePkg)
     applied = result.stats.applied
-    conflicts = result.stats.conflicts
+    outdated = result.stats.outdated
     console.log('[gdrive] Import result:', result.stats)
   }
 
@@ -276,7 +276,7 @@ export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageF
   // Upload our package
   const uploadResult = await uploadSyncFile(db, ourPkg, file?.id || null)
 
-  return { applied, conflicts, uploaded: ourPkg.tasks.length, fileId: uploadResult.id }
+  return { applied, outdated, uploaded: ourPkg.tasks.length, fileId: uploadResult.id }
 }
 
 export { loadTokens }

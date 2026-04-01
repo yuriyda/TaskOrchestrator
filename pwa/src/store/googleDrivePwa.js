@@ -197,15 +197,15 @@ export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageF
   let remotePkg = null
   if (file) remotePkg = await downloadSyncFile(db, file.id)
 
-  let applied = 0, conflicts = 0
+  let applied = 0, outdated = 0
   if (remotePkg && remotePkg.type === 'sync_package') {
     const result = await importSyncPackageFn(db, remotePkg)
     applied = result.stats.applied
-    conflicts = result.stats.conflicts
+    outdated = result.stats.outdated
   }
 
   const ourPkg = await computeSyncPackageFn(db, {})
   const uploadResult = await uploadSyncFile(db, ourPkg, file?.id || null)
 
-  return { applied, conflicts, uploaded: ourPkg.tasks.length, fileId: uploadResult.id }
+  return { applied, outdated, uploaded: ourPkg.tasks.length, fileId: uploadResult.id }
 }

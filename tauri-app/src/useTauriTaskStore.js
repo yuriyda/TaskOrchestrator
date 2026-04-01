@@ -11,10 +11,10 @@ import { copyFile, remove, exists, readDir } from '@tauri-apps/plugin-fs'
 import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
 import { ulid } from './ulid.js'
 import { safeIsoDate, localDateStr } from './core/date.js'
-import { nextDue } from './core/recurrence.js'
 import { VALID_STATUSES, VALID_PRIORITIES } from './core/constants.js'
+import { handleTaskDone, isTaskBlocked, computeNextCycleStatus } from './core/taskActions.js'
 import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_V5, MIGRATIONS_V6, MIGRATIONS_V7, LATEST_SCHEMA_VERSION } from './store/migrations.js'
-import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, withTransaction, fetchAll, activateDependents, spawnNextOccurrence, logChange, nextLamport } from './store/helpers.js'
+import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, withTransaction, fetchAll, buildSqlOps, logChange, nextLamport } from './store/helpers.js'
 import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
 import { exportDeltas, clearSyncLog, getVectorClock, buildSyncRequest, computeSyncPackage, importSyncPackage } from './store/sync.js'
@@ -230,25 +230,22 @@ export function useTauriTaskStore() {
     const promise = mutate(cur, async db => {
       const did = deviceIdRef.current
       const lts = await nextLamport(db, did)
-      const isBlocked = async (id) => {
-        const [row] = await db.select('SELECT depends_on FROM tasks WHERE id=?', [id])
-        if (!row?.depends_on) return false
-        const [dep] = await db.select("SELECT id FROM tasks WHERE id=? AND status != 'done'", [row.depends_on])
-        return !!dep
-      }
+      const ops = buildSqlOps(db, logChange)
 
       const changedIds = []
       await withTransaction(db, async () => {
         if (status === 'active' || status === 'done') {
           for (const id of [...ids]) {
-            if (await isBlocked(id)) { skippedBlocked++; continue }
+            if (await isTaskBlocked(ops, id)) { skippedBlocked++; continue }
             await db.execute('UPDATE tasks SET status=?, lamport_ts=?, device_id=? WHERE id=?', [status, lts, did, id])
             changedIds.push(id)
             if (status === 'done') {
               await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [new Date().toISOString(), id])
-              await spawnNextOccurrence(db, id, lts, did)
-              const names = await activateDependents(db, id, lts, did)
-              activatedNames.push(...names)
+              const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+              if (doneResult.spawned) {
+                await logChange(db, 'tasks', doneResult.spawned.id, 'insert', doneResult.spawned, lts, did)
+              }
+              activatedNames.push(...doneResult.activated.map(a => a.title))
             } else {
               await db.execute('UPDATE tasks SET completed_at=NULL WHERE id=?', [id])
             }
@@ -273,28 +270,23 @@ export function useTauriTaskStore() {
     const promise = mutate(cur, async db => {
       const did = deviceIdRef.current
       const lts = await nextLamport(db, did)
-      const FULL_CYCLE    = ['inbox', 'active', 'done', 'cancelled']
-      const BLOCKED_CYCLE = ['inbox', 'cancelled']
+      const ops = buildSqlOps(db, logChange)
       const changes = []
       await withTransaction(db, async () => {
         for (const id of ids) {
           const [row] = await db.select('SELECT status, depends_on FROM tasks WHERE id=?', [id])
           if (!row) continue
-          let blocked = false
-          if (row.depends_on) {
-            const [dep] = await db.select("SELECT id FROM tasks WHERE id=? AND status != 'done'", [row.depends_on])
-            if (dep) blocked = true
-          }
-          const cycle = blocked ? BLOCKED_CYCLE : FULL_CYCLE
-          const curIdx = cycle.indexOf(row.status)
-          const next = cycle[(curIdx + 1) % cycle.length]
+          const blocked = await isTaskBlocked(ops, id)
+          const next = computeNextCycleStatus(row.status, blocked)
           await db.execute('UPDATE tasks SET status=?, lamport_ts=?, device_id=? WHERE id=?', [next, lts, did, id])
           await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [next === 'done' ? new Date().toISOString() : null, id])
           changes.push({ id, status: next })
           if (next === 'done') {
-            await spawnNextOccurrence(db, id, lts, did)
-            const names = await activateDependents(db, id, lts, did)
-            activatedNames.push(...names)
+            const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+            if (doneResult.spawned) {
+              await logChange(db, 'tasks', doneResult.spawned.id, 'insert', doneResult.spawned, lts, did)
+            }
+            activatedNames.push(...doneResult.activated.map(a => a.title))
           }
         }
         await touchUpdatedAt(db, ids)
@@ -438,9 +430,12 @@ export function useTauriTaskStore() {
     if (changes.personas) for (const p   of changes.personas)     await db.execute('INSERT OR IGNORE INTO personas VALUES (?)', [p])
     if (changes.flowId)   await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [changes.flowId])
     if (changes.status === 'done') {
-      await spawnNextOccurrence(db, id, lts, did)
-      const names = await activateDependents(db, id, lts, did)
-      activatedNames.push(...names)
+      const ops = buildSqlOps(db, logChange)
+      const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+      if (doneResult.spawned) {
+        await logChange(db, 'tasks', doneResult.spawned.id, 'insert', doneResult.spawned, lts, did)
+      }
+      activatedNames.push(...doneResult.activated.map(a => a.title))
     }
     // Sync notes: use rtm_series_id if present, otherwise task id
     if (changes.notes !== undefined) {

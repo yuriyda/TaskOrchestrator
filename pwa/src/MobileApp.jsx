@@ -779,7 +779,7 @@ export default function MobileApp({ store }) {
               if (r) {
                 setSyncMsg(`+${r.applied}`)
                 setLastSync(new Date().toISOString())
-                addSyncLog(t('sync.gdriveSynced').replace('{applied}', r.applied).replace('{conflicts}', r.conflicts).replace('{uploaded}', r.uploaded))
+                addSyncLog(t('sync.gdriveSynced').replace('{applied}', r.applied).replace('{outdated}', r.outdated).replace('{uploaded}', r.uploaded))
               }
             } catch (e) { setSyncMsg(t('sync.gdriveError')); addSyncLog(`${t('sync.gdriveError')}: ${e.message}`) }
             finally { setSyncing(false); setTimeout(() => setSyncMsg(null), 3000) }

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#0f172a"/>
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="180" fill="none" stroke="#3b82f6" stroke-width="24" opacity="0.3"/>
+  <!-- Check circle -->
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#3b82f6" stroke-width="20"/>
+  <!-- Checkmark -->
+  <polyline points="180,260 232,312 340,204" fill="none" stroke="#60a5fa" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Small orchestrator dots -->
+  <circle cx="256" cy="76" r="12" fill="#3b82f6" opacity="0.7"/>
+  <circle cx="256" cy="436" r="12" fill="#3b82f6" opacity="0.7"/>
+  <circle cx="76" cy="256" r="12" fill="#3b82f6" opacity="0.7"/>
+  <circle cx="436" cy="256" r="12" fill="#3b82f6" opacity="0.7"/>
+</svg>

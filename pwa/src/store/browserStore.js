@@ -17,6 +17,9 @@ import {
   disconnect as gdriveDisconnect, syncWithDrive as gdriveSyncWithDrive,
   getConfig as gdriveGetConfig, startOAuthRedirect, extractAuthCode,
 } from './googleDrivePwa.js'
+import {
+  handleTaskDone, isTaskBlocked, computeNextCycleStatus,
+} from '@shared/core/taskActions.js'
 
 const DB_NAME = 'task-orchestrator'
 const DB_VERSION = 1
@@ -72,6 +75,36 @@ async function nextLamport(db, deviceId) {
   await tx.store.put({ deviceId, counter })
   await tx.done
   return counter
+}
+
+// Build IDB storage adapter for use with core/taskActions.js functions.
+function buildIdbOps(db) {
+  return {
+    getTask: async (id) => (await db.get('tasks', id)) ?? null,
+
+    insertTask: async (task) => { await db.put('tasks', task) },
+
+    findInboxDependents: async (taskId) => {
+      const all = await db.getAll('tasks')
+      return all.filter(t => t.dependsOn === taskId && t.status === 'inbox' && !t.deletedAt)
+    },
+
+    isBlockerActive: async (taskId) => {
+      const t = await db.get('tasks', taskId)
+      return t ? (t.status !== 'done' && !t.deletedAt) : false
+    },
+
+    activateTask: async (id, lts, did) => {
+      const t = await db.get('tasks', id)
+      if (t) {
+        t.status = 'active'
+        t.updatedAt = new Date().toISOString()
+        t.lamportTs = lts
+        t.deviceId = did
+        await db.put('tasks', t)
+      }
+    },
+  }
 }
 
 async function fetchAllTasks(db) {
@@ -212,51 +245,72 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     if (updated.tags) for (const t of updated.tags) await db.put('tags', { name: t })
     if (updated.personas) for (const p of updated.personas) await db.put('personas', { name: p })
     if (updated.flowId) await db.put('flows', { name: updated.flowId })
+    // Handle completion side-effects: spawn next occurrence, activate dependents
+    if (changes.status === 'done') {
+      const ops = buildIdbOps(db)
+      await handleTaskDone(ops, id, ulid, lts, did)
+    }
     await refresh()
   }, [refresh])
 
   const bulkStatus = useCallback(async (ids, status) => {
     const db = dbRef.current
-    if (!db) return
+    if (!db) return { activated: [], skippedBlocked: 0 }
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
     const now = new Date().toISOString()
+    const ops = buildIdbOps(db)
+    const activatedNames = []
+    let skippedBlocked = 0
     for (const id of ids) {
       const task = await db.get('tasks', id)
       if (!task) continue
+      // Block active/done transitions for tasks with unfinished dependencies
+      if ((status === 'active' || status === 'done') && await isTaskBlocked(ops, id)) {
+        skippedBlocked++
+        continue
+      }
       task.status = status
       task.updatedAt = now
       task.deviceId = did
       task.lamportTs = lts
       task.completedAt = status === 'done' ? now : null
       await db.put('tasks', task)
+      if (status === 'done') {
+        const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+        activatedNames.push(...doneResult.activated.map(a => a.title))
+      }
     }
     await refresh()
-    return { activated: [] }
+    return { activated: activatedNames, skippedBlocked }
   }, [refresh])
-
-  const FULL_CYCLE = ['inbox', 'active', 'done', 'cancelled']
 
   const bulkCycle = useCallback(async (ids) => {
     const db = dbRef.current
-    if (!db) return
+    if (!db) return { activated: [] }
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
     const now = new Date().toISOString()
+    const ops = buildIdbOps(db)
+    const activatedNames = []
     for (const id of ids) {
       const task = await db.get('tasks', id)
       if (!task) continue
-      const curIdx = FULL_CYCLE.indexOf(task.status)
-      const next = FULL_CYCLE[(curIdx + 1) % FULL_CYCLE.length]
+      const blocked = await isTaskBlocked(ops, id)
+      const next = computeNextCycleStatus(task.status, blocked)
       task.status = next
       task.updatedAt = now
       task.deviceId = did
       task.lamportTs = lts
       task.completedAt = next === 'done' ? now : null
       await db.put('tasks', task)
+      if (next === 'done') {
+        const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+        activatedNames.push(...doneResult.activated.map(a => a.title))
+      }
     }
     await refresh()
-    return { activated: [] }
+    return { activated: activatedNames }
   }, [refresh])
 
   const bulkDelete = useCallback(async (ids) => {
@@ -303,8 +357,8 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const now = new Date().toISOString()
     for (const id of ids) {
       const task = await db.get('tasks', id)
-      if (!task || !task.due) continue
-      const d = new Date(task.due)
+      if (!task || !task.due || !/^\d{4}-\d{2}-\d{2}$/.test(task.due)) continue
+      const d = new Date(task.due + 'T12:00:00')
       d.setDate(d.getDate() + 1)
       task.due = d.toISOString().slice(0, 10)
       task.postponed = (task.postponed || 0) + 1
@@ -322,13 +376,16 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
     const now = new Date().toISOString()
+    const today = now.slice(0, 10)
     for (const id of ids) {
       const task = await db.get('tasks', id)
-      if (!task || !task.due) continue
-      const d = new Date(task.due)
-      if (days) d.setDate(d.getDate() + days)
-      if (months) d.setMonth(d.getMonth() + months)
-      task.due = d.toISOString().slice(0, 10)
+      if (!task) continue
+      const base = (task.due && /^\d{4}-\d{2}-\d{2}$/.test(task.due))
+        ? new Date(task.due + 'T12:00:00')
+        : new Date(today + 'T12:00:00')
+      if (months) base.setMonth(base.getMonth() + months)
+      if (days) base.setDate(base.getDate() + days)
+      task.due = base.toISOString().slice(0, 10)
       task.postponed = (task.postponed || 0) + 1
       task.updatedAt = now
       task.deviceId = did
@@ -368,6 +425,8 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     await db.clear('flows')
     await db.clear('flowMeta')
     await db.clear('personas')
+    // vectorClock and meta (device_id) intentionally NOT cleared —
+    // clearAll is a local operation; sync data survives so next sync can restore.
     await refresh()
   }, [refresh])
 
@@ -451,7 +510,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const devRow = await db.get('meta', 'device_id')
     const localDeviceId = devRow?.value || null
 
-    let applied = 0, skipped = 0, conflicts = 0
+    let applied = 0, skipped = 0, outdated = 0
 
     // Update vector clock
     if (remoteVC) {
@@ -463,8 +522,10 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     }
 
     if (remoteTasks) {
+      let maxImportedLts = 0
       for (const task of remoteTasks) {
         const existing = await db.get('tasks', task.id)
+        maxImportedLts = Math.max(maxImportedLts, task.lamportTs || 0)
         if (!existing) {
           await db.put('tasks', task)
           applied++
@@ -476,8 +537,14 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         } else if ((task.lamportTs || 0) === (existing.lamportTs || 0)) {
           skipped++
         } else {
-          conflicts++
+          outdated++
         }
+      }
+      // Lamport clock merge: ensure local counter ≥ max imported timestamp
+      if (localDeviceId && maxImportedLts > 0) {
+        const existing = await db.get('vectorClock', localDeviceId)
+        const maxCounter = Math.max(existing?.counter || 0, maxImportedLts)
+        await db.put('vectorClock', { deviceId: localDeviceId, counter: maxCounter })
       }
     }
 
@@ -487,7 +554,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     if (rFlows) for (const n of rFlows) await db.put('flows', { name: n })
     if (rPersonas) for (const n of rPersonas) await db.put('personas', { name: n })
 
-    return { stats: { applied, skipped, conflicts } }
+    return { stats: { applied, skipped, outdated } }
   }
 
   // Handle OAuth redirect code on page load

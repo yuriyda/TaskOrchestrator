@@ -444,7 +444,7 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
                         addGdriveLog(
                           t("sync.gdriveSynced")
                             .replace("{applied}", result.applied)
-                            .replace("{conflicts}", result.conflicts)
+                            .replace("{outdated}", result.outdated)
                             .replace("{uploaded}", result.uploaded)
                         );
                       }
@@ -600,11 +600,11 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
                             result.responseCount > 0
                               ? t("sync.appliedWithResponse")
                                   .replace("{applied}", result.applied)
-                                  .replace("{conflicts}", result.conflicts)
+                                  .replace("{outdated}", result.outdated)
                                   .replace("{responseCount}", result.responseCount)
                               : t("sync.appliedNoResponse")
                                   .replace("{applied}", result.applied)
-                                  .replace("{conflicts}", result.conflicts)
+                                  .replace("{outdated}", result.outdated)
                           );
                           setSyncInput("");
                           setSyncPreview(null);

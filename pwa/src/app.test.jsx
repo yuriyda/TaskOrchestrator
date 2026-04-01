@@ -181,3 +181,193 @@ describe('BrowserStore — IndexedDB', () => {
     expect(store.current.tasks[0].deviceId).toBe(store.current.tasks[1].deviceId)
   })
 })
+
+// ─── Recurrence tests ──────────────────────────────────────────────────────
+
+describe('BrowserStore — Recurrence', () => {
+  it('bulkCycle to done spawns next occurrence for weekly task', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Weekly review', recurrence: 'weekly', due: '2026-04-01', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'))
+
+    const id = store.current.tasks[0].id
+
+    // Cycle active → done
+    await act(async () => { await store.current.bulkCycle(new Set([id])) })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'), { timeout: 3000 })
+
+    const tasks = store.current.tasks
+    const done = tasks.find(t => t.status === 'done')
+    const spawned = tasks.find(t => t.status === 'active')
+    expect(done).toBeTruthy()
+    expect(done.title).toBe('Weekly review')
+    expect(spawned).toBeTruthy()
+    expect(spawned.title).toBe('Weekly review')
+    expect(spawned.due).toBe('2026-04-08')
+    expect(spawned.recurrence).toBe('weekly')
+  })
+
+  it('bulkStatus to done spawns next occurrence for daily task', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Daily standup', recurrence: 'daily', due: '2026-04-01' })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'))
+
+    const id = store.current.tasks[0].id
+
+    await act(async () => { await store.current.bulkStatus(new Set([id]), 'done') })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'), { timeout: 3000 })
+
+    const spawned = store.current.tasks.find(t => t.status === 'active')
+    expect(spawned.due).toBe('2026-04-02')
+    expect(spawned.recurrence).toBe('daily')
+  })
+
+  it('updateTask to done spawns next occurrence for monthly task', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Monthly report', recurrence: 'monthly', due: '2026-03-15', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'))
+
+    const id = store.current.tasks[0].id
+
+    await act(async () => { await store.current.updateTask(id, { status: 'done' }) })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'), { timeout: 3000 })
+
+    const spawned = store.current.tasks.find(t => t.status === 'active')
+    expect(spawned.due).toBe('2026-04-15')
+  })
+
+  it('non-recurring task does NOT spawn on completion', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'One-off', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'))
+
+    const id = store.current.tasks[0].id
+    await act(async () => { await store.current.bulkCycle(new Set([id])) })
+
+    // Wait a bit and verify still only 1 task
+    await new Promise(r => setTimeout(r, 100))
+    expect(store.current.tasks.length).toBe(1)
+    expect(store.current.tasks[0].status).toBe('done')
+  })
+
+  it('RRULE recurrence spawns correctly (FREQ=WEEKLY;INTERVAL=2)', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Biweekly', recurrence: 'FREQ=WEEKLY;INTERVAL=2', due: '2026-04-01', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'))
+
+    const id = store.current.tasks[0].id
+    await act(async () => { await store.current.bulkStatus(new Set([id]), 'done') })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'), { timeout: 3000 })
+
+    const spawned = store.current.tasks.find(t => t.status === 'active')
+    expect(spawned.due).toBe('2026-04-15')
+  })
+})
+
+// ─── Dependency tests ──────────────────────────────────────────────────────
+
+describe('BrowserStore — Dependencies', () => {
+  it('completing blocker activates dependent task', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    // Create blocker task
+    await act(async () => {
+      await store.current.addTask({ title: 'Blocker', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'))
+    const blockerId = store.current.tasks[0].id
+
+    // Create dependent task
+    await act(async () => {
+      await store.current.addTask({ title: 'Dependent', status: 'inbox', dependsOn: blockerId })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'))
+
+    // Complete the blocker
+    await act(async () => { await store.current.bulkStatus(new Set([blockerId]), 'done') })
+    await waitFor(() => {
+      const dep = store.current.tasks.find(t => t.title === 'Dependent')
+      expect(dep.status).toBe('active')
+    }, { timeout: 3000 })
+  })
+
+  it('blocked task cycles inbox → cancelled (skips active/done)', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Blocker', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'))
+    const blockerId = store.current.tasks[0].id
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Blocked', status: 'inbox', dependsOn: blockerId })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'))
+
+    const blockedId = store.current.tasks.find(t => t.title === 'Blocked').id
+
+    // Cycle blocked task: inbox → cancelled (skip active/done)
+    await act(async () => { await store.current.bulkCycle(new Set([blockedId])) })
+    await waitFor(() => {
+      const t = store.current.tasks.find(t => t.title === 'Blocked')
+      expect(t.status).toBe('cancelled')
+    })
+
+    // Cycle again: cancelled → inbox
+    await act(async () => { await store.current.bulkCycle(new Set([blockedId])) })
+    await waitFor(() => {
+      const t = store.current.tasks.find(t => t.title === 'Blocked')
+      expect(t.status).toBe('inbox')
+    })
+  })
+
+  it('bulkStatus skips blocked tasks for active/done', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Blocker', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('1'))
+    const blockerId = store.current.tasks[0].id
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Blocked', status: 'inbox', dependsOn: blockerId })
+    })
+    await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'))
+
+    const blockedId = store.current.tasks.find(t => t.title === 'Blocked').id
+
+    // Try to set blocked task to 'done' — should be skipped
+    let result
+    await act(async () => {
+      result = await store.current.bulkStatus(new Set([blockedId]), 'done')
+    })
+    expect(result.skippedBlocked).toBe(1)
+    const blocked = store.current.tasks.find(t => t.title === 'Blocked')
+    expect(blocked.status).toBe('inbox') // unchanged
+  })
+})

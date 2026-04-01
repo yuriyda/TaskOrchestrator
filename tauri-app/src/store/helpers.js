@@ -1,7 +1,6 @@
 import { safeIsoDate } from '../core/date.js'
 import { ulid } from '../ulid.js'
 import { VALID_STATUSES, VALID_PRIORITIES } from '../core/constants.js'
-import { nextDue } from '../core/recurrence.js'
 
 // Canonical column list for INSERT INTO tasks — must match schema (v1–v7).
 // Using explicit columns prevents breakage when new columns are added via migrations.
@@ -152,64 +151,39 @@ export async function fetchAll(db) {
   return taskRows.map(row => rowToTask(row, notesMap))
 }
 
-// Activate tasks that depend on the just-completed task and have all deps satisfied.
-// Returns array of activated task titles (for toast).
-// When lamportTs and deviceId are provided, writes to sync_log.
-export async function activateDependents(db, completedTaskId, lamportTs, deviceId) {
-  // Find tasks that depend on the completed task and are still in 'inbox'
-  const dependents = await db.select(
-    "SELECT id, title, depends_on FROM tasks WHERE depends_on = ? AND status = 'inbox'",
-    [completedTaskId]
-  )
-  const activated = []
-  for (const dep of dependents) {
-    // Check if all dependencies are done (currently single dependency, but future-proof)
-    const [blocker] = await db.select(
-      "SELECT id FROM tasks WHERE id = ? AND status != 'done'",
-      [dep.depends_on]
-    )
-    if (!blocker) {
-      await db.execute("UPDATE tasks SET status = 'active', updated_at = ?, lamport_ts = ?, device_id = ? WHERE id = ?",
-        [new Date().toISOString(), lamportTs || 0, deviceId || null, dep.id])
-      activated.push(dep.title)
-      if (lamportTs && deviceId) {
-        await logChange(db, 'tasks', dep.id, 'update', { status: 'active' }, lamportTs, deviceId)
+// Build a SQL storage adapter for use with core/taskActions.js functions.
+// The adapter provides storage-agnostic access that handleTaskDone/isTaskBlocked need.
+export function buildSqlOps(db, logChangeFn) {
+  return {
+    getTask: async (id) => {
+      const [row] = await db.select('SELECT * FROM tasks WHERE id=?', [id])
+      return row || null
+    },
+    insertTask: async (task) => {
+      await db.execute(TASK_INSERT, taskToRow(task))
+    },
+    findInboxDependents: async (taskId) => {
+      return db.select(
+        "SELECT id, title, depends_on as dependsOn FROM tasks WHERE depends_on = ? AND status = 'inbox' AND deleted_at IS NULL",
+        [taskId]
+      )
+    },
+    isBlockerActive: async (taskId) => {
+      const [dep] = await db.select(
+        "SELECT id FROM tasks WHERE id = ? AND status != 'done' AND deleted_at IS NULL",
+        [taskId]
+      )
+      return !!dep
+    },
+    activateTask: async (id, lts, did) => {
+      const now = new Date().toISOString()
+      await db.execute(
+        "UPDATE tasks SET status = 'active', updated_at = ?, lamport_ts = ?, device_id = ? WHERE id = ?",
+        [now, lts || 0, did || null, id]
+      )
+      if (lts && did && logChangeFn) {
+        await logChangeFn(db, 'tasks', id, 'update', { status: 'active' }, lts, did)
       }
-    }
-  }
-  return activated
-}
-
-// Reads task from DB and inserts next occurrence if task has recurrence.
-// When lamportTs and deviceId are provided, writes to sync_log.
-export async function spawnNextOccurrence(db, taskId, lamportTs, deviceId) {
-  const [row] = await db.select('SELECT * FROM tasks WHERE id=?', [taskId])
-  if (!row || !row.recurrence) return
-  const newDue = nextDue(row.due, row.recurrence)
-  if (!newDue) return
-  const next = {
-    id:          ulid(),
-    title:       row.title,
-    status:      'active',
-    priority:    row.priority || 4,
-    list:        row.list_name || null,
-    due:         newDue,
-    recurrence:  row.recurrence,
-    flowId:      row.flow_id  || null,
-    dependsOn:   null,
-    tags:        JSON.parse(row.tags     || '[]'),
-    personas:    JSON.parse(row.personas || '[]'),
-    url:         row.url      || null,
-    dateStart:   null,
-    estimate:    row.estimate || null,
-    postponed:   0,
-    rtmSeriesId: row.rtm_series_id || null,
-    createdAt:   new Date().toISOString(),
-    lamportTs:   lamportTs || 0,
-    deviceId:    deviceId || null,
-  }
-  await db.execute(TASK_INSERT, taskToRow(next))
-  if (lamportTs && deviceId) {
-    await logChange(db, 'tasks', next.id, 'insert', next, lamportTs, deviceId)
+    },
   }
 }
