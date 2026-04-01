@@ -835,10 +835,12 @@ export function useTauriTaskStore() {
     const pendingCount = lastRow?.value
       ? (await db.select('SELECT COUNT(*) as count FROM sync_log WHERE lamport_ts > ?', [parseInt(lastRow.value)]))[0].count
       : countRow.count
+    const [lastSyncRow] = await db.select("SELECT value FROM meta WHERE key='last_sync'")
     return {
       totalEntries: countRow.count,
       pendingCount,
       lastSyncTs: lastRow?.value ? parseInt(lastRow.value) : null,
+      lastSync: lastSyncRow?.value || null,
       vectorClock: vc,
       deviceId: did,
     }
@@ -931,6 +933,7 @@ export function useTauriTaskStore() {
       await navigator.clipboard.writeText(JSON.stringify(response))
     }
 
+    await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ['last_sync', new Date().toISOString()])
     setTasks(await fetchAll(db))
     await refreshRef()
 
@@ -961,6 +964,7 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db) return null
     const result = await syncWithDrive(db, computeSyncPackage, importSyncPackage)
+    await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ['last_sync', new Date().toISOString()])
     setTasks(await fetchAll(db))
     await refreshRef()
     return result

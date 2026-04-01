@@ -16,6 +16,10 @@ task-orchestrator.html
 tauri-app/dist/
 tauri-app/src-tauri/target/
 
+# PWA build artifacts
+pwa/dist/
+pwa/android/
+
 # OS
 .DS_Store
 Thumbs.db

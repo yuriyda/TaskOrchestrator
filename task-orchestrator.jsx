@@ -59,6 +59,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
 
   // ── Settings state ────────────────────────────────────────────────────────
   const [showSettings, setShowSettings] = useState(false);
+  const [gdriveLog, setGdriveLog] = useState([]);
   const [settings, setSettingsState] = useState(() => {
     try {
       const saved = localStorage.getItem("to_settings");
@@ -140,7 +141,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const [cursor, setCursor]   = useState(0);
   const [selected, setSelected] = useState(new Set());
   const [lastIdx, setLastIdx]   = useState(null);
-  const [filters, setFilters] = useState({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null });
+  const [filters, setFilters] = useState(() => {
+    const saved = localStorage.getItem("completionFilter");
+    const status = saved === "active" ? "active" : saved === "done" ? "done" : null;
+    return { status, dateRange: null, list: null, tag: null, flow: null, persona: null };
+  });
   const syncCompletionFilter = (statusValue) => {
     const cf = statusValue === "active" ? "active" : statusValue === "done" ? "done" : "all";
     setCompletionFilter(cf);
@@ -343,12 +348,12 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
       setSelected(next);
     };
     const onMouseUp = () => {
-      const wasDrag = didDragRef.current;
+      const wasDragging = !!dragStartRef.current && didDragRef.current;
       dragStartRef.current = null;
       setDragRect(null);
-      // didDragRef stays true until the subsequent click event clears it
-      if (wasDrag) {
-        // Move focus to task list sentinel so keyboard shortcuts (Del, Space, arrows) work immediately
+      // Only focus task-list sentinel when an actual drag just ended
+      // (prevents stealing focus from Settings and other dialogs)
+      if (wasDragging) {
         document.getElementById("task-list")?.focus();
       }
     };
@@ -388,6 +393,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
         if (e.code === "KeyN" && !e.shiftKey) {
           e.preventDefault();
           document.getElementById("quick-entry")?.focus();
+          return;
+        }
+        if (e.code === "KeyO" && !e.shiftKey) {
+          e.preventDefault();
+          store.openNewDb?.().then(ok => { if (ok) setShowDbSwitched(true); });
           return;
         }
         return;
@@ -1010,7 +1020,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
               <BulkBar count={selected.size} onDone={bulkDone} onCycle={bulkCycle} onToday={bulkToday} onShift={bulkShift} onDelete={bulkDelete} onClear={() => setSelected(new Set())} />
             </div>
           )}
-          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} />
+          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} />
           </div>
 
           {showRightPanel && (
@@ -1117,6 +1127,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
             dbPath={store.dbPath}
             onRevealDb={store.revealDb}
             onOpenDb={async () => { const ok = await store.openNewDb(); if (ok) setShowDbSwitched(true); }}
+            onCreateNewDb={async () => { const ok = await store.createNewDb(); if (ok) setShowDbSwitched(true); }}
             onMoveDb={store.moveCurrentDb}
             onRestartGuide={() => {
               setGuideStep(0);
@@ -1125,6 +1136,23 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
             onCreateBackup={store.createBackup}
             onListBackups={store.listBackups}
             onRestoreBackup={store.restoreBackup}
+            onExportSync={store.exportSync}
+            onImportSync={store.importSync}
+            onExportSyncRequest={store.exportSyncRequest}
+            onHandleSyncRequest={store.handleSyncRequest}
+            onImportSyncClipboard={store.importSyncClipboard}
+            onGetSyncLog={store.getSyncLog}
+            onGetSyncStats={store.getSyncStats}
+            onClearSyncData={store.clearSyncData}
+            onGdriveCheckConnection={store.gdriveCheckConnection}
+            onGdriveConnect={store.gdriveConnectAccount}
+            onGdriveDisconnect={store.gdriveDisconnectAccount}
+            onGdriveSyncNow={store.gdriveSyncNow}
+            onGdriveGetConfig={store.gdriveGetConfig}
+            onGdriveCheckSyncFile={store.gdriveCheckSyncFile}
+            onGdrivePurgeSyncFile={store.gdrivePurgeSyncFile}
+            gdriveLog={gdriveLog}
+            onGdriveLog={setGdriveLog}
           />
         )}
 

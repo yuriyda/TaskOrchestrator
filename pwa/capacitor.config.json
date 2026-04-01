@@ -1,0 +1,5 @@
+{
+  "appId": "com.taskorch.app",
+  "appName": "Task Orchestrator",
+  "webDir": "dist"
+}

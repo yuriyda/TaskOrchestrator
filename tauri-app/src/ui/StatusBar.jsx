@@ -8,7 +8,7 @@ import { HardDrive } from "lucide-react";
 import { useApp } from "./AppContext";
 import { fmtDate } from "../core/date";
 
-export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath }) {
+export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync }) {
   const { t, TC, locale } = useApp();
   const [now, setNow] = useState(new Date());
 
@@ -55,6 +55,16 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
           </span>
           <span className="text-green-400">{progressPct}%</span>
         </span>
+      )}
+
+      {/* Last sync */}
+      {lastSync && (
+        <>
+          <span className="opacity-30">|</span>
+          <span className="opacity-50" title={lastSync}>
+            {t("sync.lastSync") || "Last sync"}: {new Date(lastSync).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        </>
       )}
 
       {/* Spacer */}
