@@ -36,6 +36,15 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Task Orchestrator ${{ github.ref_name }}'
           releaseBody: |
+            ## What's new in v2.0.0
+
+            - **PWA mobile app** — offline-first progressive web app with IndexedDB store, swipe gestures, mobile-first layout
+            - **Google Drive sync** — two-way sync via appDataFolder (desktop loopback OAuth + PWA redirect OAuth)
+            - **Shared business logic** — monorepo architecture with shared/ module (constants, date, recurrence, taskActions)
+            - **Sync button in status bar** — quick sync without opening settings
+            - **View sync file** — inspect Google Drive sync file contents from settings
+            - **App icons** — custom icons for both desktop and PWA
+
             **Windows:** download the `.msi` installer below.
 
             > First launch may show a SmartScreen warning — click "More info" then "Run anyway".
