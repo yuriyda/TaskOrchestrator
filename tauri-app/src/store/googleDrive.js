@@ -218,6 +218,17 @@ export async function hasSyncFile(db) {
 }
 
 /**
+ * Download and return the full contents of the sync file from Google Drive.
+ * Returns { file: { id, name, modifiedTime }, data: <parsed JSON> } or null if no file.
+ */
+export async function readSyncFile(db) {
+  const file = await findSyncFile(db)
+  if (!file) return null
+  const data = await downloadSyncFile(db, file.id)
+  return { file, data }
+}
+
+/**
  * Delete the sync file from Google Drive. Destructive — all sync data
  * on Drive is lost. Other devices will start fresh on next sync.
  */
@@ -240,7 +251,7 @@ export async function deleteSyncFile(db) {
  * 1. Download remote sync file → treat as incoming sync_package
  * 2. Compute our package for the remote → upload updated sync file
  *
- * Returns { applied, conflicts, uploaded }
+ * Returns { applied, outdated, uploaded }
  */
 export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageFn) {
   // Find or create the sync file on Drive
@@ -252,7 +263,7 @@ export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageF
   }
 
   let applied = 0
-  let conflicts = 0
+  let outdated = 0
 
   // Import remote changes if any
   if (remotePkg && remotePkg.type === 'sync_package') {
@@ -264,7 +275,7 @@ export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageF
     })
     const result = await importSyncPackageFn(db, remotePkg)
     applied = result.stats.applied
-    conflicts = result.stats.conflicts
+    outdated = result.stats.outdated
     console.log('[gdrive] Import result:', result.stats)
   }
 
@@ -276,7 +287,7 @@ export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageF
   // Upload our package
   const uploadResult = await uploadSyncFile(db, ourPkg, file?.id || null)
 
-  return { applied, conflicts, uploaded: ourPkg.tasks.length, fileId: uploadResult.id }
+  return { applied, outdated, uploaded: ourPkg.tasks.length, fileId: uploadResult.id }
 }
 
 export { loadTokens }

@@ -96,14 +96,14 @@ export async function computeSyncPackage(db, targetVC = {}) {
 
 /**
  * Apply an incoming sync package and compute a response for the sender.
- * Returns { stats: { applied, skipped, conflicts }, response: <package for sender> }
+ * Returns { stats: { applied, skipped, outdated }, response: <package for sender> }
  */
 export async function importSyncPackage(db, pkg) {
   const { deviceId: remoteDeviceId, vectorClock: remoteVC, tasks, notes, lists, tags, flows, personas, flowMeta } = pkg
 
   let applied = 0
   let skipped = 0
-  let conflicts = 0
+  let outdated = 0
 
   // Update vector_clock with remote device's counters
   if (remoteVC) {
@@ -119,30 +119,46 @@ export async function importSyncPackage(db, pkg) {
   if (tasks) {
     const [localDevRow] = await db.select("SELECT value FROM meta WHERE key='device_id'")
     const localDeviceId = localDevRow?.value || null
+    let maxImportedLts = 0
 
     for (const task of tasks) {
-      const [existing] = await db.select('SELECT lamport_ts FROM tasks WHERE id = ?', [task.id])
+      const [existing] = await db.select('SELECT lamport_ts, device_id FROM tasks WHERE id = ?', [task.id])
+      maxImportedLts = Math.max(maxImportedLts, task.lamportTs || 0)
 
       if (!existing) {
         // New task — insert (even if from same device — could be restore/recovery)
         try {
           await db.execute(TASK_INSERT_IGN, taskToRow(task))
           applied++
+          console.log(`[sync] INSERT ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" lts=${task.lamportTs} did=${task.deviceId?.slice(0,8)}`)
         } catch { skipped++ }
       } else if (task.deviceId === localDeviceId) {
         // Our own task bounced back — skip update
         skipped++
-      } else if ((task.lamportTs || 0) > existing.lamport_ts) {
+      } else if ((task.lamportTs || 0) > (existing.lamport_ts || 0)) {
         // Incoming is newer — full update
         await fullUpdateTask(db, task)
         applied++
-      } else if ((task.lamportTs || 0) === existing.lamport_ts) {
+        console.log(`[sync] UPDATE ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" remote_lts=${task.lamportTs} > local_lts=${existing.lamport_ts} did=${task.deviceId?.slice(0,8)}`)
+      } else if ((task.lamportTs || 0) === (existing.lamport_ts || 0)) {
         // Same version — already applied, skip
         skipped++
       } else {
-        // Incoming is older — local wins, real conflict
-        conflicts++
+        // Incoming is older — local wins, skip outdated
+        outdated++
+        console.log(`[sync] OUTDATED ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" remote_lts=${task.lamportTs} < local_lts=${existing.lamport_ts}`)
       }
+    }
+
+    // Lamport clock merge rule: ensure local counter ≥ max imported timestamp.
+    // Without this, a device with a low counter could modify an imported task
+    // and assign a lamportTs lower than the task's current value, causing
+    // the modification to be rejected as "older" on the next sync.
+    if (localDeviceId && maxImportedLts > 0) {
+      await db.execute(
+        'INSERT INTO vector_clock (device_id, counter) VALUES (?, ?) ON CONFLICT(device_id) DO UPDATE SET counter = MAX(counter, ?)',
+        [localDeviceId, maxImportedLts, maxImportedLts]
+      )
     }
   }
 
@@ -181,7 +197,7 @@ export async function importSyncPackage(db, pkg) {
   const response = await computeSyncPackage(db, remoteVC || {})
 
   return {
-    stats: { applied, skipped, conflicts },
+    stats: { applied, skipped, outdated },
     response,
   }
 }

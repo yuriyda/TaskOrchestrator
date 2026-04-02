@@ -143,14 +143,14 @@ describe('importSyncPackage — tasks', () => {
     expect(row.title).toBe('Updated')
   })
 
-  it('rejects update when local is newer (conflict)', async () => {
+  it('rejects update when local is newer (outdated)', async () => {
     insertTask(devB.raw, 't1', 'Local', DEV_B, 10)
     insertTask(devA.raw, 't1', 'Remote', DEV_A, 3)
 
     const pkg = await computeSyncPackage(devA.db, {})
     const { stats } = await importSyncPackage(devB.db, pkg)
 
-    expect(stats.conflicts).toBe(1)
+    expect(stats.outdated).toBe(1)
     const [row] = devB.db.select('SELECT title FROM tasks WHERE id = ?', ['t1'])
     expect(row.title).toBe('Local')
   })

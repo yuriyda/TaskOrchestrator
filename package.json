@@ -1,0 +1,26 @@
+{
+  "name": "task-orchestrator",
+  "version": "1.0.0",
+  "description": "Быстрый и легковесный десктопный менеджер задач, который хранит ваши данные там, где им место — на вашем компьютере.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuriyda/TaskOrchestrator.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/yuriyda/TaskOrchestrator/issues"
+  },
+  "homepage": "https://github.com/yuriyda/TaskOrchestrator#readme",
+  "dependencies": {
+    "lucide-react": "^1.7.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  }
+}
