@@ -18,7 +18,7 @@ import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touch
 import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
 import { exportDeltas, clearSyncLog, getVectorClock, buildSyncRequest, computeSyncPackage, importSyncPackage } from './store/sync.js'
-import { isConnected as gdriveIsConnected, connect as gdriveConnect, disconnect as gdriveDisconnect, syncWithDrive, hasSyncFile as gdriveHasSyncFile, deleteSyncFile as gdriveDeleteSyncFile, loadTokens as gdriveLoadTokens } from './store/googleDrive.js'
+import { isConnected as gdriveIsConnected, connect as gdriveConnect, disconnect as gdriveDisconnect, syncWithDrive, hasSyncFile as gdriveHasSyncFile, deleteSyncFile as gdriveDeleteSyncFile, readSyncFile as gdriveReadSyncFile, loadTokens as gdriveLoadTokens } from './store/googleDrive.js'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -639,6 +639,7 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db) return
     await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", [key, value])
+    setMetaSettings(prev => ({ ...prev, [key]: value }))
   }, [])
 
   // ── Clear All ──────────────────────────────────────────────────────────────
@@ -959,7 +960,9 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db) return null
     const result = await syncWithDrive(db, computeSyncPackage, importSyncPackage)
-    await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ['last_sync', new Date().toISOString()])
+    const isoNow = new Date().toISOString()
+    await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ['last_sync', isoNow])
+    setMetaSettings(prev => ({ ...prev, last_sync: isoNow }))
     setTasks(await fetchAll(db))
     await refreshRef()
     return result
@@ -982,6 +985,12 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db) return false
     return gdriveDeleteSyncFile(db)
+  }, [])
+
+  const gdriveReadSyncFileCb = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return null
+    return gdriveReadSyncFile(db)
   }, [])
 
   const importSync = useCallback(async () => {
@@ -1027,7 +1036,7 @@ export function useTauriTaskStore() {
     dbPath, revealDb, openNewDb, createNewDb, moveCurrentDb,
     createBackup, listBackups, restoreBackup,
     exportSync, importSync, exportSyncRequest, handleSyncRequest, importSyncClipboard, getSyncLog, getSyncStats, clearSyncData,
-    gdriveCheckConnection, gdriveConnectAccount, gdriveDisconnectAccount, gdriveSyncNow, gdriveGetConfig, gdriveCheckSyncFile, gdrivePurgeSyncFile,
+    gdriveCheckConnection, gdriveConnectAccount, gdriveDisconnectAccount, gdriveSyncNow, gdriveGetConfig, gdriveCheckSyncFile, gdrivePurgeSyncFile, gdriveReadSyncFile: gdriveReadSyncFileCb,
     openUrl: createSafeOpenUrl(openUrl),
   }
 }

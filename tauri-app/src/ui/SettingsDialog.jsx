@@ -31,7 +31,7 @@ export function SettingRow({ label, description, children }) {
   );
 }
 
-export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, gdriveLog, onGdriveLog }) {
+export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }) {
   const { t, locale, setLocale, theme, setTheme, TC, settings, updateSetting } = useApp();
   const [activeTab, setActiveTab] = useState("general");
   const [clearStep, setClearStep] = useState(0);
@@ -49,6 +49,7 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
   const [gdriveClientId, setGdriveClientId] = useState("");
   const [gdriveClientSecret, setGdriveClientSecret] = useState("");
   const [gdriveSyncing, setGdriveSyncing] = useState(false);
+  const [syncFileData, setSyncFileData] = useState(null); // null = not loaded, { file, data } | "loading" | "empty"
   const gdriveLogRef = useRef(null);
   const [clipboardSyncOpen, setClipboardSyncOpen] = useState(false);
   const [deltaLogOpen, setDeltaLogOpen] = useState(false);
@@ -472,6 +473,43 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
               {gdriveLog.length > 0 && (
                 <div ref={gdriveLogRef} className={`max-h-28 overflow-y-auto rounded-md border px-3 py-2 font-mono text-[11px] leading-relaxed ${TC.surface} ${TC.borderClass} ${TC.textMuted}`}>
                   {gdriveLog.map((line, i) => <div key={i}>{line}</div>)}
+                </div>
+              )}
+
+              {/* View sync file contents */}
+              {onGdriveReadSyncFile && (
+                <div className="mt-3">
+                  <button
+                    onClick={async () => {
+                      if (syncFileData && syncFileData !== "loading" && syncFileData !== "empty") {
+                        setSyncFileData(null);
+                        return;
+                      }
+                      setSyncFileData("loading");
+                      try {
+                        const result = await onGdriveReadSyncFile();
+                        setSyncFileData(result || "empty");
+                      } catch (e) {
+                        addGdriveLog(`${t("sync.gdriveError")}: ${e.message}`);
+                        setSyncFileData(null);
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>
+                    {syncFileData === "loading" ? "…" : syncFileData && syncFileData !== "empty" ? (locale === "ru" ? "Скрыть содержимое" : "Hide contents") : (locale === "ru" ? "Показать файл синхронизации" : "View sync file")}
+                  </button>
+                  {syncFileData === "empty" && (
+                    <div className={`mt-2 text-xs ${TC.textMuted}`}>{locale === "ru" ? "Файл синхронизации не найден на Google Drive." : "No sync file found on Google Drive."}</div>
+                  )}
+                  {syncFileData && syncFileData !== "loading" && syncFileData !== "empty" && (
+                    <div className="mt-2">
+                      <div className={`text-[10px] mb-1 ${TC.textMuted}`}>
+                        {syncFileData.file.name} · {new Date(syncFileData.file.modifiedTime).toLocaleString(locale)}
+                      </div>
+                      <pre className={`max-h-64 overflow-auto rounded-md border px-3 py-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap break-all ${TC.surface} ${TC.borderClass} ${TC.textMuted}`}>
+                        {JSON.stringify(syncFileData.data, null, 2)}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -3,14 +3,16 @@
  * @description Bottom status bar showing task counters, daily progress, and last action info.
  */
 
-import { useState, useEffect, useRef } from "react";
-import { HardDrive } from "lucide-react";
+import { useState, useEffect } from "react";
+import { HardDrive, RefreshCw } from "lucide-react";
 import { useApp } from "./AppContext";
 import { fmtDate } from "../core/date";
 
-export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync }) {
+export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow }) {
   const { t, TC, locale } = useApp();
   const [now, setNow] = useState(new Date());
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState(null); // "ok" | "err"
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -79,6 +81,33 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
       )}
       {canUndo && (
         <span className="opacity-50 text-sky-400">Ctrl+Z — Undo</span>
+      )}
+
+      {/* Sync now button — крайний правый */}
+      {onSyncNow && (
+        <button
+          title={t("sync.syncNow")}
+          disabled={syncing}
+          onClick={async () => {
+            setSyncing(true);
+            setSyncResult(null);
+            try {
+              await onSyncNow();
+              setSyncResult("ok");
+            } catch {
+              setSyncResult("err");
+            } finally {
+              setSyncing(false);
+              setTimeout(() => setSyncResult(null), 3000);
+            }
+          }}
+          className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer
+            ${syncing ? "opacity-40 cursor-not-allowed" : "hover:opacity-100 opacity-60"}
+            ${syncResult === "ok" ? "text-green-400" : syncResult === "err" ? "text-red-400" : ""}`}
+        >
+          <RefreshCw size={10} className={syncing ? "animate-spin" : ""} />
+          <span>{t("sync.syncNow")}</span>
+        </button>
       )}
     </div>
   );

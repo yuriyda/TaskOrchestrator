@@ -371,3 +371,37 @@ describe('BrowserStore — Dependencies', () => {
     expect(blocked.status).toBe('inbox') // unchanged
   })
 })
+
+// ─── metaSettings reactivity tests ───────────────────────────────────────
+
+describe('BrowserStore — metaSettings reactivity', () => {
+  it('saveMeta updates metaSettings in React state', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    expect(store.current.metaSettings).toBeTruthy()
+    expect(store.current.metaSettings.last_sync).toBeUndefined()
+
+    const ts = '2026-04-02T10:00:00.000Z'
+    await act(async () => { await store.current.saveMeta('last_sync', ts) })
+
+    await waitFor(() => {
+      expect(store.current.metaSettings.last_sync).toBe(ts)
+    })
+  })
+
+  it('saveMeta updates are cumulative (do not overwrite other keys)', async () => {
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.saveMeta('to_locale', 'ru')
+      await store.current.saveMeta('last_sync', '2026-04-02T12:00:00Z')
+    })
+
+    await waitFor(() => {
+      expect(store.current.metaSettings.to_locale).toBe('ru')
+      expect(store.current.metaSettings.last_sync).toBe('2026-04-02T12:00:00Z')
+    })
+  })
+})

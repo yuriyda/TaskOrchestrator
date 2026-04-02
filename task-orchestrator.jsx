@@ -115,6 +115,24 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const store = storeHook();
   const { tasks } = store;
 
+  // ── Google Drive sync with logging ───────────────────────────────────────
+  const addGdriveLog = (msg) => {
+    const ts = new Date().toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setGdriveLog(prev => [...prev, `[${ts}] ${msg}`]);
+  };
+  const handleSyncNow = store.gdriveSyncNow ? async () => {
+    addGdriveLog(t("sync.gdriveSyncing"));
+    const result = await store.gdriveSyncNow();
+    if (result) {
+      addGdriveLog(
+        t("sync.gdriveSynced")
+          .replace("{applied}", result.applied)
+          .replace("{outdated}", result.outdated)
+          .replace("{uploaded}", result.uploaded)
+      );
+    }
+  } : undefined;
+
   // Wire the saveMeta ref so updateSetting / locale / theme effects can use it
   saveMetaRef.current = store.saveMeta ?? null;
 
@@ -1020,7 +1038,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
               <BulkBar count={selected.size} onDone={bulkDone} onCycle={bulkCycle} onToday={bulkToday} onShift={bulkShift} onDelete={bulkDelete} onClear={() => setSelected(new Set())} />
             </div>
           )}
-          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} />
+          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={handleSyncNow} />
           </div>
 
           {showRightPanel && (
@@ -1151,6 +1169,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
             onGdriveGetConfig={store.gdriveGetConfig}
             onGdriveCheckSyncFile={store.gdriveCheckSyncFile}
             onGdrivePurgeSyncFile={store.gdrivePurgeSyncFile}
+            onGdriveReadSyncFile={store.gdriveReadSyncFile}
             gdriveLog={gdriveLog}
             onGdriveLog={setGdriveLog}
           />

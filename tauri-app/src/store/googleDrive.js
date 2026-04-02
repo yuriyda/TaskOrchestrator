@@ -218,6 +218,17 @@ export async function hasSyncFile(db) {
 }
 
 /**
+ * Download and return the full contents of the sync file from Google Drive.
+ * Returns { file: { id, name, modifiedTime }, data: <parsed JSON> } or null if no file.
+ */
+export async function readSyncFile(db) {
+  const file = await findSyncFile(db)
+  if (!file) return null
+  const data = await downloadSyncFile(db, file.id)
+  return { file, data }
+}
+
+/**
  * Delete the sync file from Google Drive. Destructive — all sync data
  * on Drive is lost. Other devices will start fresh on next sync.
  */

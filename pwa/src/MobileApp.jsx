@@ -630,6 +630,7 @@ export default function MobileApp({ store }) {
   const [gdriveClientSecret, setGdriveClientSecret] = useState('')
   const [lastSync, setLastSync] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
+  const [clearConfirmText, setClearConfirmText] = useState('')
   const [undoAction, setUndoAction] = useState(null) // { label, undo: () => void }
   const undoTimerRef = useRef(null)
 
@@ -740,6 +741,39 @@ export default function MobileApp({ store }) {
                   {l === 'en' ? 'English' : 'Русский'}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* Clear local storage */}
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-3">{locale === 'ru' ? 'Опасная зона' : 'Danger zone'}</div>
+            <p className="text-xs text-gray-500 mb-3">
+              {locale === 'ru'
+                ? 'Удалит все задачи и справочники из локального хранилища. Настройки синхронизации сохранятся.'
+                : 'Deletes all tasks and lookups from local storage. Sync settings are preserved.'}
+            </p>
+            <div className="flex items-center gap-2 mb-2">
+              <input
+                type="text"
+                value={clearConfirmText}
+                onChange={e => setClearConfirmText(e.target.value)}
+                placeholder={locale === 'ru' ? 'Введите DELETE' : 'Type DELETE'}
+                className="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-500"
+              />
+              <button
+                disabled={clearConfirmText !== 'DELETE'}
+                onClick={async () => {
+                  await store.clearAll()
+                  setClearConfirmText('')
+                  setShowSettings(false)
+                }}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  clearConfirmText === 'DELETE'
+                    ? 'bg-red-600 text-white active:bg-red-700'
+                    : 'bg-slate-800 text-gray-600 cursor-not-allowed'
+                }`}>
+                {locale === 'ru' ? 'Очистить' : 'Clear all'}
+              </button>
             </div>
           </div>
 

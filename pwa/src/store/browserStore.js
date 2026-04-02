@@ -459,6 +459,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const db = dbRef.current
     if (!db) return
     await db.put('meta', { key, value })
+    setMetaSettings(prev => ({ ...prev, [key]: value }))
   }, [])
 
   const [metaSettings, setMetaSettings] = useState(null)
@@ -594,7 +595,9 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const db = dbRef.current
     if (!db) return null
     const result = await gdriveSyncWithDrive(db, computeSyncPackageIdb, importSyncPackageIdb)
-    await db.put('meta', { key: 'last_sync', value: new Date().toISOString() })
+    const isoNow = new Date().toISOString()
+    await db.put('meta', { key: 'last_sync', value: isoNow })
+    setMetaSettings(prev => ({ ...prev, last_sync: isoNow }))
     await refresh()
     return result
   }, [refresh])
