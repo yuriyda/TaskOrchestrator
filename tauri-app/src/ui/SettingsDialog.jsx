@@ -327,7 +327,7 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
           </div>
           <div>
             <div className={`font-semibold ${TC.text}`}>Task Orchestrator</div>
-            <div className={`text-xs ${TC.textMuted}`}>{t("settings.about.version")} 1.1.0</div>
+            <div className={`text-xs ${TC.textMuted}`}>{t("settings.about.version")} 2.0.0</div>
           </div>
         </div>
         <p className={`text-sm leading-relaxed ${TC.textSec}`}>{t("settings.about.description")}</p>
