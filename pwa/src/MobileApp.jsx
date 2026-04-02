@@ -780,7 +780,7 @@ export default function MobileApp({ store }) {
           {/* About */}
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">{locale === 'ru' ? 'О приложении' : 'About'}</div>
-            <div className="text-xs text-gray-500">Task Orchestrator PWA v2.0.0</div>
+            <div className="text-xs text-gray-500">Task Orchestrator PWA v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?'}</div>
           </div>
         </div>
       </div>

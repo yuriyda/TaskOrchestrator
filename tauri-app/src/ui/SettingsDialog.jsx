@@ -327,7 +327,7 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
           </div>
           <div>
             <div className={`font-semibold ${TC.text}`}>Task Orchestrator</div>
-            <div className={`text-xs ${TC.textMuted}`}>{t("settings.about.version")} 2.0.0</div>
+            <div className={`text-xs ${TC.textMuted}`}>{t("settings.about.version")} {typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?'}</div>
           </div>
         </div>
         <p className={`text-sm leading-relaxed ${TC.textSec}`}>{t("settings.about.description")}</p>
@@ -839,7 +839,7 @@ export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll,
           <button
             onClick={async () => {
               const ok = await onCreateBackup?.();
-              if (ok) { setBackups(null); /* reload list */ }
+              if (ok && onListBackups) { setBackups(await onListBackups()); }
             }}
             className={`mb-3 px-3 py-1.5 rounded text-xs font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>
             {t("backup.create")}

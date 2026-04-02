@@ -2,12 +2,15 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import { readFileSync } from 'fs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const { version: APP_VERSION } = JSON.parse(readFileSync(path.resolve(__dirname, '../shared/version.json'), 'utf-8'))
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
 
   resolve: {
     alias: {

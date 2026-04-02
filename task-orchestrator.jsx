@@ -386,6 +386,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   // ── Keyboard handler ──────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = async (e) => {
+      if (showSettings) return;
       const tag = e.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
@@ -534,7 +535,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [filtered, cursor, selected, lastIdx, store.canUndo, tasks, searchQuery, locale, editTaskId, contextMenu]);
+  }, [filtered, cursor, selected, lastIdx, store.canUndo, tasks, searchQuery, locale, editTaskId, contextMenu, showSettings]);
 
   // ── Suppress browser context menu everywhere ──────────────────────────────
   useEffect(() => {

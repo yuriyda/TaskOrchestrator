@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { readFileSync } from 'fs'
 
 // Remap .js imports to .ts files when the .js doesn't exist (TypeScript project convention)
 function tsExtensionPlugin() {
@@ -16,8 +17,11 @@ function tsExtensionPlugin() {
   }
 }
 
+const { version: APP_VERSION } = JSON.parse(readFileSync(path.resolve(__dirname, '../shared/version.json'), 'utf-8'))
+
 export default defineConfig({
   plugins: [tsExtensionPlugin(), react()],
+  define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   resolve: {
     alias: [
       // Shared modules (monorepo root)
