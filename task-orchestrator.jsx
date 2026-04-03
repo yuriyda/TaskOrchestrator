@@ -58,7 +58,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   });
 
   // ── Settings state ────────────────────────────────────────────────────────
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false); // false | "general" | "about" | etc.
   const [gdriveLog, setGdriveLog] = useState([]);
   const [settings, setSettingsState] = useState(() => {
     try {
@@ -808,16 +808,18 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
         {/* ── Header ── */}
         <header className={`flex-shrink-0 border-b px-6 py-3 flex items-center gap-4 ${TC.header}`}>
           <div className="flex items-center gap-3 flex-shrink-0">
-            <svg className="w-8 h-8 flex-shrink-0" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-              <rect width="512" height="512" rx="96" fill="#0f172a"/>
-              <circle cx="256" cy="256" r="180" fill="none" stroke="#3b82f6" strokeWidth="24" opacity="0.3"/>
-              <circle cx="256" cy="256" r="140" fill="none" stroke="#3b82f6" strokeWidth="20"/>
-              <polyline points="180,260 232,312 340,204" fill="none" stroke="#60a5fa" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round"/>
-              <circle cx="256" cy="76" r="12" fill="#3b82f6" opacity="0.7"/>
-              <circle cx="256" cy="436" r="12" fill="#3b82f6" opacity="0.7"/>
-              <circle cx="76" cy="256" r="12" fill="#3b82f6" opacity="0.7"/>
-              <circle cx="436" cy="256" r="12" fill="#3b82f6" opacity="0.7"/>
-            </svg>
+            <button onClick={() => setShowSettings("about")} title={t("settings.tab.about")} className="cursor-pointer hover:opacity-80 transition-opacity">
+              <svg className="w-8 h-8 flex-shrink-0" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+                <rect width="512" height="512" rx="96" fill="#0f172a"/>
+                <circle cx="256" cy="256" r="180" fill="none" stroke="#3b82f6" strokeWidth="24" opacity="0.3"/>
+                <circle cx="256" cy="256" r="140" fill="none" stroke="#3b82f6" strokeWidth="20"/>
+                <polyline points="180,260 232,312 340,204" fill="none" stroke="#60a5fa" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round"/>
+                <circle cx="256" cy="76" r="12" fill="#3b82f6" opacity="0.7"/>
+                <circle cx="256" cy="436" r="12" fill="#3b82f6" opacity="0.7"/>
+                <circle cx="76" cy="256" r="12" fill="#3b82f6" opacity="0.7"/>
+                <circle cx="436" cy="256" r="12" fill="#3b82f6" opacity="0.7"/>
+              </svg>
+            </button>
             <h1 className={`text-lg font-semibold tracking-tight ${TC.text}`}>Task Orchestrator</h1>
             <button
               onClick={() => setShowSidebar(v => !v)}
@@ -1136,6 +1138,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
 
         {showSettings && (
           <SettingsDialog
+            initialTab={typeof showSettings === "string" ? showSettings : undefined}
             onClose={() => setShowSettings(false)}
             onTriggerRtmImport={() => rtmFileRef.current?.click()}
             tasks={tasks}

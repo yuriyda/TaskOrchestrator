@@ -31,9 +31,9 @@ export function SettingRow({ label, description, children }) {
   );
 }
 
-export function SettingsDialog({ onClose, onTriggerRtmImport, tasks, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }) {
+export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }) {
   const { t, locale, setLocale, theme, setTheme, TC, settings, updateSetting } = useApp();
-  const [activeTab, setActiveTab] = useState("general");
+  const [activeTab, setActiveTab] = useState(initialTab || "general");
   const [clearStep, setClearStep] = useState(0);
   const [clearConfirmText, setClearConfirmText] = useState("");
   const [csvFields, setCsvFields] = useState(() => new Set(CSV_FIELDS.map(f => f.key)));
