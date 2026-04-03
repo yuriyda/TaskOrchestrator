@@ -4,7 +4,7 @@
  * Domain logic, constants, parsers, and store are imported from tauri-app/src/ modules.
  */
 import { useState, useReducer, useRef, useEffect, useMemo, createContext, useContext } from "react";
-import { Search, Plus, Check, CheckCircle2, X, Inbox, List, Zap, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
+import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
 import { ulid } from "./tauri-app/src/ulid.js";
 import { LOCALES, LOCALE_NAMES } from "./tauri-app/src/i18n/locales.js";
 import { STATUSES, STATUS_ICONS, PRIORITY_COLORS, STATUS_ORDER, SORT_FIELDS, FONTS, DATE_FORMATS, CSV_FIELDS } from "./tauri-app/src/core/constants.js";
@@ -808,9 +808,16 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
         {/* ── Header ── */}
         <header className={`flex-shrink-0 border-b px-6 py-3 flex items-center gap-4 ${TC.header}`}>
           <div className="flex items-center gap-3 flex-shrink-0">
-            <div className="w-8 h-8 bg-gradient-to-br from-sky-500 to-violet-500 rounded-lg flex items-center justify-center">
-              <Zap size={16} className="text-white" />
-            </div>
+            <svg className="w-8 h-8 flex-shrink-0" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+              <rect width="512" height="512" rx="96" fill="#0f172a"/>
+              <circle cx="256" cy="256" r="180" fill="none" stroke="#3b82f6" strokeWidth="24" opacity="0.3"/>
+              <circle cx="256" cy="256" r="140" fill="none" stroke="#3b82f6" strokeWidth="20"/>
+              <polyline points="180,260 232,312 340,204" fill="none" stroke="#60a5fa" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="256" cy="76" r="12" fill="#3b82f6" opacity="0.7"/>
+              <circle cx="256" cy="436" r="12" fill="#3b82f6" opacity="0.7"/>
+              <circle cx="76" cy="256" r="12" fill="#3b82f6" opacity="0.7"/>
+              <circle cx="436" cy="256" r="12" fill="#3b82f6" opacity="0.7"/>
+            </svg>
             <h1 className={`text-lg font-semibold tracking-tight ${TC.text}`}>Task Orchestrator</h1>
             <button
               onClick={() => setShowSidebar(v => !v)}
