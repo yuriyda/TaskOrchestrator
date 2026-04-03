@@ -18,7 +18,7 @@ export function DatePicker({ value, onChange, onClose, anchorRef }) {
 
   const year  = viewDate.getFullYear();
   const month = viewDate.getMonth();
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = localIsoDate(new Date());
   const formatDay = (d) => `${year}-${String(month + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 
   const fdow = settings?.firstDayOfWeek ?? 1;

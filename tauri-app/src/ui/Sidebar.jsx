@@ -11,6 +11,7 @@ import {
   Settings, Sun, Moon, Play,
 } from "lucide-react";
 import { STATUSES, STATUS_ICONS } from "../core/constants";
+import { localIsoDate } from "../core/date";
 import { themeOptions } from "./icons";
 
 export function Sidebar({ tasks, filters, setFilter, clearFilter, onOpenSettings }) {
@@ -37,13 +38,13 @@ export function Sidebar({ tasks, filters, setFilter, clearFilter, onOpenSettings
   const [open, setOpen] = useState({ agenda: true, status: true, lists: true, tags: true, personas: true, flows: true, hotkeys: false });
 
   const agendaCounts = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = localIsoDate(new Date());
     const d1 = new Date(); d1.setDate(d1.getDate() + 1);
-    const tom = d1.toISOString().slice(0, 10);
+    const tom = localIsoDate(d1);
     const d7 = new Date(); d7.setDate(d7.getDate() + 7);
-    const max7 = d7.toISOString().slice(0, 10);
+    const max7 = localIsoDate(d7);
     const d30 = new Date(); d30.setDate(d30.getDate() + 30);
-    const max30 = d30.toISOString().slice(0, 10);
+    const max30 = localIsoDate(d30);
     const isPastDue = tt => tt.due && tt.due < todayStr && tt.status !== "done" && tt.status !== "cancelled";
     return {
       overdue:  tasks.filter(isPastDue).length,

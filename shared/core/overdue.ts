@@ -3,6 +3,7 @@
  * Returns "late" when due < today and task is not done/cancelled, null otherwise.
  */
 import type { Task } from '../types'
+import { localIsoDate } from './date'
 
 type OverdueKey = 'today' | 'overdue' | 'late'
 
@@ -12,7 +13,7 @@ export const OVERDUE_BG: Record<OverdueKey, string>       = { today: "rgba(234,1
 
 export function overdueLevel(task: Pick<Task, 'due' | 'status'>): string | null {
   if (!task.due || task.status === "done" || task.status === "cancelled") return null;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localIsoDate(new Date());
   if (task.due < today) return "late";
   return null;
 }

@@ -20,6 +20,7 @@ import {
 import {
   handleTaskDone, isTaskBlocked, computeNextCycleStatus,
 } from '@shared/core/taskActions.js'
+import { localIsoDate } from '@shared/core/date.js'
 
 const DB_NAME = 'task-orchestrator'
 const DB_VERSION = 1
@@ -360,7 +361,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       if (!task || !task.due || !/^\d{4}-\d{2}-\d{2}$/.test(task.due)) continue
       const d = new Date(task.due + 'T12:00:00')
       d.setDate(d.getDate() + 1)
-      task.due = d.toISOString().slice(0, 10)
+      task.due = localIsoDate(d)
       task.postponed = (task.postponed || 0) + 1
       task.updatedAt = now
       task.deviceId = did
@@ -376,7 +377,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
     const now = new Date().toISOString()
-    const today = now.slice(0, 10)
+    const today = localIsoDate(new Date())
     for (const id of ids) {
       const task = await db.get('tasks', id)
       if (!task) continue
@@ -385,7 +386,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         : new Date(today + 'T12:00:00')
       if (months) base.setMonth(base.getMonth() + months)
       if (days) base.setDate(base.getDate() + days)
-      task.due = base.toISOString().slice(0, 10)
+      task.due = localIsoDate(base)
       task.postponed = (task.postponed || 0) + 1
       task.updatedAt = now
       task.deviceId = did

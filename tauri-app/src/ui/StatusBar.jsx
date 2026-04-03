@@ -6,7 +6,7 @@
 import { useState, useEffect } from "react";
 import { HardDrive, RefreshCw } from "lucide-react";
 import { useApp } from "./AppContext";
-import { fmtDate } from "../core/date";
+import { fmtDate, localIsoDate } from "../core/date";
 
 export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow }) {
   const { t, TC, locale } = useApp();
@@ -19,7 +19,7 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
     return () => clearInterval(timer);
   }, []);
 
-  const todayISO = now.toISOString().slice(0, 10);
+  const todayISO = localIsoDate(now);
   const dateStr = fmtDate(todayISO, dateFormat, locale);
 
   const totalCount = tasks.length;

@@ -251,14 +251,14 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
     if (filters.status) r = r.filter(tk => tk.status === filters.status);
     // Date range filter
     if (filters.dateRange) {
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = localIsoDate(new Date());
       const isPastDue = tt => tt.due && tt.due < todayStr && tt.status !== "done" && tt.status !== "cancelled";
       const v = filters.dateRange;
       if (v === "overdue") r = r.filter(isPastDue);
       else if (v === "today") r = r.filter(tt => tt.due === todayStr || isPastDue(tt));
-      else if (v === "tomorrow") { const d = new Date(); d.setDate(d.getDate() + 1); const tom = d.toISOString().slice(0, 10); r = r.filter(tt => tt.due === tom || isPastDue(tt)); }
-      else if (v === "week") { const d = new Date(); d.setDate(d.getDate() + 7); const max = d.toISOString().slice(0, 10); r = r.filter(tt => (tt.due && tt.due >= todayStr && tt.due <= max) || isPastDue(tt)); }
-      else if (v === "month") { const d = new Date(); d.setDate(d.getDate() + 30); const max = d.toISOString().slice(0, 10); r = r.filter(tt => (tt.due && tt.due >= todayStr && tt.due <= max) || isPastDue(tt)); }
+      else if (v === "tomorrow") { const d = new Date(); d.setDate(d.getDate() + 1); const tom = localIsoDate(d); r = r.filter(tt => tt.due === tom || isPastDue(tt)); }
+      else if (v === "week") { const d = new Date(); d.setDate(d.getDate() + 7); const max = localIsoDate(d); r = r.filter(tt => (tt.due && tt.due >= todayStr && tt.due <= max) || isPastDue(tt)); }
+      else if (v === "month") { const d = new Date(); d.setDate(d.getDate() + 30); const max = localIsoDate(d); r = r.filter(tt => (tt.due && tt.due >= todayStr && tt.due <= max) || isPastDue(tt)); }
     }
     // List filter
     if (filters.list) r = r.filter(tk => tk.list === filters.list);
@@ -689,7 +689,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
 
   const handleAdd = (taskData) => {
     if (settings.newTaskActiveToday && (!taskData.status || taskData.status === "inbox")) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localIsoDate(new Date());
       store.addTask({ ...taskData, status: "active", due: taskData.due || today }, tasks);
     } else {
       store.addTask(taskData, tasks);
