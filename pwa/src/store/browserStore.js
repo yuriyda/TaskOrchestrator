@@ -254,6 +254,21 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     await refresh()
   }, [refresh])
 
+  const saveNotes = useCallback(async (taskId, noteTexts) => {
+    const db = dbRef.current
+    if (!db) return
+    const seriesId = (await db.get('tasks', taskId))?.rtmSeriesId || taskId
+    // Remove old notes for this task
+    const existing = await db.getAllFromIndex('notes', 'taskSeriesId', seriesId)
+    for (const n of existing) await db.delete('notes', n.id)
+    // Add new notes
+    for (const content of noteTexts) {
+      if (!content.trim()) continue
+      await db.put('notes', { id: ulid(), taskSeriesId: seriesId, content: content.trim() })
+    }
+    await refresh()
+  }, [refresh])
+
   const bulkStatus = useCallback(async (ids, status) => {
     const db = dbRef.current
     if (!db) return { activated: [], skippedBlocked: 0 }
@@ -618,7 +633,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
   return {
     ready,
     tasks, lists, tags, flows, flowMeta, personas,
-    addTask, updateTask, bulkStatus, bulkCycle, bulkDelete, bulkPriority,
+    addTask, updateTask, saveNotes, bulkStatus, bulkCycle, bulkDelete, bulkPriority,
     bulkDueShift, bulkSnooze, bulkAssignToday,
     updateFlow, deleteFlow,
     clearAll,

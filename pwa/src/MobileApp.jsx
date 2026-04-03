@@ -18,6 +18,7 @@ import {
   Inbox, Zap, CheckCircle2, Ban, Circle, Repeat,
   Trash2, Calendar, Flag, List, Hash, ArrowUp, ArrowDown,
   Filter, Settings, ChevronDown, RefreshCw, Save, Edit3,
+  AlertTriangle, StickyNote,
 } from 'lucide-react'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -209,6 +210,35 @@ function FilterBar({ filter, onFilter, counts, t }) {
   )
 }
 
+function AgendaBar({ dateRange, onDateRange, agendaCounts, t }) {
+  const items = [
+    { key: 'today',    label: t('agenda.today'),    count: agendaCounts.today,    icon: Calendar },
+    { key: 'tomorrow', label: t('agenda.tomorrow'), count: agendaCounts.tomorrow, icon: Calendar },
+    { key: 'week',     label: t('agenda.week'),     count: agendaCounts.week,     icon: Calendar },
+    { key: 'overdue',  label: t('agenda.overdue'),  count: agendaCounts.overdue,  icon: AlertTriangle },
+  ]
+  return (
+    <div className="flex gap-2 px-4 pb-2 overflow-x-auto scrollbar-none">
+      {items.map(f => {
+        const Icon = f.icon
+        const isOverdue = f.key === 'overdue'
+        return (
+          <button key={f.key} onClick={() => onDateRange(dateRange === f.key ? null : f.key)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-all ${
+              dateRange === f.key
+                ? (isOverdue ? 'bg-red-600 text-white shadow-md shadow-red-600/20' : 'bg-sky-600 text-white shadow-md shadow-sky-600/20')
+                : (isOverdue && f.count > 0 ? 'bg-red-500/15 text-red-400 active:bg-red-500/25' : 'bg-slate-800 text-gray-400 active:bg-slate-700')
+            }`}>
+            <Icon size={12} />
+            {f.label}
+            <span className="opacity-60">{f.count}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Task Item ────────────────────────────────────────────────────────────────
 
 function TaskItem({ task, onTap, onCycle, onComplete, onDelete }) {
@@ -323,6 +353,7 @@ function TaskDetail({ task, store, onBack, t }) {
   const [recurrence, setRecurrence] = useState(task.recurrence || '')
   const [estimate, setEstimate] = useState(task.estimate || '')
   const [url, setUrl] = useState(task.url || '')
+  const [notesStr, setNotesStr] = useState((task.notes || []).map(n => n.content).join('\n---\n'))
 
   const handleSave = async () => {
     const tags = tagsStr.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean)
@@ -330,6 +361,10 @@ function TaskDetail({ task, store, onBack, t }) {
       title, due: due || null, list: list || null,
       tags, recurrence: recurrence || null, estimate: estimate || null, url: url || null,
     })
+    if (store.saveNotes) {
+      const noteTexts = notesStr.split('\n---\n').map(s => s.trim()).filter(Boolean)
+      await store.saveNotes(task.id, noteTexts)
+    }
     setEditing(false)
   }
 
@@ -409,6 +444,15 @@ function TaskDetail({ task, store, onBack, t }) {
               <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://..." type="url"
                 className={inputCls} />
             </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-gray-500 mb-1 block">
+                <StickyNote size={10} className="inline mr-1" />{t('detail.notes') || 'Notes'}
+              </label>
+              <textarea value={notesStr} onChange={e => setNotesStr(e.target.value)}
+                placeholder={t('mobile.addNotes') || 'Add notes...'}
+                rows={4}
+                className={`${inputCls} resize-y min-h-[80px]`} />
+            </div>
             <button onClick={handleSave}
               className="w-full py-3 rounded-xl bg-sky-600 text-white text-sm font-semibold active:bg-sky-500">
               {t('mobile.save')}
@@ -421,7 +465,6 @@ function TaskDetail({ task, store, onBack, t }) {
               {[
                 { label: 'Status', value: t(`status.${task.status}`) || task.status, icon: STATUS_ICONS[task.status], color: STATUS_COLORS[task.status] },
                 { label: 'Priority', value: `P${task.priority}`, icon: Flag },
-                task.due && { label: 'Due', value: task.due, icon: Calendar },
                 task.recurrence && { label: t('detail.recurrence') || 'Recurrence', value: task.recurrence, icon: Repeat },
                 task.list && { label: 'List', value: task.list, icon: List },
                 task.estimate && { label: 'Estimate', value: task.estimate },
@@ -434,6 +477,23 @@ function TaskDetail({ task, store, onBack, t }) {
                   </div>
                 </div>
               ))}
+            </div>
+
+            {/* Due date — inline editable */}
+            <div className="bg-slate-800/80 rounded-xl p-3">
+              <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{t('detail.due') || 'Due date'}</div>
+              <div className="flex items-center gap-2">
+                <Calendar size={14} className={task.due && task.due < today ? 'text-red-400' : 'text-sky-400'} />
+                <input type="date" value={task.due || ''}
+                  onChange={e => store.updateTask(task.id, { due: e.target.value || null })}
+                  className="flex-1 bg-transparent text-sm font-medium text-gray-200 outline-none [color-scheme:dark]" />
+                {task.due && (
+                  <button onClick={() => store.updateTask(task.id, { due: null })}
+                    className="p-1 text-gray-500 active:text-red-400">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* URL */}
@@ -457,14 +517,18 @@ function TaskDetail({ task, store, onBack, t }) {
             )}
 
             {/* Notes */}
-            {task.notes?.length > 0 && (
-              <div>
-                <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">Notes</div>
-                {task.notes.map(n => (
-                  <div key={n.id} className="bg-slate-800/80 rounded-xl p-3 text-sm text-gray-300 mb-2">{n.content}</div>
-                ))}
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">
+                <StickyNote size={10} className="inline mr-1" />{t('detail.notes') || 'Notes'}
               </div>
-            )}
+              {task.notes?.length > 0 ? (
+                task.notes.map(n => (
+                  <div key={n.id} className="bg-slate-800/80 rounded-xl p-3 text-sm text-gray-300 mb-2 whitespace-pre-wrap">{n.content}</div>
+                ))
+              ) : (
+                <div className="text-xs text-gray-600 italic">{t('mobile.noNotes') || 'No notes. Tap ✏ to edit.'}</div>
+              )}
+            </div>
 
             {/* Status buttons */}
             <div>
@@ -488,14 +552,18 @@ function TaskDetail({ task, store, onBack, t }) {
             <div>
               <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-2">{t('detail.priority')}</div>
               <div className="flex gap-2">
-                {[1, 2, 3, 4].map(p => (
+                {[1, 2, 3, 4].map(p => {
+                  const colors = { 1: 'bg-red-500', 2: 'bg-orange-400', 3: 'bg-blue-400', 4: 'bg-gray-500' }
+                  const inactiveColors = { 1: 'text-red-400 bg-red-500/15', 2: 'text-orange-400 bg-orange-400/15', 3: 'text-blue-400 bg-blue-400/15', 4: 'text-gray-400 bg-slate-800' }
+                  return (
                   <button key={p} onClick={() => store.bulkPriority(new Set([task.id]), p)}
                     className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
-                      task.priority === p ? 'bg-sky-600 text-white' : 'bg-slate-800 text-gray-400 active:bg-slate-700'
+                      task.priority === p ? `${colors[p]} text-white` : `${inactiveColors[p]} active:opacity-80`
                     }`}>
                     P{p}
                   </button>
-                ))}
+                  )
+                })}
               </div>
             </div>
 
@@ -559,14 +627,18 @@ function AddTaskSheet({ open, onClose, onAdd, lists, t }) {
 
         {/* Priority chips */}
         <div className="flex gap-2 mb-3">
-          {[1, 2, 3, 4].map(p => (
+          {[1, 2, 3, 4].map(p => {
+            const colors = { 1: 'bg-red-500', 2: 'bg-orange-400', 3: 'bg-blue-400', 4: 'bg-gray-500' }
+            const inactiveColors = { 1: 'text-red-400 bg-red-500/15', 2: 'text-orange-400 bg-orange-400/15', 3: 'text-blue-400 bg-blue-400/15', 4: 'text-gray-400 bg-slate-700' }
+            return (
             <button key={p} onClick={() => setPriority(p)}
               className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${
-                priority === p ? 'bg-sky-600 text-white' : 'bg-slate-700 text-gray-400'
+                priority === p ? `${colors[p]} text-white` : `${inactiveColors[p]}`
               }`}>
               P{p}
             </button>
-          ))}
+            )
+          })}
         </div>
 
         {/* Expand more fields */}
@@ -643,7 +715,9 @@ export default function MobileApp({ store }) {
   const [syncLog, setSyncLog] = useState([])
 
   const [filter, setFilter] = useState(null)
+  const [dateRange, setDateRange] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [searchVisible, setSearchVisible] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [showAdd, setShowAdd] = useState(false)
   const [detailId, setDetailId] = useState(null)
@@ -683,17 +757,50 @@ export default function MobileApp({ store }) {
   const { tasks } = store
   const today = localIsoDate(new Date())
 
-  // Filtered + searched tasks
+  const isPastDue = useCallback((tt) => tt.due && tt.due < today && tt.status !== 'done' && tt.status !== 'cancelled', [today])
+
+  // Agenda counts (same logic as desktop Sidebar)
+  const agendaCounts = useMemo(() => {
+    const d1 = new Date(); d1.setDate(d1.getDate() + 1)
+    const tom = localIsoDate(d1)
+    const d7 = new Date(); d7.setDate(d7.getDate() + 7)
+    const max7 = localIsoDate(d7)
+    const d30 = new Date(); d30.setDate(d30.getDate() + 30)
+    const max30 = localIsoDate(d30)
+    return {
+      overdue:  tasks.filter(isPastDue).length,
+      today:    tasks.filter(tt => tt.due === today || isPastDue(tt)).length,
+      tomorrow: tasks.filter(tt => tt.due === tom || isPastDue(tt)).length,
+      week:     tasks.filter(tt => (tt.due && tt.due >= today && tt.due <= max7) || isPastDue(tt)).length,
+      month:    tasks.filter(tt => (tt.due && tt.due >= today && tt.due <= max30) || isPastDue(tt)).length,
+    }
+  }, [tasks, today, isPastDue])
+
+  // Filtered + searched tasks (desktop-matching logic)
   const filtered = useMemo(() => {
     let r = tasks
     if (filter) r = r.filter(t => t.status === filter)
+    if (dateRange) {
+      if (dateRange === 'overdue') r = r.filter(isPastDue)
+      else if (dateRange === 'today') r = r.filter(tt => tt.due === today || isPastDue(tt))
+      else if (dateRange === 'tomorrow') {
+        const d = new Date(); d.setDate(d.getDate() + 1); const tom = localIsoDate(d)
+        r = r.filter(tt => tt.due === tom || isPastDue(tt))
+      } else if (dateRange === 'week') {
+        const d = new Date(); d.setDate(d.getDate() + 7); const max = localIsoDate(d)
+        r = r.filter(tt => (tt.due && tt.due >= today && tt.due <= max) || isPastDue(tt))
+      } else if (dateRange === 'month') {
+        const d = new Date(); d.setDate(d.getDate() + 30); const max = localIsoDate(d)
+        r = r.filter(tt => (tt.due && tt.due >= today && tt.due <= max) || isPastDue(tt))
+      }
+    }
     if (calendarDate) r = r.filter(t => t.due === calendarDate)
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       r = r.filter(t => t.title.toLowerCase().includes(q))
     }
     return r
-  }, [tasks, filter, calendarDate, searchQuery])
+  }, [tasks, filter, dateRange, calendarDate, searchQuery, today, isPastDue])
 
   // Counts
   const counts = useMemo(() => ({
@@ -703,14 +810,14 @@ export default function MobileApp({ store }) {
     done: tasks.filter(t => t.status === 'done').length,
   }), [tasks])
 
-  // Overdue tasks
+  // Overdue tasks float to top
   const overdueTasks = useMemo(() =>
-    filtered.filter(t => t.due && t.due < today && t.status !== 'done' && t.status !== 'cancelled'),
-    [filtered, today]
+    filtered.filter(t => isPastDue(t)),
+    [filtered, isPastDue]
   )
   const regularTasks = useMemo(() =>
-    filtered.filter(t => !(t.due && t.due < today && t.status !== 'done' && t.status !== 'cancelled')),
-    [filtered, today]
+    filtered.filter(t => !isPastDue(t)),
+    [filtered, isPastDue]
   )
 
   const handleCycle = useCallback((id) => {
@@ -827,7 +934,18 @@ export default function MobileApp({ store }) {
         <button onClick={() => setDrawerOpen(true)} className="p-1 -ml-1 text-gray-400 active:text-white">
           <Menu size={22} />
         </button>
-        <h1 className="text-base font-bold flex-1">Task Orchestrator</h1>
+        <div className="flex-1 min-w-0">
+          <h1 className="text-base font-bold hidden min-[480px]:block truncate">Task Orchestrator</h1>
+          <svg className="w-7 h-7 min-[480px]:hidden" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+            <rect width="512" height="512" rx="96" fill="#0f172a"/>
+            <circle cx="256" cy="256" r="180" fill="none" stroke="#3b82f6" strokeWidth="24" opacity="0.3"/>
+            <circle cx="256" cy="256" r="140" fill="none" stroke="#3b82f6" strokeWidth="20"/>
+            <polyline points="180,260 232,312 340,204" fill="none" stroke="#60a5fa" strokeWidth="32" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </div>
+        <button onClick={() => setSearchVisible(v => !v)} className={`p-1.5 rounded-lg ${searchVisible || searchQuery ? 'text-sky-400' : 'text-gray-400'} active:text-white`}>
+          <Search size={18} />
+        </button>
         {syncMsg && (
           <span className="text-[10px] text-emerald-400 mr-1">{syncMsg}</span>
         )}
@@ -857,11 +975,16 @@ export default function MobileApp({ store }) {
         </div>
       </header>
 
-      {/* Search */}
-      <SearchBar query={searchQuery} onChange={setSearchQuery} t={t} />
+      {/* Search (hidden by default, toggled via header icon) */}
+      {(searchVisible || searchQuery) && (
+        <SearchBar query={searchQuery} onChange={v => { setSearchQuery(v); if (!v) setSearchVisible(false) }} t={t} />
+      )}
 
       {/* Filter chips */}
       <FilterBar filter={filter} onFilter={setFilter} counts={counts} t={t} />
+
+      {/* Agenda chips */}
+      <AgendaBar dateRange={dateRange} onDateRange={setDateRange} agendaCounts={agendaCounts} t={t} />
 
       {/* Task list */}
       <main className="flex-1 overflow-y-auto pb-24" data-testid="task-list">
@@ -939,21 +1062,45 @@ export default function MobileApp({ store }) {
             </button>
           </div>
 
-          {/* Calendar */}
-          <button onClick={() => { setShowCalendar(true); setDrawerOpen(false) }}
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-300 active:bg-slate-700 mb-4">
-            <Calendar size={16} className="text-sky-400" />
-            <span className="flex-1 text-left">{locale === 'ru' ? 'Календарь' : 'Calendar'}</span>
-          </button>
-
-          {/* Clear calendar filter if active */}
-          {calendarDate && (
-            <button onClick={() => { setCalendarDate(null); setDrawerOpen(false) }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-amber-400 active:bg-slate-700 mb-4">
-              <X size={14} />
-              <span>Clear date filter: {calendarDate}</span>
+          {/* Schedule */}
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">{t('sidebar.agenda') || 'Schedule'}</div>
+          <div className="space-y-0.5 mb-4">
+            {[
+              { key: 'today',    label: t('agenda.today'),    count: agendaCounts.today,    icon: Calendar },
+              { key: 'tomorrow', label: t('agenda.tomorrow'), count: agendaCounts.tomorrow, icon: Calendar },
+              { key: 'week',     label: t('agenda.week'),     count: agendaCounts.week,     icon: Calendar },
+              { key: 'month',    label: t('agenda.month'),    count: agendaCounts.month,    icon: Calendar },
+              { key: 'overdue',  label: t('agenda.overdue'),  count: agendaCounts.overdue,  icon: AlertTriangle },
+            ].map(f => {
+              const Icon = f.icon
+              const isOverdue = f.key === 'overdue'
+              return (
+                <button key={f.key}
+                  onClick={() => { setDateRange(dateRange === f.key ? null : f.key); setDrawerOpen(false) }}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    dateRange === f.key ? 'bg-sky-600/20 text-sky-400'
+                    : isOverdue && f.count > 0 ? 'text-red-400 active:bg-slate-700'
+                    : 'text-gray-300 active:bg-slate-700'
+                  }`}>
+                  <Icon size={16} className={`flex-shrink-0 ${isOverdue && f.count > 0 ? 'text-red-400' : 'text-sky-400'}`} />
+                  <span className="flex-1 text-left">{f.label}</span>
+                  <span className={`text-xs ${isOverdue && f.count > 0 ? 'text-red-400' : 'text-gray-500'}`}>{f.count}</span>
+                </button>
+              )
+            })}
+            <button onClick={() => { setShowCalendar(true); setDrawerOpen(false) }}
+              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-300 active:bg-slate-700">
+              <Calendar size={16} className="text-sky-400" />
+              <span className="flex-1 text-left">{locale === 'ru' ? 'Календарь' : 'Calendar'}</span>
             </button>
-          )}
+            {calendarDate && (
+              <button onClick={() => { setCalendarDate(null); setDrawerOpen(false) }}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-amber-400 active:bg-slate-700">
+                <X size={14} />
+                <span>{locale === 'ru' ? 'Сбросить дату' : 'Clear date filter'}: {calendarDate}</span>
+              </button>
+            )}
+          </div>
 
           {/* Status filters */}
           <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">Status</div>

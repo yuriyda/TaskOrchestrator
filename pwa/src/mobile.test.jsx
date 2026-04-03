@@ -161,6 +161,10 @@ describe('Mobile Filters', () => {
     })
     await waitFor(() => expect(screen.getByText('Apple pie')).toBeInTheDocument(), { timeout: 3000 })
 
+    // Click search icon in header to reveal search bar
+    const header = document.querySelector('header')
+    const searchToggle = Array.from(header.querySelectorAll('button')).find(b => b.querySelector('.lucide-search'))
+    fireEvent.click(searchToggle)
     const searchInput = screen.getByPlaceholderText(/Search/)
     fireEvent.change(searchInput, { target: { value: 'apple' } })
 
