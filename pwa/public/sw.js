@@ -4,7 +4,7 @@
  */
 
 const CACHE_NAME = 'task-orchestrator-v1'
-const SHELL_URLS = ['/', '/index.html']
+const SHELL_URLS = ['/to/', '/to/index.html']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

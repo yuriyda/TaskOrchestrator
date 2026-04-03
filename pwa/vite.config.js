@@ -19,7 +19,8 @@ function tsExtensionPlugin() {
 
 const { version: APP_VERSION } = JSON.parse(readFileSync(path.resolve(__dirname, '../shared/version.json'), 'utf-8'))
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  base: command === 'build' ? '/to/' : '/',
   plugins: [tsExtensionPlugin(), react()],
   define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
   resolve: {
@@ -53,4 +54,4 @@ export default defineConfig({
     setupFiles: ['./src/test-setup.js'],
     globals: true,
   },
-})
+}))

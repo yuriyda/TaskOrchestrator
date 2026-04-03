@@ -10,7 +10,7 @@ import { useBrowserTaskStore } from './store/browserStore'
 
 // Register service worker for offline support
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').catch(() => {})
+  navigator.serviceWorker.register('/to/sw.js').catch(() => {})
 }
 
 function App() {
