@@ -364,15 +364,35 @@ function TaskDetail({ task, store, onBack, t }) {
             <div>
               <label className="text-[10px] uppercase tracking-wider text-gray-500 mb-1 block">List</label>
               <input value={list} onChange={e => setList(e.target.value)} placeholder="e.g. Work, Personal"
-                className={inputCls} list="lists-datalist" />
-              <datalist id="lists-datalist">
-                {(store.lists || []).map(l => <option key={l} value={l} />)}
-              </datalist>
+                className={inputCls} />
+              {(store.lists || []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {store.lists.filter(l => l !== list).map(l => (
+                    <button key={l} type="button" onClick={() => setList(l)}
+                      className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 active:bg-emerald-500/30">
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label className="text-[10px] uppercase tracking-wider text-gray-500 mb-1 block">Tags (comma separated)</label>
               <input value={tagsStr} onChange={e => setTagsStr(e.target.value)} placeholder="e.g. urgent, code"
                 className={inputCls} />
+              {(store.tags || []).length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {store.tags.filter(tag => {
+                    const current = tagsStr.split(',').map(t => t.trim().replace(/^#/, ''))
+                    return !current.includes(tag)
+                  }).map(tag => (
+                    <button key={tag} type="button" onClick={() => setTagsStr(prev => prev ? prev + ', ' + tag : tag)}
+                      className="text-xs px-2.5 py-1 rounded-full bg-sky-500/15 text-sky-400 active:bg-sky-500/30">
+                      #{tag}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label className="text-[10px] uppercase tracking-wider text-gray-500 mb-1 block">{t('detail.recurrence') || 'Recurrence'}</label>
@@ -560,10 +580,17 @@ function AddTaskSheet({ open, onClose, onAdd, lists, t }) {
             <input type="date" value={due} onChange={e => setDue(e.target.value)}
               placeholder="Due date" className={inputCls} />
             <input value={list} onChange={e => setList(e.target.value)}
-              placeholder="List (e.g. Work)" className={inputCls} list="add-lists" />
-            <datalist id="add-lists">
-              {(lists || []).map(l => <option key={l} value={l} />)}
-            </datalist>
+              placeholder="List (e.g. Work)" className={inputCls} />
+            {(lists || []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {lists.filter(l => l !== list).map(l => (
+                  <button key={l} type="button" onClick={() => setList(l)}
+                    className="text-xs px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-400 active:bg-emerald-500/30">
+                    {l}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

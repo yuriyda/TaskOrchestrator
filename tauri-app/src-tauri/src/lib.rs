@@ -9,14 +9,16 @@ use tauri::State;
 
 struct OAuthListener(Mutex<Option<TcpListener>>);
 
-/// Bind a temporary loopback listener on a random port. Returns the port number.
+/// Bind a loopback listener on a fixed port (19284). Returns the port number.
+/// Fixed port allows a single OAuth Web client for both desktop and PWA.
 /// JS uses this port to build redirect_uri, then calls oauth_await_code.
+const OAUTH_PORT: u16 = 19284;
+
 #[tauri::command]
 fn oauth_start(state: State<'_, OAuthListener>) -> Result<u16, String> {
-    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
-    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let listener = TcpListener::bind(("127.0.0.1", OAUTH_PORT)).map_err(|e| e.to_string())?;
     *state.0.lock().map_err(|e| e.to_string())? = Some(listener);
-    Ok(port)
+    Ok(OAUTH_PORT)
 }
 
 /// Wait for the OAuth redirect on the previously bound listener.
