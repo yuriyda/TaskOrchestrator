@@ -733,6 +733,7 @@ export default function MobileApp({ store }) {
   const [showSettings, setShowSettings] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState('')
   const [undoAction, setUndoAction] = useState(null) // { label, undo: () => void }
+  const [updateMsg, setUpdateMsg] = useState(null)
   const undoTimerRef = useRef(null)
 
   const addSyncLog = (msg) => {
@@ -914,7 +915,32 @@ export default function MobileApp({ store }) {
           {/* About */}
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">{locale === 'ru' ? 'О приложении' : 'About'}</div>
-            <div className="text-xs text-gray-500">Task Orchestrator PWA v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?'}</div>
+            <div className="text-xs text-gray-500 mb-3">Task Orchestrator PWA v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?'}</div>
+            <button
+              onClick={async () => {
+                if (!('serviceWorker' in navigator)) return
+                try {
+                  const reg = await navigator.serviceWorker.getRegistration()
+                  if (reg) {
+                    await reg.update()
+                    if (reg.waiting) {
+                      reg.waiting.postMessage({ type: 'SKIP_WAITING' })
+                      window.location.reload()
+                    } else {
+                      setUpdateMsg(locale === 'ru' ? 'Уже актуальная версия' : 'Already up to date')
+                      setTimeout(() => setUpdateMsg(null), 3000)
+                    }
+                  }
+                } catch {
+                  setUpdateMsg(locale === 'ru' ? 'Ошибка проверки' : 'Update check failed')
+                  setTimeout(() => setUpdateMsg(null), 3000)
+                }
+              }}
+              className="w-full py-2.5 rounded-xl text-sm font-medium bg-slate-800 text-gray-300 active:bg-slate-700">
+              <RefreshCw size={14} className="inline mr-2" />
+              {locale === 'ru' ? 'Проверить обновления' : 'Check for updates'}
+            </button>
+            {updateMsg && <div className="text-xs text-emerald-400 mt-2 text-center">{updateMsg}</div>}
           </div>
         </div>
       </div>

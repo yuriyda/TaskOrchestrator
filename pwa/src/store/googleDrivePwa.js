@@ -57,7 +57,15 @@ export function startOAuthRedirect(clientId) {
     access_type: 'offline',
     prompt: 'consent',
   })
-  window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`
+  // iOS standalone PWA may silently block window.location.href to external domains.
+  // Use link click simulation as the most reliable cross-platform approach.
+  const a = document.createElement('a')
+  a.href = authUrl
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
 }
 
 export function extractAuthCode() {
