@@ -106,6 +106,29 @@ describe('Mobile CRUD', () => {
     })
   })
 
+  it('opens detail view with due date and notes', async () => {
+    const { store, waitReady } = renderApp()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Task with due', due: '2026-04-10', priority: 2 })
+    })
+    await waitFor(() => expect(screen.getByText('Task with due')).toBeInTheDocument(), { timeout: 3000 })
+
+    fireEvent.click(screen.getByText('Task with due'))
+
+    await waitFor(() => {
+      expect(screen.getByTestId('task-detail')).toBeInTheDocument()
+      // Due date input should be rendered with value
+      const dateInput = screen.getByDisplayValue('2026-04-10')
+      expect(dateInput).toBeInTheDocument()
+      // Priority buttons visible
+      expect(screen.getByText('P1')).toBeInTheDocument()
+      // Notes section visible
+      expect(screen.getAllByText(/Notes/i).length).toBeGreaterThanOrEqual(1)
+    })
+  })
+
   it('deletes task via store from detail', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()

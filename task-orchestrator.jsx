@@ -142,26 +142,35 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
 
   // ── Auto-sync after task edits (debounced) ─────────────────────────────
   const autoSyncTimerRef = useRef(null);
-  const autoSyncingRef = useRef(false);
+  const syncInProgressRef = useRef(false); // true during any sync (manual or auto)
   const [autoSyncing, setAutoSyncing] = useState(false);
+
+  const wrappedSyncNow = useCallback(async () => {
+    if (!handleSyncNow) return;
+    syncInProgressRef.current = true;
+    try { return await handleSyncNow(); }
+    finally { syncInProgressRef.current = false; }
+  }, [handleSyncNow]);
+
   const triggerAutoSync = useCallback(() => {
     if (!handleSyncNow || settings.autoSync === false) return;
     if (!gdriveConnected) return;
-    if (autoSyncingRef.current) return;
+    if (syncInProgressRef.current) return;
     clearTimeout(autoSyncTimerRef.current);
     autoSyncTimerRef.current = setTimeout(async () => {
-      autoSyncingRef.current = true;
+      if (syncInProgressRef.current) return;
+      syncInProgressRef.current = true;
       setAutoSyncing(true);
       try { await handleSyncNow(); } catch {}
-      autoSyncingRef.current = false;
+      syncInProgressRef.current = false;
       setAutoSyncing(false);
     }, 2000);
   }, [handleSyncNow, settings.autoSync, gdriveConnected]);
 
-  // Trigger auto-sync whenever tasks change (debounced)
+  // Trigger auto-sync whenever tasks change (debounced), skip if sync caused the change
   const prevTasksRef = useRef(tasks);
   useEffect(() => {
-    if (prevTasksRef.current !== tasks && prevTasksRef.current.length > 0) {
+    if (prevTasksRef.current !== tasks && prevTasksRef.current.length > 0 && !syncInProgressRef.current) {
       triggerAutoSync();
     }
     prevTasksRef.current = tasks;
@@ -1082,7 +1091,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
               <BulkBar count={selected.size} onDone={bulkDone} onCycle={bulkCycle} onToday={bulkToday} onShift={bulkShift} onDelete={bulkDelete} onClear={() => setSelected(new Set())} />
             </div>
           )}
-          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? handleSyncNow : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} />
+          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? wrappedSyncNow : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} />
           </div>
 
           {showRightPanel && (

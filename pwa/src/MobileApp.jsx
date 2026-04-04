@@ -345,6 +345,7 @@ function TaskItem({ task, onTap, onCycle, onComplete, onDelete }) {
 
 function TaskDetail({ task, store, onBack, t }) {
   if (!task) return null
+  const today = localIsoDate(new Date())
   const [editing, setEditing] = useState(false)
   const [title, setTitle] = useState(task.title)
   const [due, setDue] = useState(task.due || '')
@@ -770,6 +771,44 @@ export default function MobileApp({ store }) {
     if (store.gdriveJustConnected) setGdriveConnected(true)
   }, [store.gdriveJustConnected])
 
+  // ── Auto-sync after task edits (debounced) ─────────────────────────────
+  const autoSyncEnabled = store.metaSettings?.pwa_auto_sync !== 'false'
+  const autoSyncTimerRef = useRef(null)
+  const syncInProgressRef = useRef(false)
+  const [autoSyncing, setAutoSyncing] = useState(false)
+  const prevTasksRef = useRef(null)
+
+  const handleSyncNow = useCallback(async () => {
+    if (!store.gdriveSyncNow || !gdriveConnected) return
+    syncInProgressRef.current = true
+    addSyncLog(t('sync.gdriveSyncing'))
+    try {
+      const r = await store.gdriveSyncNow()
+      if (r) {
+        setSyncMsg(`+${r.applied}`)
+        setLastSync(new Date().toISOString())
+        addSyncLog(t('sync.gdriveSynced').replace('{applied}', r.applied).replace('{outdated}', r.outdated).replace('{uploaded}', r.uploaded))
+      }
+    } catch (e) { setSyncMsg(t('sync.gdriveError')); addSyncLog(`${t('sync.gdriveError')}: ${e.message}`) }
+    finally { syncInProgressRef.current = false; setTimeout(() => setSyncMsg(null), 3000) }
+  }, [store, gdriveConnected, t])
+
+  useEffect(() => {
+    if (!autoSyncEnabled || !gdriveConnected || !store.gdriveSyncNow) return
+    if (prevTasksRef.current !== null && prevTasksRef.current !== store.tasks && prevTasksRef.current.length > 0 && !syncInProgressRef.current) {
+      clearTimeout(autoSyncTimerRef.current)
+      autoSyncTimerRef.current = setTimeout(async () => {
+        if (syncInProgressRef.current) return
+        syncInProgressRef.current = true
+        setAutoSyncing(true)
+        try { await handleSyncNow() } catch {}
+        syncInProgressRef.current = false
+        setAutoSyncing(false)
+      }, 2000)
+    }
+    prevTasksRef.current = store.tasks
+  }, [store.tasks, autoSyncEnabled, gdriveConnected, handleSyncNow])
+
   const { tasks } = store
   const today = localIsoDate(new Date())
 
@@ -894,6 +933,24 @@ export default function MobileApp({ store }) {
             </div>
           </div>
 
+          {/* Auto-sync toggle */}
+          {gdriveConnected && (
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">{locale === 'ru' ? 'Синхронизация' : 'Sync'}</div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm text-gray-200">{locale === 'ru' ? 'Автосинхронизация' : 'Auto-sync'}</div>
+                  <div className="text-xs text-gray-500">{locale === 'ru' ? 'После каждого изменения (2 сек)' : 'After every change (2 sec)'}</div>
+                </div>
+                <button
+                  onClick={() => store.saveMeta('pwa_auto_sync', autoSyncEnabled ? 'false' : 'true')}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${autoSyncEnabled ? 'bg-sky-600' : 'bg-gray-600'}`}>
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${autoSyncEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Clear local storage */}
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-3">{locale === 'ru' ? 'Опасная зона' : 'Danger zone'}</div>
@@ -992,18 +1049,10 @@ export default function MobileApp({ store }) {
         {store.gdriveSyncNow && gdriveConnected && (
           <button onClick={async () => {
             setSyncing(true); setSyncMsg(null)
-            addSyncLog(t('sync.gdriveSyncing'))
-            try {
-              const r = await store.gdriveSyncNow()
-              if (r) {
-                setSyncMsg(`+${r.applied}`)
-                setLastSync(new Date().toISOString())
-                addSyncLog(t('sync.gdriveSynced').replace('{applied}', r.applied).replace('{outdated}', r.outdated).replace('{uploaded}', r.uploaded))
-              }
-            } catch (e) { setSyncMsg(t('sync.gdriveError')); addSyncLog(`${t('sync.gdriveError')}: ${e.message}`) }
-            finally { setSyncing(false); setTimeout(() => setSyncMsg(null), 3000) }
-          }} disabled={syncing}
-            className={`p-1.5 rounded-lg text-gray-400 active:text-sky-400 ${syncing ? 'animate-spin' : ''}`}>
+            try { await handleSyncNow() } catch {}
+            finally { setSyncing(false) }
+          }} disabled={syncing || autoSyncing}
+            className={`p-1.5 rounded-lg text-gray-400 active:text-sky-400 ${syncing || autoSyncing ? 'animate-spin' : ''}`}>
             <RefreshCw size={18} />
           </button>
         )}
