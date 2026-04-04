@@ -733,7 +733,22 @@ export default function MobileApp({ store }) {
   const [showSettings, setShowSettings] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState('')
   const [undoAction, setUndoAction] = useState(null) // { label, undo: () => void }
-  const [updateMsg, setUpdateMsg] = useState(null)
+  const [updateMsg, setUpdateMsg] = useState(() => {
+    const prev = sessionStorage.getItem('pwa_update_check')
+    if (prev) {
+      sessionStorage.removeItem('pwa_update_check')
+      const currentVer = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
+      if (prev === currentVer) return { text: locale === 'ru' ? 'Обновлений не найдено' : 'No updates available', ok: false }
+      return { text: (locale === 'ru' ? 'Обновлено до v' : 'Updated to v') + currentVer, ok: true }
+    }
+    return null
+  })
+  useEffect(() => {
+    if (updateMsg) {
+      const timer = setTimeout(() => setUpdateMsg(null), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [updateMsg])
   const undoTimerRef = useRef(null)
 
   const addSyncLog = (msg) => {
@@ -918,29 +933,28 @@ export default function MobileApp({ store }) {
             <div className="text-xs text-gray-500 mb-3">Task Orchestrator PWA v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?'}</div>
             <button
               onClick={async () => {
-                if (!('serviceWorker' in navigator)) return
+                const currentVer = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
+                sessionStorage.setItem('pwa_update_check', currentVer)
                 try {
-                  const reg = await navigator.serviceWorker.getRegistration()
-                  if (reg) {
-                    await reg.update()
-                    if (reg.waiting) {
-                      reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-                      window.location.reload()
-                    } else {
-                      setUpdateMsg(locale === 'ru' ? 'Уже актуальная версия' : 'Already up to date')
-                      setTimeout(() => setUpdateMsg(null), 3000)
+                  if ('serviceWorker' in navigator) {
+                    const reg = await navigator.serviceWorker.getRegistration()
+                    if (reg) {
+                      await reg.update()
+                      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
                     }
                   }
-                } catch {
-                  setUpdateMsg(locale === 'ru' ? 'Ошибка проверки' : 'Update check failed')
-                  setTimeout(() => setUpdateMsg(null), 3000)
-                }
+                  if ('caches' in window) {
+                    const keys = await caches.keys()
+                    await Promise.all(keys.map(k => caches.delete(k)))
+                  }
+                } catch { /* ignore */ }
+                window.location.reload()
               }}
               className="w-full py-2.5 rounded-xl text-sm font-medium bg-slate-800 text-gray-300 active:bg-slate-700">
               <RefreshCw size={14} className="inline mr-2" />
               {locale === 'ru' ? 'Проверить обновления' : 'Check for updates'}
             </button>
-            {updateMsg && <div className="text-xs text-emerald-400 mt-2 text-center">{updateMsg}</div>}
+            {updateMsg && <div className={`text-xs mt-2 text-center ${updateMsg.ok ? 'text-emerald-400' : 'text-amber-400'}`}>{updateMsg.text}</div>}
           </div>
         </div>
       </div>
@@ -1041,6 +1055,15 @@ export default function MobileApp({ store }) {
           </div>
         )}
       </main>
+
+      {/* Update toast */}
+      {updateMsg && (
+        <div className={`fixed top-16 left-4 right-4 z-40 flex items-center gap-3 rounded-xl px-4 py-3 shadow-lg shadow-black/30 animate-[fadeIn_0.2s_ease-out] ${updateMsg.ok ? 'bg-emerald-900/90' : 'bg-slate-700'}`}>
+          <RefreshCw size={14} className={updateMsg.ok ? 'text-emerald-400' : 'text-amber-400'} />
+          <span className={`flex-1 text-sm ${updateMsg.ok ? 'text-emerald-200' : 'text-gray-200'}`}>{updateMsg.text}</span>
+          <button onClick={() => setUpdateMsg(null)} className="text-gray-400 p-1"><X size={14} /></button>
+        </div>
+      )}
 
       {/* Undo toast */}
       {undoAction && (
