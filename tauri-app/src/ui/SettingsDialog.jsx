@@ -517,6 +517,17 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
         </div>
       )}
 
+      {/* Auto-sync toggle */}
+      <SettingRow
+        label={locale === "ru" ? "Автосинхронизация" : "Auto-sync"}
+        description={locale === "ru" ? "Синхронизировать после каждого изменения задач (с задержкой 2 сек)" : "Sync after every task change (2 sec debounce)"}>
+        <button
+          onClick={() => updateSetting("autoSync", !settings.autoSync)}
+          className={`relative w-10 h-5 rounded-full transition-colors ${settings.autoSync !== false ? "bg-sky-600" : "bg-gray-600"}`}>
+          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settings.autoSync !== false ? "left-5" : "left-0.5"}`} />
+        </button>
+      </SettingRow>
+
       {/* Clipboard sync — collapsible */}
       <div className={`rounded-lg border mb-4 ${TC.elevated} ${TC.borderClass}`}>
         <button

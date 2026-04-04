@@ -3,7 +3,7 @@
  * Contains all React components: sidebar, task list, detail panel, dialogs, calendar, etc.
  * Domain logic, constants, parsers, and store are imported from tauri-app/src/ modules.
  */
-import { useState, useReducer, useRef, useEffect, useMemo, createContext, useContext } from "react";
+import { useState, useReducer, useRef, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
 import { ulid } from "./tauri-app/src/ulid.js";
 import { LOCALES, LOCALE_NAMES } from "./tauri-app/src/i18n/locales.js";
@@ -63,9 +63,9 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const [settings, setSettingsState] = useState(() => {
     try {
       const saved = localStorage.getItem("to_settings");
-      const def = { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false };
+      const def = { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false, autoSync: true };
       return saved ? { ...def, ...JSON.parse(saved) } : def;
-    } catch { return { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false }; }
+    } catch { return { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false, autoSync: true }; }
   });
 
   const updateSetting = (key, val) => {
@@ -115,6 +115,12 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const store = storeHook();
   const { tasks } = store;
 
+  // ── Google Drive connection state ────────────────────────────────────────
+  const [gdriveConnected, setGdriveConnected] = useState(false);
+  useEffect(() => {
+    store.gdriveCheckConnection?.().then(ok => setGdriveConnected(!!ok));
+  }, [store, store.metaSettings]);
+
   // ── Google Drive sync with logging ───────────────────────────────────────
   const addGdriveLog = (msg) => {
     const ts = new Date().toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -131,7 +137,35 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
           .replace("{uploaded}", result.uploaded)
       );
     }
+    return result;
   } : undefined;
+
+  // ── Auto-sync after task edits (debounced) ─────────────────────────────
+  const autoSyncTimerRef = useRef(null);
+  const autoSyncingRef = useRef(false);
+  const [autoSyncing, setAutoSyncing] = useState(false);
+  const triggerAutoSync = useCallback(() => {
+    if (!handleSyncNow || settings.autoSync === false) return;
+    if (!gdriveConnected) return;
+    if (autoSyncingRef.current) return;
+    clearTimeout(autoSyncTimerRef.current);
+    autoSyncTimerRef.current = setTimeout(async () => {
+      autoSyncingRef.current = true;
+      setAutoSyncing(true);
+      try { await handleSyncNow(); } catch {}
+      autoSyncingRef.current = false;
+      setAutoSyncing(false);
+    }, 2000);
+  }, [handleSyncNow, settings.autoSync, gdriveConnected]);
+
+  // Trigger auto-sync whenever tasks change (debounced)
+  const prevTasksRef = useRef(tasks);
+  useEffect(() => {
+    if (prevTasksRef.current !== tasks && prevTasksRef.current.length > 0) {
+      triggerAutoSync();
+    }
+    prevTasksRef.current = tasks;
+  }, [tasks, triggerAutoSync]);
 
   // Wire the saveMeta ref so updateSetting / locale / theme effects can use it
   saveMetaRef.current = store.saveMeta ?? null;
@@ -1048,7 +1082,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
               <BulkBar count={selected.size} onDone={bulkDone} onCycle={bulkCycle} onToday={bulkToday} onShift={bulkShift} onDelete={bulkDelete} onClear={() => setSelected(new Set())} />
             </div>
           )}
-          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={handleSyncNow} />
+          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? handleSyncNow : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} />
           </div>
 
           {showRightPanel && (

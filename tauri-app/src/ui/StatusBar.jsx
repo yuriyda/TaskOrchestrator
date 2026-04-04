@@ -8,11 +8,12 @@ import { HardDrive, RefreshCw } from "lucide-react";
 import { useApp } from "./AppContext";
 import { fmtDate, localIsoDate } from "../core/date";
 
-export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow }) {
+export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings }) {
   const { t, TC, locale } = useApp();
   const [now, setNow] = useState(new Date());
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState(null); // "ok" | "err"
+  const isSyncing = syncing || autoSyncing;
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -84,10 +85,12 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
       )}
 
       {/* Sync now button — крайний правый */}
-      {onSyncNow && (
+      {onSyncNow ? (
         <button
-          title={t("sync.syncNow")}
-          disabled={syncing}
+          title={lastSync
+            ? `${t("sync.lastSync")}: ${new Date(lastSync).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
+            : t("sync.syncNow")}
+          disabled={isSyncing}
           onClick={async () => {
             setSyncing(true);
             setSyncResult(null);
@@ -102,10 +105,19 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
             }
           }}
           className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer
-            ${syncing ? "opacity-40 cursor-not-allowed" : "hover:opacity-100 opacity-60"}
+            ${isSyncing ? "opacity-40 cursor-not-allowed" : "hover:opacity-100 opacity-60"}
             ${syncResult === "ok" ? "text-green-400" : syncResult === "err" ? "text-red-400" : ""}`}
         >
-          <RefreshCw size={10} className={syncing ? "animate-spin" : ""} />
+          <RefreshCw size={10} className={isSyncing ? "animate-spin" : ""} />
+          <span>{t("sync.syncNow")}</span>
+        </button>
+      ) : onOpenSyncSettings && (
+        <button
+          title={locale === "ru" ? "Настроить синхронизацию" : "Set up sync"}
+          onClick={onOpenSyncSettings}
+          className="flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer hover:opacity-100 opacity-40"
+        >
+          <RefreshCw size={10} />
           <span>{t("sync.syncNow")}</span>
         </button>
       )}

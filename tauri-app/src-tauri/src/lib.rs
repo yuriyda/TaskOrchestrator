@@ -16,6 +16,10 @@ const OAUTH_PORT: u16 = 19284;
 
 #[tauri::command]
 fn oauth_start(state: State<'_, OAuthListener>) -> Result<u16, String> {
+    // Drop any previous listener to release the port
+    let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    *guard = None;
+    drop(guard);
     let listener = TcpListener::bind(("127.0.0.1", OAUTH_PORT)).map_err(|e| e.to_string())?;
     *state.0.lock().map_err(|e| e.to_string())? = Some(listener);
     Ok(OAUTH_PORT)

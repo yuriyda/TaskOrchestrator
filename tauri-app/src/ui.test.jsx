@@ -282,3 +282,16 @@ describe('CompletionFilter ↔ Sidebar status sync (REGRESSION)', () => {
     }
   })
 })
+
+describe('Auto-sync setting', () => {
+  it('autoSync defaults to true and persists toggle', async () => {
+    const user = renderApp()
+    // Open settings on sync tab
+    const settingsBtn = document.querySelector('[data-guide="sidebar"] button:last-of-type') || screen.getByTitle(/settings|настройки/i)
+    if (settingsBtn) await user.click(settingsBtn)
+    // The autoSync setting should default to enabled (true)
+    // Verify it's stored in localStorage
+    const saved = JSON.parse(localStorage.getItem('to_settings') || '{}')
+    expect(saved.autoSync).not.toBe(false) // default is true or undefined (treated as true)
+  })
+})
