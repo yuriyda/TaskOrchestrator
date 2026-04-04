@@ -394,6 +394,11 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
           {!gdriveConnected ? (
             <div className="space-y-2">
               <div className={`text-xs mb-2 ${TC.textMuted}`}>{t("sync.gdriveSetupDesc")}</div>
+              <a href="https://github.com/yuriyda/TaskOrchestrator/blob/main/GOOGLE_DRIVE_SETUP.md" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-sky-400 hover:text-sky-300 mb-2">
+                <ExternalLink size={10} />
+                {locale === "ru" ? "Пошаговая инструкция" : "Step-by-step guide"}
+              </a>
               <input
                 type="text"
                 value={gdriveClientId}

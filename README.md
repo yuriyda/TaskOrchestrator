@@ -80,6 +80,41 @@ Supports natural language dates: `^today`, `^tomorrow`, `^+3d`, `^+1w`, `^+2m`
 - Compact and comfortable display modes
 - Context menu with status submenu and bulk actions
 
+## Mobile PWA
+
+A ready-to-use PWA is available at **https://daybov.com/to/**
+
+This is simply a convenient way to install the app on your mobile device. It is **not** server-side storage — all your data is stored locally in your browser's IndexedDB. The hosted version is identical to what you'd get by building the PWA yourself.
+
+### Install on mobile
+
+- **Android (Chrome):** Open the URL → Menu (three dots) → **Install**
+- **iOS (Safari only):** Open the URL → Share → **Add to Home Screen** → enable "Open as Web App"
+
+> Chrome on iOS cannot install PWAs — use Safari.
+
+### Self-hosting the PWA
+
+You can build and host the PWA anywhere:
+
+```bash
+cd pwa
+npm install
+npm run build
+```
+
+The `pwa/dist/` folder contains static files ready for any hosting (Vercel, Netlify, Nginx, etc.). See [Self-hosting guide](#self-hosting-details) below for subdirectory deployment.
+
+## Google Drive Sync
+
+Optional cross-device sync using your own Google Drive account. No third-party servers — tokens stay on your device.
+
+- Auto-sync after every change (configurable)
+- Manual sync via status bar button
+- Works on both desktop and PWA
+
+**Setup guide:** [GOOGLE_DRIVE_SETUP.md](GOOGLE_DRIVE_SETUP.md) (English + Russian)
+
 ## Installation
 
 Download the latest installer from [Releases](../../releases).
@@ -91,41 +126,55 @@ On first launch Windows may show a "Windows protected your PC" dialog — the ap
 1. Click **More info**
 2. Click **Run anyway**
 
-This appears only once. The app does not connect to the internet.
+This appears only once.
 
 ## Building from source
 
 ```bash
-# Prerequisites: Node.js 18+, Rust, Tauri CLI
+# Desktop — requires Node.js 18+, Rust, Tauri CLI
 cd tauri-app
 npm install
 npm run tauri build
+
+# PWA
+cd pwa
+npm install
+npm run build
 ```
 
-The installer will be in `tauri-app/src-tauri/target/release/bundle/`.
+The desktop installer will be in `tauri-app/src-tauri/target/release/bundle/`.
 
 ## Tests
 
 ```bash
-cd tauri-app
-npm test
-```
+# Desktop (140 tests)
+cd tauri-app && npx vitest run
 
-44 tests covering schema consistency, ULID generation, date validation, and SQLite transaction behavior.
+# PWA (32 tests)
+cd pwa && npx vitest run
+```
 
 ## Tech stack
 
 - **Tauri 2** — lightweight native shell (~5 MB vs ~150 MB Electron)
 - **React 18** — UI in a single component file
-- **SQLite** — local database via `@tauri-apps/plugin-sql`, WAL mode
+- **SQLite** — local database via `@tauri-apps/plugin-sql`, WAL mode (desktop)
+- **IndexedDB** — local storage (PWA)
+- **Google Drive API** — optional sync via `drive.appdata` scope
 - **Tailwind CSS** — utility-first styling
 - **lucide-react** — icon set
 
-## Roadmap
+## Self-hosting details
 
-- macOS client
-- iOS and Android clients
-- Cross-device sync
+If deploying the PWA to a subdirectory (e.g. `/app/`), update `base` in `pwa/vite.config.js`:
+
+```js
+base: command === 'build' ? '/app/' : '/',
+```
+
+Also update `SHELL_URLS` in `pwa/public/sw.js` and the service worker registration path in `pwa/src/main.jsx`.
+
+When configuring Google Drive sync for a self-hosted PWA, add your URL as an Authorized redirect URI in Google Cloud Console (see [setup guide](GOOGLE_DRIVE_SETUP.md)).
 
 ## License
 

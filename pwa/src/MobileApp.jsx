@@ -18,7 +18,7 @@ import {
   Inbox, Zap, CheckCircle2, Ban, Circle, Repeat,
   Trash2, Calendar, Flag, List, Hash, ArrowUp, ArrowDown,
   Filter, Settings, ChevronDown, RefreshCw, Save, Edit3,
-  AlertTriangle, StickyNote,
+  AlertTriangle, StickyNote, ExternalLink,
 } from 'lucide-react'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1288,6 +1288,11 @@ export default function MobileApp({ store }) {
                 </div>
               ) : showGdriveSetup ? (
                 <div className="space-y-2">
+                  <a href="https://github.com/yuriyda/TaskOrchestrator/blob/main/GOOGLE_DRIVE_SETUP.md" target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-xs text-sky-400 active:text-sky-300 mb-1">
+                    <ExternalLink size={10} />
+                    {locale === 'ru' ? 'Пошаговая инструкция' : 'Step-by-step guide'}
+                  </a>
                   <input value={gdriveClientId} onChange={e => setGdriveClientId(e.target.value)}
                     placeholder="Client ID" className="w-full bg-slate-700 rounded-lg px-3 py-2 text-xs outline-none text-gray-200" />
                   <input value={gdriveClientSecret} onChange={e => setGdriveClientSecret(e.target.value)}
