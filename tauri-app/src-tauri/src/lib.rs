@@ -5,7 +5,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 
 struct OAuthListener(Mutex<Option<TcpListener>>);
 
@@ -88,6 +88,12 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Focus existing window when second instance is launched
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.set_focus();
+            }
+        }))
         .invoke_handler(tauri::generate_handler![oauth_start, oauth_await_code])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
