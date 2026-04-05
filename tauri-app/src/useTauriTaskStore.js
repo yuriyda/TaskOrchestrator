@@ -171,7 +171,7 @@ export function useTauriTaskStore() {
   const mutate = useCallback(async (currentTasks, fn) => {
     const db = dbRef.current
     if (!db) return
-    setHistory(h => [...h.slice(-20), currentTasks])
+    setHistory(h => [...h.slice(-5), currentTasks])
     await fn(db)
     setTasks(await fetchAll(db))
   }, [])

@@ -819,7 +819,7 @@ export default function MobileApp({ store }) {
         try { await handleSyncNow() } catch {}
         syncInProgressRef.current = false
         setAutoSyncing(false)
-      }, 2000)
+      }, 3000)
     }
     prevTasksRef.current = store.tasks
   }, [store.tasks, autoSyncEnabled, gdriveConnected, handleSyncNow])
@@ -955,7 +955,7 @@ export default function MobileApp({ store }) {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-sm text-gray-200">{locale === 'ru' ? 'Автосинхронизация' : 'Auto-sync'}</div>
-                  <div className="text-xs text-gray-500">{locale === 'ru' ? 'После каждого изменения (2 сек)' : 'After every change (2 sec)'}</div>
+                  <div className="text-xs text-gray-500">{locale === 'ru' ? 'После каждого изменения (3 сек)' : 'After every change (3 sec)'}</div>
                 </div>
                 <button
                   onClick={() => store.saveMeta('pwa_auto_sync', autoSyncEnabled ? 'false' : 'true')}

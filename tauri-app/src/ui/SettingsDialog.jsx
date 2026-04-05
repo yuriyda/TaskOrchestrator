@@ -533,7 +533,7 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
       {/* Auto-sync toggle */}
       <SettingRow
         label={locale === "ru" ? "Автосинхронизация" : "Auto-sync"}
-        description={locale === "ru" ? "Синхронизировать после каждого изменения задач (с задержкой 2 сек)" : "Sync after every task change (2 sec debounce)"}>
+        description={locale === "ru" ? "Синхронизировать после каждого изменения задач (с задержкой 3 сек)" : "Sync after every task change (3 sec debounce)"}>
         <button
           onClick={() => updateSetting("autoSync", !settings.autoSync)}
           className={`relative w-10 h-5 rounded-full transition-colors ${settings.autoSync !== false ? "bg-sky-600" : "bg-gray-600"}`}>

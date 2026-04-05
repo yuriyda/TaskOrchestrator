@@ -164,7 +164,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
       try { await handleSyncNow(); } catch {}
       syncInProgressRef.current = false;
       setAutoSyncing(false);
-    }, 2000);
+    }, 3000);
   }, [handleSyncNow, settings.autoSync, gdriveConnected]);
 
   // Trigger auto-sync whenever tasks change (debounced), skip if sync caused the change
@@ -445,6 +445,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
         if (e.code === "KeyZ") {
           e.preventDefault();
           if (store.canUndo) {
+            clearTimeout(autoSyncTimerRef.current);
             store.undo(() => addToast(t("toast.undone")));
           }
           return;
