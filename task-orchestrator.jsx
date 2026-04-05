@@ -228,6 +228,8 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   // Backward-compat helpers
   const hasAnyFilter = Object.values(filters).some(v => v !== null);
   const [searchQuery, setSearchQuery]   = useState("");
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  const searchInputRef = useRef(null);
   const [toasts, setToasts] = useState([]);
   const [showSidebar, setShowSidebar]       = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
@@ -873,27 +875,44 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
             </button>
           </div>
 
-          <div data-guide="search" className="flex-1 max-w-md relative">
-            <Search size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none ${TC.textMuted}`} />
-            <input
-              id="search-input"
-              autoComplete="off"
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              placeholder={t("hdr.search")}
-              className={`w-full border rounded-lg pl-9 pr-8 py-1.5 text-sm outline-none focus:border-sky-500 transition-colors ${TC.input} ${TC.inputText}`}
-              onKeyDown={e => {
-                if (e.key === "Escape") { e.stopPropagation(); setSearchQuery(""); e.target.blur(); return; }
-                if (e.key !== "Tab") return;
-                e.preventDefault();
-                document.getElementById(e.shiftKey ? "task-list" : "quick-entry")?.focus();
-              }}
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery("")} className={`absolute right-2 top-1/2 -translate-y-1/2 ${TC.textMuted} hover:text-gray-300`}>
-                <X size={14} />
+          <div data-guide="search" className="relative flex items-center">
+            <div className={`flex items-center rounded-lg border overflow-hidden transition-all duration-300 ease-in-out ${
+              searchExpanded || searchQuery ? "w-[32rem] max-w-md" : "w-10"
+            } ${TC.input} ${searchExpanded || searchQuery ? "border-opacity-100" : "border-opacity-40"}`}>
+              <button
+                onClick={() => {
+                  setSearchExpanded(true);
+                  setTimeout(() => searchInputRef.current?.focus(), 50);
+                }}
+                className={`flex-shrink-0 p-1.5 transition-colors ${TC.textMuted} hover:text-gray-300`}
+              >
+                <Search size={14} />
               </button>
-            )}
+              <input
+                ref={searchInputRef}
+                id="search-input"
+                autoComplete="off"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder={t("hdr.search")}
+                className={`border-none bg-transparent py-1.5 pr-8 text-sm outline-none transition-all duration-300 ${
+                  searchExpanded || searchQuery ? "w-full opacity-100" : "w-0 opacity-0 p-0"
+                } ${TC.inputText}`}
+                onKeyDown={e => {
+                  if (e.key === "Escape") { e.stopPropagation(); setSearchQuery(""); setSearchExpanded(false); e.target.blur(); return; }
+                  if (e.key !== "Tab") return;
+                  e.preventDefault();
+                  document.getElementById(e.shiftKey ? "task-list" : "quick-entry")?.focus();
+                }}
+                onBlur={() => { if (!searchQuery) setSearchExpanded(false); }}
+              />
+              {searchQuery && (
+                <button onClick={() => { setSearchQuery(""); setSearchExpanded(false); searchInputRef.current?.blur(); }}
+                  className={`absolute right-2 top-1/2 -translate-y-1/2 ${TC.textMuted} hover:text-gray-300`}>
+                  <X size={14} />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className={`text-xs whitespace-nowrap flex items-center gap-1 ${TC.textMuted}`}>
