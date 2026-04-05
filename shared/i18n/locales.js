@@ -35,7 +35,7 @@ export const LOCALES = {
     "hk.extend": "Extend selection",     "hk.selectAll": "Select all",
     "hk.complete": "Mark done",          "hk.cycle": "Cycle status",
     "hk.delete": "Delete",               "hk.priority": "Set priority",
-    "hk.postpone": "Postpone due +1 day","hk.undo": "Undo",
+    "hk.postpone": "Postpone due +1 day","hk.undo": "Undo","hk.search": "Search",
     "hk.escape": "Clear selection / reset",
     "hk.homeEnd": "Jump to first / last",
     // detail panel
@@ -360,7 +360,7 @@ export const LOCALES = {
     "hk.extend": "Расширить выделение",     "hk.selectAll": "Выделить все",
     "hk.complete": "Выполнить",             "hk.cycle": "Цикл статуса",
     "hk.delete": "Удалить",                 "hk.priority": "Установить приоритет",
-    "hk.postpone": "Отложить дедлайн +1 день", "hk.undo": "Отменить действие",
+    "hk.postpone": "Отложить дедлайн +1 день", "hk.undo": "Отменить действие", "hk.search": "Поиск",
     "hk.escape": "Снять выделение / сброс",
     "hk.homeEnd": "В начало / в конец списка",
     "detail.empty": "Выберите задачу\nдля просмотра свойств",

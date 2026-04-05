@@ -460,6 +460,12 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
           document.getElementById("quick-entry")?.focus();
           return;
         }
+        if (e.code === "KeyE" && !e.shiftKey) {
+          e.preventDefault();
+          setSearchExpanded(true);
+          setTimeout(() => searchInputRef.current?.focus(), 50);
+          return;
+        }
         if (e.code === "KeyO" && !e.shiftKey) {
           e.preventDefault();
           store.openNewDb?.().then(ok => { if (ok) setShowDbSwitched(true); });
