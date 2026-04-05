@@ -85,8 +85,10 @@ export async function updatePlanHours(db, planId, dayStartHour, dayEndHour, devi
 
 // ─── Slot CRUD ──────────────────────────────────────────────────────────────
 
-/** Fetch all slots for a plan (own slots only). */
+/** Fetch all slots for a plan (own slots only). Cleans up orphaned task slots. */
 export async function getSlotsByPlan(db, planId) {
+  // Remove orphan slots: task-type slots where task was deleted (task_id set to NULL by FK)
+  await db.execute("DELETE FROM day_plan_slots WHERE plan_id = ? AND slot_type = 'task' AND task_id IS NULL", [planId])
   const rows = await db.select(
     'SELECT * FROM day_plan_slots WHERE plan_id = ? ORDER BY start_time, sort_order',
     [planId]

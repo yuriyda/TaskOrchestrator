@@ -136,22 +136,28 @@ export function DayPlanner({
     e.dataTransfer.dropEffect = "move";
   }, []);
 
+  // Task IDs already scheduled in planner (for duplicate prevention)
+  const scheduledTaskIds = useMemo(() => new Set(slots.filter(s => s.taskId).map(s => s.taskId)), [slots]);
+
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     const taskIds = e.dataTransfer.getData("text/task-ids");
     if (!taskIds) return;
+
+    // Filter out tasks already in the planner
+    const ids = taskIds.split(",").filter(id => !scheduledTaskIds.has(id));
+    if (ids.length === 0) return;
 
     const rect = gridRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top + (gridRef.current.scrollTop || 0);
     const rawMinutes = yToMinutes(y);
     const snappedMinutes = snapToGrid(rawMinutes, slotStep);
     const clampedMinutes = Math.max(dayStartHour * 60, Math.min(snappedMinutes, (dayEndHour - 1) * 60));
-    const freeMinutes = findFreeStart(clampedMinutes, 60);
-    const startTime = minutesToTime(freeMinutes);
+    const startTime = minutesToTime(clampedMinutes);
 
-    const ids = taskIds.split(",");
-    onDropTask(ids, startTime);
-  }, [yToMinutes, slotStep, dayStartHour, dayEndHour, onDropTask, findFreeStart]);
+    // Pass current slots for collision detection (avoids stale closure in parent)
+    onDropTask(ids, startTime, slots);
+  }, [yToMinutes, slotStep, dayStartHour, dayEndHour, onDropTask, scheduledTaskIds, slots]);
 
   // ─── Internal slot drag (move within planner) ─────────────────────────────
 
@@ -176,7 +182,43 @@ export function DayPlanner({
     // Occupied ranges excluding the slot being dragged
     const occupied = getOccupiedRanges(draggingSlot.slotId);
 
+    // Floating ghost for drag-out
+    let ghost = null;
+
     const handleMouseMove = (e) => {
+      const el = document.querySelector(`[data-slot-id="${draggingSlot.slotId}"]`);
+      if (!el) return;
+
+      const gridRect = gridRef.current?.getBoundingClientRect();
+      const isOutside = gridRect && (e.clientX < gridRect.left - 20 || e.clientX > gridRect.right + 20);
+
+      // Show/hide floating ghost when outside grid
+      if (isOutside && !ghost) {
+        ghost = document.createElement("div");
+        const slot = slots.find(s => s.id === draggingSlot.slotId);
+        const task = slot?.taskId ? tasks.find(t => t.id === slot.taskId) : null;
+        ghost.textContent = task?.title || slot?.title || "—";
+        Object.assign(ghost.style, {
+          position: "fixed", zIndex: "99999", pointerEvents: "none",
+          width: "180px", padding: "8px 12px", borderRadius: "6px",
+          fontSize: "12px", fontWeight: "500", fontFamily: "monospace",
+          background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.5)",
+          color: "#fca5a5", boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+          overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis",
+        });
+        document.body.appendChild(ghost);
+      }
+      if (!isOutside && ghost) {
+        ghost.remove();
+        ghost = null;
+      }
+      if (ghost) {
+        ghost.style.left = `${e.clientX - 90}px`;
+        ghost.style.top = `${e.clientY - 20}px`;
+      }
+
+      el.style.opacity = isOutside ? "0.2" : "0.7";
+
       const deltaY = e.clientY - draggingSlot.startY;
       const deltaMinutes = (deltaY / HOUR_HEIGHT) * 60;
       const rawStart = snapToGrid(draggingSlot.originalStartMinutes + deltaMinutes, slotStep);
@@ -184,15 +226,21 @@ export function DayPlanner({
       const freeStart = findFreeStart(clampedStart, draggingSlot.duration, occupied);
       const freeEnd = freeStart + draggingSlot.duration;
 
-      const el = document.querySelector(`[data-slot-id="${draggingSlot.slotId}"]`);
-      if (el) {
-        el.style.top = `${minutesToY(freeStart)}px`;
-        el.style.height = `${(draggingSlot.duration / 60) * HOUR_HEIGHT}px`;
-        el.dataset.previewStart = minutesToTime(freeStart);
-        el.dataset.previewEnd = minutesToTime(freeEnd);
-      }
+      el.style.top = `${minutesToY(freeStart)}px`;
+      el.style.height = `${(draggingSlot.duration / 60) * HOUR_HEIGHT}px`;
+      el.dataset.previewStart = minutesToTime(freeStart);
+      el.dataset.previewEnd = minutesToTime(freeEnd);
     };
-    const handleMouseUp = () => {
+    const handleMouseUp = (e) => {
+      if (ghost) { ghost.remove(); ghost = null; }
+      // If released outside the planner grid → remove slot from plan
+      const gridRect = gridRef.current?.getBoundingClientRect();
+      if (gridRect && (e.clientX < gridRect.left || e.clientX > gridRect.right ||
+                       e.clientY < gridRect.top || e.clientY > gridRect.bottom)) {
+        onRemoveSlot(draggingSlot.slotId);
+        setDraggingSlot(null);
+        return;
+      }
       const el = document.querySelector(`[data-slot-id="${draggingSlot.slotId}"]`);
       if (el && el.dataset.previewStart) {
         onMoveSlot(draggingSlot.slotId, el.dataset.previewStart, el.dataset.previewEnd);
@@ -388,28 +436,43 @@ export function DayPlanner({
           <div className="absolute left-0 top-0 bottom-0 w-1 rounded-l" style={{ backgroundColor: pColor }} />
         )}
 
-        <div className={`px-2 py-0.5 flex flex-col h-full ${pColor && !isBlocked ? "pl-3" : ""}`}>
-          <div className="flex items-center gap-1 min-w-0">
-            {isDone && <Check size={10} className="text-emerald-500 flex-shrink-0" />}
-            {isBlocked && <Lock size={10} className="text-gray-400 flex-shrink-0" />}
-            <span className={`text-xs font-medium truncate
-              ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-400" : TC.text}`}>
-              {isBlocked ? (slot.title || t("planner.blocked")) : (task?.title || "—")}
-            </span>
-            {isBlocked && slot.recurrence && <Repeat size={9} className="text-gray-400/70 flex-shrink-0" />}
-          </div>
-          {height >= 36 && task && (
-            <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
-              {task.list && <span className="text-[9px] text-sky-400/70 truncate">@{task.list}</span>}
-              {task.tags?.slice(0, 2).map(tag => (
-                <span key={tag} className="text-[9px] text-sky-400/60">#{tag}</span>
-              ))}
+        <div className={`px-2 py-0.5 flex flex-col h-full overflow-hidden ${pColor && !isBlocked ? "pl-3" : ""}`}>
+          {height < 36 ? (
+            /* Compact single-line layout for short slots (≤30 min) */
+            <div className="flex items-center gap-1.5 min-w-0 h-full">
+              {isDone && <Check size={10} className="text-emerald-500 flex-shrink-0" />}
+              {isBlocked && <Lock size={10} className="text-gray-400 flex-shrink-0" />}
+              <span className={`text-xs font-medium truncate flex-1
+                ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-400" : TC.text}`}>
+                {isBlocked ? (slot.title || t("planner.blocked")) : (task?.title || "—")}
+              </span>
+              {isBlocked && slot.recurrence && <Repeat size={9} className="text-gray-400/70 flex-shrink-0" />}
+              <span className={`text-[9px] flex-shrink-0 ${TC.textMuted}`}>{slot.startTime}–{slot.endTime}</span>
             </div>
-          )}
-          {height >= 28 && (
-            <span className={`text-[9px] mt-auto ${TC.textMuted}`}>
-              {slot.startTime}–{slot.endTime}
-            </span>
+          ) : (
+            /* Full multi-line layout for taller slots */
+            <>
+              <div className="flex items-center gap-1 min-w-0">
+                {isDone && <Check size={10} className="text-emerald-500 flex-shrink-0" />}
+                {isBlocked && <Lock size={10} className="text-gray-400 flex-shrink-0" />}
+                <span className={`text-xs font-medium truncate
+                  ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-400" : TC.text}`}>
+                  {isBlocked ? (slot.title || t("planner.blocked")) : (task?.title || "—")}
+                </span>
+                {isBlocked && slot.recurrence && <Repeat size={9} className="text-gray-400/70 flex-shrink-0" />}
+              </div>
+              {height >= 50 && task && (
+                <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
+                  {task.list && <span className="text-[9px] text-sky-400/70 truncate">@{task.list}</span>}
+                  {task.tags?.slice(0, 2).map(tag => (
+                    <span key={tag} className="text-[9px] text-sky-400/60">#{tag}</span>
+                  ))}
+                </div>
+              )}
+              <span className={`text-[9px] mt-auto ${TC.textMuted}`}>
+                {slot.startTime}–{slot.endTime}
+              </span>
+            </>
           )}
         </div>
 

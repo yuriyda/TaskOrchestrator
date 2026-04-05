@@ -398,34 +398,104 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
     }
   }, [showPlanner, plannerDate, store.plannerLoadDay, settings.plannerDayStart, settings.plannerDayEnd]);
 
-  const handlePlannerDropTask = useCallback((taskIds, startTime) => {
+  const parseEstimateMinutes = (estimate) => {
+    if (!estimate) return 60;
+    const est = estimate.toLowerCase();
+    const hMatch = est.match(/([\d.]+)\s*h/);
+    const mMatch = est.match(/([\d.]+)\s*m/);
+    let min = 60;
+    if (hMatch) min = Math.round(parseFloat(hMatch[1]) * 60);
+    else if (mMatch) min = Math.round(parseFloat(mMatch[1]));
+    return Math.max(15, min);
+  };
+
+  // Plain function (not useCallback) to always read fresh props/state
+  const handlePlannerDropTask = (taskIds, startTime, currentSlots) => {
     if (!store.plannerAddTaskSlot) return;
-    let nextStart = startTime;
+    const dayStart = (settings.plannerDayStart ?? 9) * 60;
+    const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
+    const step = settings.plannerSlotStep ?? 30;
+
+    // Build occupied ranges from slots passed by DayPlanner (guaranteed fresh)
+    const occupied = (currentSlots || [])
+      .map(s => {
+        const [sh, sm] = s.startTime.split(":").map(Number);
+        const [eh, em] = s.endTime.split(":").map(Number);
+        return { start: sh * 60 + sm, end: eh * 60 + em };
+      })
+      .sort((a, b) => a.start - b.start);
+
+    const findFree = (startMin, dur) => {
+      let c = startMin;
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const b of occupied) {
+          if (c < b.end && c + dur > b.start) {
+            c = Math.ceil(b.end / step) * step;
+            changed = true;
+          }
+        }
+      }
+      // If doesn't fit after last occupied slot, try before first collision
+      if (c + dur > dayEnd) {
+        c = startMin;
+        for (const b of occupied) {
+          if (c < b.end && c + dur > b.start) {
+            c = Math.floor((b.start - dur) / step) * step;
+            break;
+          }
+        }
+      }
+      return Math.max(dayStart, Math.min(c, dayEnd - dur));
+    };
+
+    const [sh, sm] = startTime.split(":").map(Number);
+    let nextStartMin = sh * 60 + sm;
+
     for (const id of taskIds) {
-      const endTime = defaultEndTime(nextStart, 60);
-      store.plannerAddTaskSlot(id, nextStart, endTime, tasks);
-      nextStart = endTime;
+      const task = tasks.find(t => t.id === id);
+      const durationMin = parseEstimateMinutes(task?.estimate);
+      // Task too long for the entire day
+      if (durationMin > dayEnd - dayStart) continue;
+      const freeStart = findFree(nextStartMin, durationMin);
+      const freeEnd = freeStart + durationMin;
+      // No space found
+      if (freeEnd > dayEnd) break;
+      // Verify no overlap (final safety check)
+      const overlaps = occupied.some(b => freeStart < b.end && freeEnd > b.start);
+      if (overlaps) break;
+      const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      store.plannerAddTaskSlot(id, fmt(freeStart), fmt(freeEnd), tasks);
+      occupied.push({ start: freeStart, end: freeEnd });
+      occupied.sort((a, b) => a.start - b.start);
+      nextStartMin = freeEnd;
     }
-  }, [store.plannerAddTaskSlot, tasks]);
+  };
 
   const handlePlannerMoveSlot = useCallback((slotId, startTime, endTime) => {
     store.plannerMoveSlot?.(slotId, startTime, endTime, tasks);
   }, [store.plannerMoveSlot, tasks]);
 
   const handlePlannerResizeSlot = useCallback((slotId, endTime) => {
-    // Find the slot to get taskId and startTime for estimate calculation
+    // Read slot from DOM data attribute (always fresh, set during resize preview)
+    const slotEl = document.querySelector(`[data-slot-id="${slotId}"]`);
+    const startTime = slotEl?.dataset.startTime;
+    // Find taskId from current state
     const slot = (store.dayPlanSlots || []).find(s => s.id === slotId);
-    if (slot?.taskId) {
-      const startMin = parseInt(slot.startTime.split(":")[0]) * 60 + parseInt(slot.startTime.split(":")[1]);
+    if (slot?.taskId && startTime) {
+      const startMin = parseInt(startTime.split(":")[0]) * 60 + parseInt(startTime.split(":")[1]);
       const endMin = parseInt(endTime.split(":")[0]) * 60 + parseInt(endTime.split(":")[1]);
       const durationMin = endMin - startMin;
-      const estimateStr = durationMin >= 60
-        ? `${(durationMin / 60).toFixed(durationMin % 60 ? 1 : 0)} hours`
-        : `${durationMin} min`;
-      handleUpdate(slot.taskId, { estimate: estimateStr });
+      if (durationMin > 0) {
+        const estimateStr = durationMin >= 60
+          ? `${(durationMin / 60).toFixed(durationMin % 60 ? 1 : 0)} hours`
+          : `${durationMin} min`;
+        handleUpdate(slot.taskId, { estimate: estimateStr });
+      }
     }
     store.plannerResizeSlot?.(slotId, endTime, tasks);
-  }, [store.plannerResizeSlot, tasks]);
+  }, [store.plannerResizeSlot, store.dayPlanSlots, tasks]);
 
   const handlePlannerRemoveSlot = useCallback((slotId) => {
     store.plannerRemoveSlot?.(slotId, tasks);
@@ -1180,6 +1250,32 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
                           const ids = selected.size > 0 && selected.has(task.id) ? [...selected] : [task.id];
                           e.dataTransfer.setData("text/task-ids", ids.join(","));
                           e.dataTransfer.effectAllowed = "move";
+                          // Custom drag image: planner-style block matching slot appearance
+                          const pColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS[4];
+                          const ghost = document.createElement("div");
+                          Object.assign(ghost.style, {
+                            position: "fixed", left: "0px", top: "-500px",
+                            width: "200px", minHeight: "50px",
+                            borderRadius: "6px", fontSize: "12px",
+                            background: `${pColor}25`, border: `1px solid ${pColor}`,
+                            borderLeft: `3px solid ${pColor}`,
+                            color: "#e2e8f0", padding: "6px 10px",
+                            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                            fontFamily: "monospace",
+                          });
+                          const title = document.createElement("div");
+                          title.textContent = ids.length > 1 ? `${ids.length} tasks` : task.title;
+                          Object.assign(title.style, { fontWeight: "600", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" });
+                          ghost.appendChild(title);
+                          if (task.list || task.tags?.length) {
+                            const meta = document.createElement("div");
+                            meta.style.cssText = "font-size:10px; color:#38bdf8; opacity:0.7; margin-top:2px;";
+                            meta.textContent = [task.list ? `@${task.list}` : "", ...(task.tags || []).slice(0, 2).map(t => `#${t}`)].filter(Boolean).join(" ");
+                            ghost.appendChild(meta);
+                          }
+                          document.body.appendChild(ghost);
+                          e.dataTransfer.setDragImage(ghost, 100, 25);
+                          setTimeout(() => ghost.remove(), 200);
                         }}
                       >
                       <TaskRow
