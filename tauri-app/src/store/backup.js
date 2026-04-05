@@ -5,7 +5,7 @@
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { copyFile, remove, exists, readDir } from '@tauri-apps/plugin-fs'
 
-export const MAX_BACKUPS = 2
+export const MAX_BACKUPS = 5
 export const DB_PATH_KEY = 'to_db_path'
 
 export async function resolveDbPath() {
