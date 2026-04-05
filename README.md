@@ -39,14 +39,18 @@ Supports natural language dates: `^today`, `^tomorrow`, `^+3d`, `^+1w`, `^+2m`
 |-----|--------|
 | `Up` / `Down` | Move cursor |
 | `Shift+Up/Down` | Extend selection |
+| `Home` / `End` | Jump to first / last task |
 | `Ctrl+Shift+A` | Select all |
 | `Space` | Mark done / reopen |
 | `S` | Cycle status |
+| `E` | Edit selected task |
 | `Del` | Delete |
 | `1`-`4` | Set priority |
 | `Shift+P` | Postpone +1 day |
 | `Ctrl+Z` | Undo |
 | `Ctrl+N` | Focus Quick Entry |
+| `Ctrl+E` | Focus search bar |
+| `Ctrl+O` | Open another database |
 | `Esc` | Clear selection / search / filters |
 
 ### Organization

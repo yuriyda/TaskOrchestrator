@@ -637,7 +637,7 @@ function AddTaskSheet({ open, onClose, onAdd, lists, t, extractUrls }) {
           value={title}
           onChange={e => setTitle(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !showMore) handleAdd() }}
-          placeholder={t('quickEntry.placeholder') || 'What needs to be done?'}
+          placeholder={t('mobile.newTask') || 'What needs to be done?'}
           className="w-full bg-slate-700 rounded-xl px-4 py-3.5 text-sm outline-none focus:ring-2 focus:ring-sky-500 mb-3 text-gray-200 placeholder-gray-500"
         />
 
