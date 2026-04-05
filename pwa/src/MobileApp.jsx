@@ -499,10 +499,13 @@ function TaskDetail({ task, store, onBack, t }) {
 
             {/* URL */}
             {task.url && (
-              <a href={task.url} target="_blank" rel="noopener noreferrer"
-                className="block text-xs text-sky-400 truncate bg-slate-800/80 rounded-xl p-3">
-                {task.url}
-              </a>
+              <div className="bg-slate-800/80 rounded-xl p-3">
+                <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">URL</div>
+                <a href={task.url} target="_blank" rel="noopener noreferrer"
+                  className="text-xs text-sky-400 truncate block">
+                  {task.url}
+                </a>
+              </div>
             )}
 
             {/* Tags */}
