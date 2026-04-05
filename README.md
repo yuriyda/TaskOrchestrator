@@ -6,7 +6,7 @@ No cloud. No account. No telemetry. Just a single SQLite file you fully control.
 
 [Русская версия](README.ru.md)
 
-![Task Orchestrator — main window](img/main_window_1.jpg)
+![Task Orchestrator — main window](img/main_window_1.png)
 
 ## Why Task Orchestrator
 
@@ -22,7 +22,7 @@ No cloud. No account. No telemetry. Just a single SQLite file you fully control.
 
 | Main window | Settings |
 |:-----------:|:--------:|
-| ![Main window](img/main_window_2.jpg) | ![Settings](img/settings_1.jpg) |
+| ![Main window](img/main_window_2.png) | ![Settings](img/settings_1.png) |
 
 ## Features
 

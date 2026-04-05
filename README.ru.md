@@ -6,7 +6,7 @@
 
 [English version](README.md)
 
-![Task Orchestrator — главное окно](img/main_window_1.jpg)
+![Task Orchestrator — главное окно](img/main_window_1.png)
 
 ## Почему Task Orchestrator
 
@@ -22,7 +22,7 @@
 
 | Главное окно | Настройки |
 |:------------:|:---------:|
-| ![Главное окно](img/main_window_2.jpg) | ![Настройки](img/settings_1.jpg) |
+| ![Главное окно](img/main_window_2.png) | ![Настройки](img/settings_1.png) |
 
 ## Возможности
 
