@@ -91,6 +91,9 @@ export function TaskRow({ task, isCursor, isSelected, isBlocked = false, onStatu
           {task.flowId     && <span className="text-xs text-pink-400/80 bg-pink-400/10 px-1.5 py-0.5 rounded flex items-center gap-1"><Zap size={10} />{task.flowId}</span>}
         </div>
       )}
+      {task.recurrence && (
+        <span className="text-xs text-teal-400/70 flex-shrink-0" title={task.recurrence}><Repeat size={10} /></span>
+      )}
       {task.notes && task.notes.length > 0 && (
         <span className="text-xs text-amber-400/70 flex-shrink-0" title={`${task.notes.length} note${task.notes.length > 1 ? "s" : ""}`}><FileText size={10} /></span>
       )}
