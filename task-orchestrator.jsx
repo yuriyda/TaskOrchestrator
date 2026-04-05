@@ -37,6 +37,8 @@ import { RtmImportDialog, ImportProgressOverlay } from "./tauri-app/src/ui/RtmIm
 import { SortBar } from "./tauri-app/src/ui/SortBar.jsx";
 import { StatusBar } from "./tauri-app/src/ui/StatusBar.jsx";
 import { GUIDE_STEPS, GuideOverlay } from "./tauri-app/src/ui/GuideOverlay.jsx";
+import { DayPlanner } from "./tauri-app/src/ui/DayPlanner.jsx";
+import { defaultEndTime } from "./tauri-app/src/store/dayPlanner.js";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -234,6 +236,8 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const [showSidebar, setShowSidebar]       = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
   const [showCalendar, setShowCalendar]     = useState(true);
+  const [showPlanner, setShowPlanner]       = useState(false);
+  const [plannerDate, setPlannerDate]       = useState(() => new Date().toISOString().slice(0, 10));
   const [calendarFilter, setCalendarFilterRaw] = useState(null);
   const setCalendarFilter = (v) => {
     setCalendarFilterRaw(v);
@@ -384,6 +388,77 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
     });
   }, [displayFiltered]);
 
+  // ── Day Planner integration ────────────────────────────────────────────
+  useEffect(() => {
+    if (showPlanner && store.plannerLoadDay) {
+      store.plannerLoadDay(plannerDate, {
+        dayStartHour: settings.plannerDayStart ?? 9,
+        dayEndHour: settings.plannerDayEnd ?? 17,
+      });
+    }
+  }, [showPlanner, plannerDate, store.plannerLoadDay, settings.plannerDayStart, settings.plannerDayEnd]);
+
+  const handlePlannerDropTask = useCallback((taskIds, startTime) => {
+    if (!store.plannerAddTaskSlot) return;
+    let nextStart = startTime;
+    for (const id of taskIds) {
+      const endTime = defaultEndTime(nextStart, 60);
+      store.plannerAddTaskSlot(id, nextStart, endTime, tasks);
+      nextStart = endTime;
+    }
+  }, [store.plannerAddTaskSlot, tasks]);
+
+  const handlePlannerMoveSlot = useCallback((slotId, startTime, endTime) => {
+    store.plannerMoveSlot?.(slotId, startTime, endTime, tasks);
+  }, [store.plannerMoveSlot, tasks]);
+
+  const handlePlannerResizeSlot = useCallback((slotId, endTime) => {
+    // Find the slot to get taskId and startTime for estimate calculation
+    const slot = (store.dayPlanSlots || []).find(s => s.id === slotId);
+    if (slot?.taskId) {
+      const startMin = parseInt(slot.startTime.split(":")[0]) * 60 + parseInt(slot.startTime.split(":")[1]);
+      const endMin = parseInt(endTime.split(":")[0]) * 60 + parseInt(endTime.split(":")[1]);
+      const durationMin = endMin - startMin;
+      const estimateStr = durationMin >= 60
+        ? `${(durationMin / 60).toFixed(durationMin % 60 ? 1 : 0)} hours`
+        : `${durationMin} min`;
+      handleUpdate(slot.taskId, { estimate: estimateStr });
+    }
+    store.plannerResizeSlot?.(slotId, endTime, tasks);
+  }, [store.plannerResizeSlot, tasks]);
+
+  const handlePlannerRemoveSlot = useCallback((slotId) => {
+    store.plannerRemoveSlot?.(slotId, tasks);
+  }, [store.plannerRemoveSlot, tasks]);
+
+  const handlePlannerBlockSlot = useCallback((time) => {
+    if (!store.plannerAddBlockedSlot) return;
+    const endTime = defaultEndTime(time, 60);
+    store.plannerAddBlockedSlot(t("planner.blocked"), time, endTime);
+  }, [store.plannerAddBlockedSlot, t]);
+
+  const pendingSlotTimeRef = useRef(null);
+  const prevTaskCountRef = useRef(0);
+
+  const handlePlannerCreateTask = useCallback((time) => {
+    pendingSlotTimeRef.current = time;
+    document.getElementById("quick-entry")?.focus();
+  }, []);
+
+  // When a new task appears while pendingSlotTime is set, create a slot for it
+  useEffect(() => {
+    if (pendingSlotTimeRef.current && tasks.length > prevTaskCountRef.current && store.plannerAddTaskSlot && store.currentPlan) {
+      const newest = tasks[tasks.length - 1]; // newest task (added last)
+      if (newest) {
+        const time = pendingSlotTimeRef.current;
+        pendingSlotTimeRef.current = null;
+        const endTime = defaultEndTime(time, 60);
+        store.plannerAddTaskSlot(newest.id, time, endTime, tasks);
+      }
+    }
+    prevTaskCountRef.current = tasks.length;
+  }, [tasks, store.plannerAddTaskSlot, store.currentPlan]);
+
   // ── Rubber-band drag (window-level) ──────────────────────────────────────
   useEffect(() => {
     const onMouseMove = (e) => {
@@ -469,6 +544,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
         if (e.code === "KeyO" && !e.shiftKey) {
           e.preventDefault();
           store.openNewDb?.().then(ok => { if (ok) setShowDbSwitched(true); });
+          return;
+        }
+        if (e.code === "KeyD" && !e.shiftKey) {
+          e.preventDefault();
+          setShowPlanner(v => !v);
           return;
         }
         return;
@@ -939,6 +1019,14 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
 
           <div className="ml-auto flex items-center gap-1 flex-shrink-0">
             <button
+              onClick={() => setShowPlanner(v => !v)}
+              title={`${t("planner.title")} (Ctrl+D)`}
+              className={`p-1.5 rounded-md transition-colors ${showPlanner ? "text-amber-400 bg-amber-400/10" : `${TC.textMuted} ${TC.hoverBg}`}`}
+            >
+              <Clock size={18} />
+            </button>
+
+            <button
               onClick={() => {
                 if (!showRightPanel) { setShowRightPanel(true); setShowCalendar(true); }
                 else                 { setShowCalendar(v => !v); }
@@ -1085,8 +1173,16 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
                       rows.push(<div key="__overdue_gap" className="h-3" />);
                     }
                     rows.push(
-                      <TaskRow
+                      <div
                         key={task.id}
+                        draggable={showPlanner}
+                        onDragStart={(e) => {
+                          const ids = selected.size > 0 && selected.has(task.id) ? [...selected] : [task.id];
+                          e.dataTransfer.setData("text/task-ids", ids.join(","));
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                      >
+                      <TaskRow
                         task={task}
                         isCursor={idx === cursor}
                         isSelected={selected.has(task.id)}
@@ -1102,6 +1198,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
                         onDoubleClick={(e) => { e.preventDefault(); handleEditFull(task.id); }}
                         onContextMenu={(e) => handleContextMenu(e, task)}
                       />
+                      </div>
                     );
                   });
                   return rows;
@@ -1119,6 +1216,36 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
           )}
           <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? wrappedSyncNow : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} />
           </div>
+
+          {showPlanner && (
+            <div className="flex-1 flex-shrink-0 overflow-hidden" style={{ maxWidth: "50%" }}>
+              <DayPlanner
+                slots={store.dayPlanSlots || []}
+                currentPlan={store.currentPlan}
+                tasks={tasks}
+                selectedDate={plannerDate}
+                onSelectDate={setPlannerDate}
+                onDropTask={handlePlannerDropTask}
+                onMoveSlot={handlePlannerMoveSlot}
+                onResizeSlot={handlePlannerResizeSlot}
+                onRemoveSlot={handlePlannerRemoveSlot}
+                onBlockSlot={handlePlannerBlockSlot}
+                onUnblockSlot={(slotId) => store.plannerRemoveSlot?.(slotId, tasks)}
+                onUpdateSlotTitle={(slotId, title) => store.plannerUpdateSlotTitle?.(slotId, title)}
+                onUpdateSlotRecurrence={(slotId, rec) => store.plannerUpdateSlotRecurrence?.(slotId, rec)}
+                onCompleteTask={(taskId) => {
+                  const task = tasks.find(t => t.id === taskId);
+                  handleUpdate(taskId, { status: task?.status === "done" ? "active" : "done" });
+                }}
+                onEditTask={(taskId) => setEditTaskId(taskId)}
+                onCreateTaskHere={handlePlannerCreateTask}
+                onSelectTask={(taskId) => { setCursor(displayFiltered.findIndex(t => t.id === taskId)); setSelected(new Set([taskId])); }}
+                slotStep={settings.plannerSlotStep ?? 30}
+                settingsDayStart={settings.plannerDayStart}
+                settingsDayEnd={settings.plannerDayEnd}
+              />
+            </div>
+          )}
 
           {showRightPanel && (
             <div data-guide="detail-panel" className={`w-64 flex-shrink-0 border-l flex flex-col overflow-hidden ${TC.borderClass}`}>
