@@ -21,7 +21,8 @@ import { TokenChip, ChipPill } from "./common.jsx";
 import { swapLayout } from "../core/layout.js";
 
 export function QuickEntry({ onAdd }) {
-  const { t, TC, lists, tags, flows, personas } = useApp();
+  const { t, TC, lists, tags, flows, personas, settings } = useApp();
+  const skipToken = (commit) => !commit || (commit.tokenType === "list" && hasListChip) || (commit.tokenType === "url" && settings?.autoExtractUrl === false);
   // chips  — committed token pills shown inside the input field
   // inputText — the text currently being typed (title + any uncommitted token)
   const [chips,       setChips]       = useState([]);
@@ -65,7 +66,7 @@ export function QuickEntry({ onAdd }) {
     // unless it's a list token and a list chip already exists (only one list allowed).
     if (val.endsWith(" ")) {
       const commit = tryCommitToken(val.trimEnd());
-      if (commit && !(commit.tokenType === "list" && hasListChip)) {
+      if (commit && !skipToken(commit)) {
         commitToken(commit.tokenType, commit.raw, commit.newText);
         return;
       }
@@ -108,7 +109,7 @@ export function QuickEntry({ onAdd }) {
       let title = inputText.trim();
       let allChips = chips;
       const commit = tryCommitToken(title);
-      if (commit && !(commit.tokenType === "list" && hasListChip)) {
+      if (commit && !skipToken(commit)) {
         allChips = [...chips, { type: commit.tokenType, raw: commit.raw }];
         title = commit.newText.trim();
       }
@@ -118,7 +119,7 @@ export function QuickEntry({ onAdd }) {
       onAdd({ title, list: d.list || null, tags: d.tags,
               personas: d.personas,
               priority: d.priority || 4, due: d.due, recurrence: d.recurrence,
-              flowId: d.flowId, dependsOn: d.dependsOn, status: "inbox" });
+              flowId: d.flowId, dependsOn: d.dependsOn, url: d.url || null, status: "inbox" });
       setChips([]);
       setInputText("");
     }

@@ -582,7 +582,7 @@ function TaskDetail({ task, store, onBack, t }) {
 
 // ─── Bottom Sheet (Add Task) ──────────────────────────────────────────────────
 
-function AddTaskSheet({ open, onClose, onAdd, lists, t }) {
+function AddTaskSheet({ open, onClose, onAdd, lists, t, extractUrls }) {
   const [title, setTitle] = useState('')
   const [due, setDue] = useState('')
   const [list, setList] = useState('')
@@ -598,11 +598,23 @@ function AddTaskSheet({ open, onClose, onAdd, lists, t }) {
 
   const handleAdd = () => {
     if (!title.trim()) return
+    const urlRe = /https?:\/\/[^\s]+/i
+    const words = title.trim().split(/\s+/)
+    let taskTitle = title.trim()
+    let taskUrl = null
+    if (extractUrls !== false) {
+      const urlWord = words.find(w => urlRe.test(w))
+      if (urlWord) {
+        taskUrl = urlWord
+        taskTitle = words.filter(w => w !== urlWord).join(' ')
+      }
+    }
     onAdd({
-      title: title.trim(),
+      title: taskTitle,
       due: due || null,
       list: list || null,
       priority,
+      url: taskUrl,
     })
     reset()
     onClose()
@@ -951,6 +963,19 @@ export default function MobileApp({ store }) {
             </div>
           )}
 
+          {/* Auto-extract URL toggle */}
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm text-gray-200">{locale === 'ru' ? 'Извлекать URL' : 'Auto-extract URL'}</div>
+              <div className="text-xs text-gray-500">{locale === 'ru' ? 'Переносить ссылку из названия в поле URL' : 'Move links from title to URL field'}</div>
+            </div>
+            <button
+              onClick={() => store.saveMeta('pwa_auto_extract_url', store.metaSettings?.pwa_auto_extract_url === 'false' ? 'true' : 'false')}
+              className={`relative w-11 h-6 rounded-full transition-colors ${store.metaSettings?.pwa_auto_extract_url !== 'false' ? 'bg-sky-600' : 'bg-gray-600'}`}>
+              <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${store.metaSettings?.pwa_auto_extract_url !== 'false' ? 'left-[22px]' : 'left-0.5'}`} />
+            </button>
+          </div>
+
           {/* Clear local storage */}
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-3">{locale === 'ru' ? 'Опасная зона' : 'Danger zone'}</div>
@@ -1138,7 +1163,7 @@ export default function MobileApp({ store }) {
       </button>
 
       {/* Add Task Bottom Sheet */}
-      <AddTaskSheet open={showAdd} onClose={() => setShowAdd(false)} onAdd={handleAdd} lists={store.lists} t={t} />
+      <AddTaskSheet open={showAdd} onClose={() => setShowAdd(false)} onAdd={handleAdd} lists={store.lists} t={t} extractUrls={store.metaSettings?.pwa_auto_extract_url !== 'false'} />
 
       {/* Calendar (full-screen) */}
       {showCalendar && (

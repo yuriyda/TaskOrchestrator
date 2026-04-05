@@ -14,10 +14,13 @@ export const CHIP_STYLE = {
   depends:    { background: "rgba(250,204,21,.18)",  color: "#facc15", border: "1px solid rgba(250,204,21,.45)",  padding: "2px 8px", borderRadius: 12 },
   recurrence: { background: "rgba(45,212,191,.18)",  color: "#2dd4bf", border: "1px solid rgba(45,212,191,.45)",  padding: "2px 8px", borderRadius: 12 },
   persona:    { background: "rgba(129,140,248,.18)", color: "#818cf8", border: "1px solid rgba(129,140,248,.45)", padding: "2px 8px", borderRadius: 12 },
+  url:        { background: "rgba(96,165,250,.18)",  color: "#60a5fa", border: "1px solid rgba(96,165,250,.45)",  padding: "2px 8px", borderRadius: 12 },
 };
 
-export function parseShorthand(input) {
-  const result = { title: "", list: null, tags: [], personas: [], priority: null, due: null, recurrence: null, flowId: null, dependsOn: null, tokens: [] };
+const URL_RE = /^https?:\/\/[^\s]+$/i;
+
+export function parseShorthand(input, { extractUrls = true } = {}) {
+  const result = { title: "", list: null, tags: [], personas: [], priority: null, due: null, recurrence: null, flowId: null, dependsOn: null, url: null, tokens: [] };
   const titleParts = [];
   for (const p of input.split(/\s+/).filter(Boolean)) {
     if      (p.startsWith(">>"))      { result.flowId = p.slice(2);           result.tokens.push({ type: "flow",       value: p }); }
@@ -28,6 +31,7 @@ export function parseShorthand(input) {
     else if (p.startsWith("~"))       { result.dependsOn = p.slice(1);        result.tokens.push({ type: "depends",    value: p }); }
     else if (p.startsWith("*"))       { result.recurrence = p.slice(1);       result.tokens.push({ type: "recurrence", value: p }); }
     else if (p.startsWith("/")  && p.length > 1) { result.personas.push(p.slice(1)); result.tokens.push({ type: "persona", value: p }); }
+    else if (extractUrls && !result.url && URL_RE.test(p)) { result.url = p; result.tokens.push({ type: "url", value: p }); }
     else                              { titleParts.push(p);                   result.tokens.push({ type: "text",       value: p }); }
   }
   result.title = titleParts.join(" ");
@@ -59,6 +63,7 @@ export function getTokenType(word) {
   if (word.startsWith("~")  && word.length > 1) return "depends";
   if (word.startsWith("*")  && word.length > 1) return "recurrence";
   if (word.startsWith("/")  && word.length > 1) return "persona";
+  if (URL_RE.test(word)) return "url";
   return null;
 }
 
@@ -75,7 +80,7 @@ export function tryCommitToken(text) {
 
 // Extracts parsed task data from an array of committed chip objects.
 export function buildFromChips(chips) {
-  const r = { list: null, tags: [], personas: [], priority: null, due: null, recurrence: null, flowId: null, dependsOn: null };
+  const r = { list: null, tags: [], personas: [], priority: null, due: null, recurrence: null, flowId: null, dependsOn: null, url: null };
   for (const c of chips) {
     switch (c.type) {
       case "list":       r.list       = c.raw.slice(1);  break;
@@ -86,6 +91,7 @@ export function buildFromChips(chips) {
       case "recurrence": r.recurrence = c.raw.slice(1);  break;
       case "flow":       r.flowId     = c.raw.slice(2);  break;
       case "depends":    r.dependsOn  = c.raw.slice(1);  break;
+      case "url":        r.url        = c.raw;           break;
     }
   }
   return r;

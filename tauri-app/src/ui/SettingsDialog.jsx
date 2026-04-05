@@ -174,6 +174,14 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
             {settings.newTaskActiveToday ? "ON" : "OFF"}
           </button>
         </SettingRow>
+        <SettingRow
+          label={locale === "ru" ? "Извлекать URL из названия" : "Auto-extract URL from title"}
+          description={locale === "ru" ? "Автоматически переносить ссылку из названия задачи в поле URL" : "Automatically move links from task title to the URL field"}>
+          <button onClick={() => updateSetting("autoExtractUrl", settings.autoExtractUrl === false ? true : false)}
+            className={`px-3 py-1.5 rounded text-sm transition-colors font-medium ${settings.autoExtractUrl !== false ? "bg-sky-600 text-white" : `${TC.elevated} ${TC.textSec} ${TC.hoverBg} hover:text-gray-200`}`}>
+            {settings.autoExtractUrl !== false ? "ON" : "OFF"}
+          </button>
+        </SettingRow>
         <SettingRow label={t("guide.restart")}>
           <button onClick={() => { onRestartGuide?.(); onClose(); }}
             className={`px-3 py-1.5 rounded text-sm transition-colors font-medium ${TC.elevated} ${TC.textSec} ${TC.hoverBg} hover:text-gray-200`}>

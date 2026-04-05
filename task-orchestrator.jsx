@@ -63,9 +63,9 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const [settings, setSettingsState] = useState(() => {
     try {
       const saved = localStorage.getItem("to_settings");
-      const def = { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false, autoSync: true };
+      const def = { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false, autoSync: true, autoExtractUrl: true };
       return saved ? { ...def, ...JSON.parse(saved) } : def;
-    } catch { return { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false, autoSync: true }; }
+    } catch { return { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false, autoSync: true, autoExtractUrl: true }; }
   });
 
   const updateSetting = (key, val) => {
