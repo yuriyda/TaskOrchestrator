@@ -924,12 +924,37 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   };
 
   const handleAdd = (taskData) => {
-    if (settings.newTaskActiveToday && (!taskData.status || taskData.status === "inbox")) {
+    const data = { ...taskData };
+    // Apply active filters as defaults so the new task stays in the current view
+    if (!data.due && filters.dateRange) {
       const today = localIsoDate(new Date());
-      store.addTask({ ...taskData, status: "active", due: taskData.due || today }, tasks);
-    } else {
-      store.addTask(taskData, tasks);
+      if (filters.dateRange === "today" || filters.dateRange === "overdue") {
+        data.due = today;
+      } else if (filters.dateRange === "tomorrow") {
+        const d = new Date(); d.setDate(d.getDate() + 1);
+        data.due = localIsoDate(d);
+      } else if (filters.dateRange === "week") {
+        const d = new Date(); d.setDate(d.getDate() + 7);
+        data.due = localIsoDate(d);
+      } else if (filters.dateRange === "month") {
+        const d = new Date(); d.setDate(d.getDate() + 30);
+        data.due = localIsoDate(d);
+      }
     }
+    if (filters.status === "active" && (!data.status || data.status === "inbox")) {
+      data.status = "active";
+    }
+    if (!data.list && filters.list) {
+      data.list = filters.list;
+    }
+    if (filters.tag && (!data.tags || !data.tags.includes(filters.tag))) {
+      data.tags = [...(data.tags || []), filters.tag];
+    }
+    if (filters.persona && (!data.personas || !data.personas.includes(filters.persona))) {
+      data.personas = [...(data.personas || []), filters.persona];
+    }
+
+    store.addTask(data, tasks);
   };
 
   const handleUpdate = (id, rawChanges) => {

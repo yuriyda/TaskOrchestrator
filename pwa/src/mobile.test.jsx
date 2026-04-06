@@ -214,3 +214,119 @@ describe('Mobile Drawer', () => {
     })
   })
 })
+
+describe('List & Tag Filters', () => {
+  /** Find the drawer list button by name — drawer lists are inside a section headed "Lists" */
+  function getDrawerListBtn(name) {
+    const listSection = screen.getByText('Lists').parentElement
+    return Array.from(listSection.querySelectorAll('button')).find(b => b.textContent.includes(name))
+  }
+
+  it('filters tasks by list via drawer', async () => {
+    const { store, waitReady } = renderApp()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Work task', list: 'Work', status: 'active' })
+      await store.current.addTask({ title: 'Home task', list: 'Home', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByText('Work task')).toBeInTheDocument(), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByText('Home task')).toBeInTheDocument(), { timeout: 3000 })
+
+    // Open drawer and click "Work" list
+    const menuBtn = screen.getByTestId('mobile-app').querySelector('header button')
+    fireEvent.click(menuBtn)
+    await waitFor(() => expect(getDrawerListBtn('Work')).toBeTruthy())
+    fireEvent.click(getDrawerListBtn('Work'))
+
+    // Only Work tasks visible
+    await waitFor(() => {
+      expect(screen.getByText('Work task')).toBeInTheDocument()
+      expect(screen.queryByText('Home task')).toBeNull()
+    })
+
+    // Badge shown
+    expect(screen.getByText(/@Work/)).toBeInTheDocument()
+  })
+
+  it('filters tasks by tag via drawer', async () => {
+    const { store, waitReady } = renderApp()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Tagged urgent', tags: ['urgent'], status: 'active' })
+      await store.current.addTask({ title: 'No tag', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByText('Tagged urgent')).toBeInTheDocument(), { timeout: 3000 })
+
+    // Open drawer and click #urgent tag
+    const menuBtn = screen.getByTestId('mobile-app').querySelector('header button')
+    fireEvent.click(menuBtn)
+    await waitFor(() => {
+      const tagBtns = screen.getAllByText('#urgent')
+      expect(tagBtns.length).toBeGreaterThan(0)
+    })
+    // Find the tag button inside the drawer — tags are buttons with #tagname text
+    const allTagBtns = screen.getAllByText('#urgent').filter(el => el.tagName === 'BUTTON')
+    expect(allTagBtns.length).toBeGreaterThan(0)
+    fireEvent.click(allTagBtns[0])
+
+    // Only tagged task visible (drawer closes, filter applied)
+    await waitFor(() => {
+      expect(screen.getByText('Tagged urgent')).toBeInTheDocument()
+      expect(screen.queryByText('No tag')).toBeNull()
+    })
+  })
+
+  it('clears list filter via badge X', async () => {
+    const { store, waitReady } = renderApp()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Task A', list: 'Alpha', status: 'active' })
+      await store.current.addTask({ title: 'Task B', list: 'Beta', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByText('Task A')).toBeInTheDocument(), { timeout: 3000 })
+
+    // Set filter via drawer
+    const menuBtn = screen.getByTestId('mobile-app').querySelector('header button')
+    fireEvent.click(menuBtn)
+    await waitFor(() => expect(getDrawerListBtn('Alpha')).toBeTruthy())
+    fireEvent.click(getDrawerListBtn('Alpha'))
+    await waitFor(() => expect(screen.queryByText('Task B')).toBeNull())
+
+    // Clear via badge
+    const badge = screen.getByText(/@Alpha/)
+    fireEvent.click(badge)
+    await waitFor(() => {
+      expect(screen.getByText('Task A')).toBeInTheDocument()
+      expect(screen.getByText('Task B')).toBeInTheDocument()
+    })
+  })
+
+  it('new task inherits active list filter', async () => {
+    const { store, waitReady } = renderApp()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.addTask({ title: 'Existing', list: 'Work', status: 'active' })
+    })
+    await waitFor(() => expect(screen.getByText('Existing')).toBeInTheDocument(), { timeout: 3000 })
+
+    // Set list filter via drawer
+    const menuBtn = screen.getByTestId('mobile-app').querySelector('header button')
+    fireEvent.click(menuBtn)
+    await waitFor(() => expect(getDrawerListBtn('Work')).toBeTruthy())
+    fireEvent.click(getDrawerListBtn('Work'))
+    await waitFor(() => expect(screen.getByText(/@Work/)).toBeInTheDocument())
+
+    // Add task with same list — it should remain visible under filter
+    await act(async () => {
+      await store.current.addTask({ title: 'New work task', list: 'Work' })
+    })
+    await waitFor(() => {
+      expect(screen.getByText('New work task')).toBeInTheDocument()
+      expect(store.current.tasks.find(t => t.title === 'New work task').list).toBe('Work')
+    })
+  })
+})

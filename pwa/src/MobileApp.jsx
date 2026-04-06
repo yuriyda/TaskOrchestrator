@@ -732,6 +732,8 @@ export default function MobileApp({ store }) {
 
   const [filter, setFilter] = useState(null)
   const [dateRange, setDateRange] = useState(null)
+  const [listFilter, setListFilter] = useState(null)
+  const [tagFilter, setTagFilter] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchVisible, setSearchVisible] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -864,13 +866,15 @@ export default function MobileApp({ store }) {
         r = r.filter(tt => (tt.due && tt.due >= today && tt.due <= max) || isPastDue(tt))
       }
     }
+    if (listFilter) r = r.filter(t => t.list === listFilter)
+    if (tagFilter) r = r.filter(t => t.tags?.includes(tagFilter))
     if (calendarDate) r = r.filter(t => t.due === calendarDate)
     if (searchQuery) {
       const q = searchQuery.toLowerCase()
       r = r.filter(t => t.title.toLowerCase().includes(q))
     }
     return r
-  }, [tasks, filter, dateRange, calendarDate, searchQuery, today, isPastDue])
+  }, [tasks, filter, dateRange, listFilter, tagFilter, calendarDate, searchQuery, today, isPastDue])
 
   // Counts
   const counts = useMemo(() => ({
@@ -895,8 +899,19 @@ export default function MobileApp({ store }) {
   }, [store])
 
   const handleAdd = useCallback((data) => {
-    store.addTask(data)
-  }, [store])
+    const d = { ...data }
+    // Apply active filters as defaults so the new task stays in the current view
+    if (!d.due && dateRange) {
+      if (dateRange === 'today' || dateRange === 'overdue') d.due = today
+      else if (dateRange === 'tomorrow') { const dt = new Date(); dt.setDate(dt.getDate() + 1); d.due = localIsoDate(dt) }
+      else if (dateRange === 'week') { const dt = new Date(); dt.setDate(dt.getDate() + 7); d.due = localIsoDate(dt) }
+      else if (dateRange === 'month') { const dt = new Date(); dt.setDate(dt.getDate() + 30); d.due = localIsoDate(dt) }
+    }
+    if (filter === 'active' && (!d.status || d.status === 'inbox')) d.status = 'active'
+    if (!d.list && listFilter) d.list = listFilter
+    if (tagFilter && (!d.tags || !d.tags.includes(tagFilter))) d.tags = [...(d.tags || []), tagFilter]
+    store.addTask(d)
+  }, [store, filter, dateRange, listFilter, tagFilter, today])
 
   const showUndo = useCallback((label, undoFn) => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
@@ -1103,6 +1118,24 @@ export default function MobileApp({ store }) {
       {/* Agenda chips */}
       <AgendaBar dateRange={dateRange} onDateRange={setDateRange} agendaCounts={agendaCounts} t={t} />
 
+      {/* Active list/tag filter */}
+      {(listFilter || tagFilter) && (
+        <div className="flex items-center gap-1.5 px-4 py-1.5">
+          {listFilter && (
+            <button onClick={() => setListFilter(null)}
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400">
+              @{listFilter} <X size={10} />
+            </button>
+          )}
+          {tagFilter && (
+            <button onClick={() => setTagFilter(null)}
+              className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-sky-500/20 text-sky-400">
+              #{tagFilter} <X size={10} />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Task list */}
       <main className="flex-1 overflow-y-auto pb-24" data-testid="task-list">
         {filtered.length === 0 ? (
@@ -1260,8 +1293,8 @@ export default function MobileApp({ store }) {
               <div className="space-y-0.5">
                 {store.lists.map(name => (
                   <button key={name}
-                    onClick={() => { setFilter(null); setSearchQuery(''); setDrawerOpen(false) }}
-                    className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-300 active:bg-slate-700">
+                    onClick={() => { setListFilter(prev => prev === name ? null : name); setTagFilter(null); setDrawerOpen(false) }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm active:bg-slate-700 ${listFilter === name ? 'text-emerald-400 bg-emerald-400/10' : 'text-gray-300'}`}>
                     <List size={14} className="text-emerald-400" />
                     {name}
                   </button>
@@ -1276,7 +1309,11 @@ export default function MobileApp({ store }) {
               <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2 mt-4">{t('detail.tags') || 'Tags'}</div>
               <div className="flex flex-wrap gap-1.5">
                 {store.tags.map(tag => (
-                  <span key={tag} className="text-xs px-2 py-1 rounded-full bg-sky-500/15 text-sky-400">#{tag}</span>
+                  <button key={tag}
+                    onClick={() => { setTagFilter(prev => prev === tag ? null : tag); setListFilter(null); setDrawerOpen(false) }}
+                    className={`text-xs px-2 py-1 rounded-full ${tagFilter === tag ? 'bg-sky-500/30 text-sky-300 ring-1 ring-sky-400/50' : 'bg-sky-500/15 text-sky-400'}`}>
+                    #{tag}
+                  </button>
                 ))}
               </div>
             </>

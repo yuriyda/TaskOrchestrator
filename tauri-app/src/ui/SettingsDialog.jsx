@@ -168,12 +168,6 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
             ))}
           </div>
         </SettingRow>
-        <SettingRow label={t("settings.general.newTaskActiveToday")}>
-          <button onClick={() => updateSetting("newTaskActiveToday", !settings.newTaskActiveToday)}
-            className={`px-3 py-1.5 rounded text-sm transition-colors font-medium ${settings.newTaskActiveToday ? "bg-sky-600 text-white" : `${TC.elevated} ${TC.textSec} ${TC.hoverBg} hover:text-gray-200`}`}>
-            {settings.newTaskActiveToday ? "ON" : "OFF"}
-          </button>
-        </SettingRow>
         {/* Day Planner settings */}
         <SettingRow
           label={t("planner.dayStart")}
