@@ -728,9 +728,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
         const target = displayFiltered[cursor] ?? (selected.size === 1 ? tasks.find(x => selected.has(x.id)) : null);
         if (target) setEditTaskId(target.id);
       } else if (e.key === "Escape") {
+        if (confirmPending)    { setConfirmPending(null); return; }
+        if (showSettings)      { setShowSettings(false); return; }
         if (contextMenu)       { setContextMenu(null); return; }
-        if (editTaskId)        setEditTaskId(null);
-        else if (selected.size > 0) setSelected(new Set());
+        if (editTaskId)        { setEditTaskId(null); return; }
+        if (selected.size > 0) setSelected(new Set());
         else if (searchQuery)  setSearchQuery("");
         else                   clearAllFilters();
       }

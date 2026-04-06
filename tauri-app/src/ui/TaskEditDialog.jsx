@@ -13,6 +13,33 @@ import { Combobox } from "./Combobox";
 import { DateField } from "./DatePicker";
 import { STATUSES, PRIORITY_COLORS } from "../core/constants";
 
+function normalizeEstimate(raw) {
+  const s = (raw || "").trim();
+  if (!s) return "";
+  const hMatch = s.match(/^([\d.]+)\s*h(?:ours?)?$/i);
+  if (hMatch) { const h = parseFloat(hMatch[1]); return h > 0 ? `${h} hours` : ""; }
+  const mMatch = s.match(/^([\d.]+)\s*m(?:in(?:utes?)?)?$/i);
+  if (mMatch) { const m = Math.round(parseFloat(mMatch[1])); return m > 0 ? `${m} min` : ""; }
+  const num = parseFloat(s);
+  if (!isNaN(num) && num > 0) return num >= 60 ? `${(num / 60).toFixed(num % 60 ? 1 : 0)} hours` : `${Math.round(num)} min`;
+  return "";
+}
+
+function normalizeUrl(raw) {
+  let u = (raw || "").trim();
+  if (!u) return "";
+  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
+  return /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(u) ? u : "";
+}
+
+function normalizeRecurrence(raw) {
+  const r = (raw || "").trim();
+  if (!r) return "";
+  if (/^(daily|weekly|monthly|yearly)$/i.test(r)) return r.toLowerCase();
+  if (/^FREQ=/i.test(r)) return r;
+  return "";
+}
+
 export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }) {
   const { t, TC, lists, tags: allTags, flows, personas: allPersonas } = useApp();
   const [form, setForm] = useState({
@@ -105,9 +132,9 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel })
       personas:   form.personas,
       due:        form.due               || null,
       dateStart:  form.dateStart         || null,
-      recurrence: form.recurrence.trim() || null,
-      url:        (() => { let u = form.url.trim(); if (!u) return null; if (!/^https?:\/\//i.test(u)) u = "https://" + u; return /^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(u) ? u : null; })(),
-      estimate:   form.estimate.trim()   || null,
+      recurrence: normalizeRecurrence(form.recurrence) || null,
+      url:        normalizeUrl(form.url) || null,
+      estimate:   normalizeEstimate(form.estimate) || null,
       flowId:     form.flowId.trim()     || null,
       dependsOn:  form.dependsOn.trim()  || null,
       notes:      finalNotes,
@@ -263,11 +290,11 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel })
           <div className={`${sectionCls} grid-cols-2`}>
             <div>
               <label className={labelCls}>{t("edit.field.url")}</label>
-              <input className={inputCls} type="url" value={form.url} onChange={e => set("url", e.target.value)} placeholder="https://..." />
+              <input className={inputCls} type="url" value={form.url} onChange={e => set("url", e.target.value)} onBlur={() => set("url", normalizeUrl(form.url))} placeholder="https://..." />
             </div>
             <div>
               <label className={labelCls}>{t("edit.field.estimate")}</label>
-              <input className={inputCls} value={form.estimate} onChange={e => set("estimate", e.target.value)} placeholder="1 hour / 30 min" />
+              <input className={inputCls} value={form.estimate} onChange={e => set("estimate", e.target.value)} onBlur={() => set("estimate", normalizeEstimate(form.estimate))} placeholder="1 hour / 30 min" />
             </div>
           </div>
 
