@@ -261,8 +261,8 @@ describe('Sorting', () => {
   })
 })
 
-describe('CompletionFilter ↔ Sidebar status sync (REGRESSION)', () => {
-  it('clicking sidebar Active filter updates the completion toggle', async () => {
+describe('Sidebar status filter', () => {
+  it('clicking sidebar Active filter filters the task list', async () => {
     const user = renderApp()
     await createTask(user, 'Active task')
 
@@ -272,12 +272,12 @@ describe('CompletionFilter ↔ Sidebar status sync (REGRESSION)', () => {
       const activeBtn = within(sidebar).queryByText(/^Active$|^Активные$/i)
       if (activeBtn) {
         await user.click(activeBtn)
-        // The SortBar completion toggle should now show "Active" or "Активные"
-        // (not "All" / "Все")
-        const sortBar = document.querySelector('[data-guide="sort-filter"]')
-        if (sortBar) {
-          expect(sortBar.textContent).toMatch(/Active|Активные/)
-        }
+        // Status filter badge should appear (Active or Активные)
+        await waitFor(() => {
+          const badges = document.querySelectorAll('.bg-sky-600\\/20')
+          const hasStatusBadge = [...badges].some(b => b.textContent.match(/Active|Активные/i))
+          expect(hasStatusBadge).toBe(true)
+        })
       }
     }
   })

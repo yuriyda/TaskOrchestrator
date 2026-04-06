@@ -205,28 +205,23 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const [selected, setSelected] = useState(new Set());
   const [lastIdx, setLastIdx]   = useState(null);
   const [filters, setFilters] = useState(() => {
-    const saved = localStorage.getItem("completionFilter");
+    const saved = localStorage.getItem("statusFilter");
     const status = saved === "active" ? "active" : saved === "done" ? "done" : null;
     return { status, dateRange: null, list: null, tag: null, flow: null, persona: null };
   });
-  const syncCompletionFilter = (statusValue) => {
-    const cf = statusValue === "active" ? "active" : statusValue === "done" ? "done" : "all";
-    setCompletionFilter(cf);
-    localStorage.setItem("completionFilter", cf);
-  };
   const setFilter = (key, value) => {
     const newValue = filters[key] === value ? null : value;
     setFilters(f => ({ ...f, [key]: newValue }));
     if (key === "dateRange") setCalendarFilter(null);
-    if (key === "status") syncCompletionFilter(newValue);
+    if (key === "status") localStorage.setItem("statusFilter", newValue || "");
   };
   const setFilterForce = (key, value) => {
     setFilters(f => ({ ...f, [key]: value }));
     if (key === "dateRange") setCalendarFilter(null);
-    if (key === "status") syncCompletionFilter(value);
+    if (key === "status") localStorage.setItem("statusFilter", value || "");
   };
-  const clearFilter = (key) => setFilters(f => ({ ...f, [key]: null }));
-  const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null }); syncCompletionFilter(null); };
+  const clearFilter = (key) => { setFilters(f => ({ ...f, [key]: null })); if (key === "status") localStorage.setItem("statusFilter", ""); };
+  const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null }); localStorage.setItem("statusFilter", ""); };
   // Backward-compat helpers
   const hasAnyFilter = Object.values(filters).some(v => v !== null);
   const [searchQuery, setSearchQuery]   = useState("");
@@ -254,18 +249,6 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const [showDbSwitched,   setShowDbSwitched]   = useState(false);
   const rtmFileRef = useRef(null);
   const [sort, setSort] = useState(null);
-  const [completionFilter, setCompletionFilter] = useState(() => localStorage.getItem("completionFilter") || "all");
-
-  const cycleCompletionFilter = () => {
-    setCompletionFilter(cf => {
-      const next = cf === "all" ? "active" : cf === "active" ? "done" : "all";
-      localStorage.setItem("completionFilter", next);
-      // Sync sidebar status filter
-      setFilters(f => ({ ...f, status: next === "all" ? null : next }));
-      return next;
-    });
-  };
-
   // ── Rubber-band selection ─────────────────────────────────────────────────
   const [dragRect, setDragRect] = useState(null); // {x1,y1,x2,y2} in clientX/Y
   const dragStartRef = useRef(null);              // {x,y} at mousedown
@@ -330,7 +313,6 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
       );
     }
     if (calendarFilter) r = r.filter(t => t.due === calendarFilter);
-    // completionFilter is synced with filters.status — filtering happens via filters.status above
 
     // Primary sort by selected field (if any), secondary always by title
     const field = sort?.field ?? null;
@@ -355,7 +337,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
     });
 
     return r;
-  }, [tasks, filters, searchQuery, calendarFilter, sort, locale, completionFilter]);
+  }, [tasks, filters, searchQuery, calendarFilter, sort, locale]);
 
   // Overdue tasks float to the top of the list
   const displayFiltered = useMemo(() => {
@@ -1222,7 +1204,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
               }}
             />
             <QuickEntry onAdd={handleAdd} />
-            <SortBar sort={sort} onToggle={toggleSort} completionFilter={completionFilter} onCycleCompletion={cycleCompletionFilter} />
+            <SortBar sort={sort} onToggle={toggleSort} />
 
             {(hasAnyFilter || calendarFilter) && (
               <div className="flex items-center gap-1.5 text-sm flex-wrap">
@@ -1530,8 +1512,6 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
               setCalendarFilter(null);
               setSearchQuery("");
               setSort(null);
-              setCompletionFilter("all");
-              localStorage.setItem("completionFilter", "all");
             }}
             dbPath={store.dbPath}
             onRevealDb={store.revealDb}
