@@ -312,7 +312,7 @@ export function DayPlanner({
     const rect = gridRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top + (gridRef.current.scrollTop || 0);
     const rawMinutes = yToMinutes(y);
-    const snappedMinutes = snapToGrid(rawMinutes, slotStep);
+    const snappedMinutes = Math.floor(rawMinutes / slotStep) * slotStep;
     const time = minutesToTime(Math.max(dayStartHour * 60, snappedMinutes));
     setContextMenu({ x: e.clientX, y: e.clientY, emptyTime: time });
   }, [yToMinutes, slotStep, dayStartHour]);
@@ -332,7 +332,7 @@ export function DayPlanner({
     const rect = gridRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top + (gridRef.current.scrollTop || 0);
     const rawMinutes = yToMinutes(y);
-    const snappedMinutes = snapToGrid(rawMinutes, slotStep);
+    const snappedMinutes = Math.floor(rawMinutes / slotStep) * slotStep;
     const time = minutesToTime(Math.max(dayStartHour * 60, snappedMinutes));
     onCreateTaskHere(time);
   }, [yToMinutes, slotStep, dayStartHour, onCreateTaskHere]);

@@ -38,7 +38,7 @@ import { SortBar } from "./tauri-app/src/ui/SortBar.jsx";
 import { StatusBar } from "./tauri-app/src/ui/StatusBar.jsx";
 import { GUIDE_STEPS, GuideOverlay } from "./tauri-app/src/ui/GuideOverlay.jsx";
 import { DayPlanner } from "./tauri-app/src/ui/DayPlanner.jsx";
-import { defaultEndTime } from "./tauri-app/src/store/dayPlanner.js";
+import { defaultEndTime, timeToMinutes, minutesToTime } from "./tauri-app/src/store/dayPlanner.js";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -238,6 +238,8 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   const [showCalendar, setShowCalendar]     = useState(true);
   const [showPlanner, setShowPlanner]       = useState(false);
   const [plannerDate, setPlannerDate]       = useState(() => new Date().toISOString().slice(0, 10));
+  const [plannerWidthPct, setPlannerWidthPct] = useState(40);
+  const plannerDividerRef = useRef(null);
   const [calendarFilter, setCalendarFilterRaw] = useState(null);
   const setCalendarFilter = (v) => {
     setCalendarFilterRaw(v);
@@ -503,9 +505,23 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
 
   const handlePlannerBlockSlot = useCallback((time) => {
     if (!store.plannerAddBlockedSlot) return;
-    const endTime = defaultEndTime(time, 60);
+    const startMin = timeToMinutes(time);
+    const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
+    const slots = store.dayPlanSlots || [];
+    let maxAvailable = dayEnd - startMin;
+    for (const s of slots) {
+      const sStart = timeToMinutes(s.startTime);
+      const sEnd = timeToMinutes(s.endTime);
+      if (sStart <= startMin && sEnd > startMin) { maxAvailable = 0; break; }
+      if (sStart >= startMin && sStart - startMin < maxAvailable) {
+        maxAvailable = sStart - startMin;
+      }
+    }
+    const duration = Math.min(60, maxAvailable);
+    if (duration <= 0) return;
+    const endTime = minutesToTime(startMin + duration);
     store.plannerAddBlockedSlot(t("planner.blocked"), time, endTime);
-  }, [store.plannerAddBlockedSlot, t]);
+  }, [store.plannerAddBlockedSlot, t, settings.plannerDayEnd, store.dayPlanSlots]);
 
   const pendingSlotTimeRef = useRef(null);
   const prevTaskCountRef = useRef(0);
@@ -522,7 +538,23 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
       if (newest) {
         const time = pendingSlotTimeRef.current;
         pendingSlotTimeRef.current = null;
-        const endTime = defaultEndTime(time, 60);
+        const startMin = timeToMinutes(time);
+        const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
+        const slots = store.dayPlanSlots || [];
+        let maxAvailable = dayEnd - startMin;
+        for (const s of slots) {
+          const sStart = timeToMinutes(s.startTime);
+          const sEnd = timeToMinutes(s.endTime);
+          // Clicked time is inside an existing slot
+          if (sStart <= startMin && sEnd > startMin) { maxAvailable = 0; break; }
+          // Slot starts at or after our position
+          if (sStart >= startMin && sStart - startMin < maxAvailable) {
+            maxAvailable = sStart - startMin;
+          }
+        }
+        const duration = Math.min(60, maxAvailable);
+        if (duration <= 0) return;
+        const endTime = minutesToTime(startMin + duration);
         store.plannerAddTaskSlot(newest.id, time, endTime, tasks);
       }
     }
@@ -1315,8 +1347,37 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
           <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? wrappedSyncNow : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} />
           </div>
 
-          {showPlanner && (
-            <div className="flex-1 flex-shrink-0 overflow-hidden" style={{ maxWidth: "50%" }}>
+          {showPlanner && (<>
+            {/* Resizable divider */}
+            <div
+              ref={plannerDividerRef}
+              className="w-1.5 flex-shrink-0 cursor-col-resize hover:bg-white/10 active:bg-white/15 transition-colors relative group"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                const container = e.currentTarget.parentElement;
+                const onMove = (ev) => {
+                  const containerRect = container.getBoundingClientRect();
+                  const rightPanel = container.querySelector('[data-guide="detail-panel"]');
+                  const plannerRight = rightPanel ? rightPanel.getBoundingClientRect().left : containerRect.right;
+                  const plannerPx = plannerRight - ev.clientX;
+                  const pct = (plannerPx / containerRect.width) * 100;
+                  setPlannerWidthPct(Math.max(20, Math.min(60, pct)));
+                };
+                const onUp = () => {
+                  document.removeEventListener("mousemove", onMove);
+                  document.removeEventListener("mouseup", onUp);
+                  document.body.style.cursor = "";
+                  document.body.style.userSelect = "";
+                };
+                document.body.style.cursor = "col-resize";
+                document.body.style.userSelect = "none";
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+              }}
+            >
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-white/5 group-hover:bg-white/20 transition-colors" />
+            </div>
+            <div className="flex-shrink-0 overflow-hidden" style={{ width: `${plannerWidthPct}%` }}>
               <DayPlanner
                 slots={store.dayPlanSlots || []}
                 currentPlan={store.currentPlan}
@@ -1343,7 +1404,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
                 settingsDayEnd={settings.plannerDayEnd}
               />
             </div>
-          )}
+          </>)}
 
           {showRightPanel && (
             <div data-guide="detail-panel" className={`w-64 flex-shrink-0 border-l flex flex-col overflow-hidden ${TC.borderClass}`}>
