@@ -442,6 +442,9 @@ export function DayPlanner({
             <div className="flex items-center gap-1.5 min-w-0 h-full">
               {isDone && <Check size={10} className="text-emerald-500 flex-shrink-0" />}
               {isBlocked && <Lock size={10} className="text-gray-400 flex-shrink-0" />}
+              {task?.personas?.map(p => (
+                <span key={p} className="text-[9px] text-indigo-400/90 bg-indigo-400/10 px-1 rounded flex-shrink-0">{p}</span>
+              ))}
               <span className={`text-xs font-medium truncate flex-1
                 ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-400" : TC.text}`}>
                 {isBlocked ? (slot.title || t("planner.blocked")) : (task?.title || "—")}
@@ -455,6 +458,9 @@ export function DayPlanner({
               <div className="flex items-center gap-1 min-w-0">
                 {isDone && <Check size={10} className="text-emerald-500 flex-shrink-0" />}
                 {isBlocked && <Lock size={10} className="text-gray-400 flex-shrink-0" />}
+                {task?.personas?.map(p => (
+                  <span key={p} className="text-[9px] text-indigo-400/90 bg-indigo-400/10 px-1 py-0.5 rounded flex-shrink-0">{p}</span>
+                ))}
                 <span className={`text-xs font-medium truncate
                   ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-400" : TC.text}`}>
                   {isBlocked ? (slot.title || t("planner.blocked")) : (task?.title || "—")}
@@ -639,7 +645,9 @@ export function DayPlanner({
 
       {/* Inline editor for blocked slots (title + recurrence) */}
       {editingTitle && (
-        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30" onClick={() => setEditingTitle(null)}>
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30"
+             onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
+             onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; setEditingTitle(null); } }}>
           <div className={`rounded-lg p-4 shadow-xl ${TC.surface} border ${TC.borderClass}`} onClick={e => e.stopPropagation()}>
             <input
               autoFocus

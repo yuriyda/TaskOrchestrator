@@ -1083,7 +1083,9 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+           onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
+           onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; onClose(); } }} />
       <div className={`relative z-10 flex rounded-xl shadow-2xl border overflow-hidden ${TC.surface} ${TC.borderClass}`}
            style={{ width: 720, maxHeight: "85vh" }}>
 

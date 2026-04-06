@@ -301,7 +301,9 @@ export function DetailPanel({ selected, tasks, onUpdate, onEditFull }) {
 
       {/* Note edit modal */}
       {noteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setNoteModal(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+             onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
+             onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; setNoteModal(null); } }}>
           <div
             className={`w-full max-w-lg mx-4 rounded-xl shadow-2xl border ${TC.surface} ${TC.borderClass} flex flex-col`}
             onClick={e => e.stopPropagation()}

@@ -148,7 +148,8 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel })
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-         onClick={onCancel}>
+         onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
+         onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; onCancel(); } }}>
       <div className={`w-[520px] max-h-[90vh] flex flex-col rounded-xl shadow-2xl border ${TC.surface} ${TC.borderClass}`}
            onClick={e => e.stopPropagation()}
            onKeyDown={e => {

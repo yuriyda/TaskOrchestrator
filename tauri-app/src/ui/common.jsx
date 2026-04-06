@@ -67,7 +67,8 @@ export function ConfirmDialog({ message, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center"
          style={{ background: "rgba(0,0,0,0.55)" }}
-         onClick={onCancel}>
+         onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
+         onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; onCancel(); } }}>
       <div className={`border rounded-xl shadow-2xl p-6 w-72 ${TC.surface} ${TC.borderClass}`}
            onClick={e => e.stopPropagation()}>
         <p className={`text-sm font-medium text-center mb-5 ${TC.text}`}>{message}</p>
