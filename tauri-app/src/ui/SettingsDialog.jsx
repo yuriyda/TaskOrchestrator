@@ -174,6 +174,47 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
             {settings.newTaskActiveToday ? "ON" : "OFF"}
           </button>
         </SettingRow>
+        {/* Day Planner settings */}
+        <SettingRow
+          label={t("planner.dayStart")}
+          description={locale === "ru" ? "Час начала сетки планера" : "Planner grid start hour"}>
+          <select
+            value={settings.plannerDayStart ?? 9}
+            onChange={e => updateSetting("plannerDayStart", parseInt(e.target.value))}
+            className={`px-2 py-1 rounded text-sm ${TC.input} ${TC.borderClass} border`}
+          >
+            {Array.from({ length: 24 }, (_, i) => (
+              <option key={i} value={i}>{String(i).padStart(2, "0")}:00</option>
+            ))}
+          </select>
+        </SettingRow>
+        <SettingRow
+          label={t("planner.dayEnd")}
+          description={locale === "ru" ? "Час окончания сетки планера" : "Planner grid end hour"}>
+          <select
+            value={settings.plannerDayEnd ?? 17}
+            onChange={e => updateSetting("plannerDayEnd", parseInt(e.target.value))}
+            className={`px-2 py-1 rounded text-sm ${TC.input} ${TC.borderClass} border`}
+          >
+            {Array.from({ length: 24 }, (_, i) => i + 1).map(h => (
+              <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+            ))}
+          </select>
+        </SettingRow>
+        <SettingRow
+          label={t("planner.slotStep")}
+          description={locale === "ru" ? "Минимальный шаг сетки планера" : "Planner grid snap step"}>
+          <select
+            value={settings.plannerSlotStep ?? 30}
+            onChange={e => updateSetting("plannerSlotStep", parseInt(e.target.value))}
+            className={`px-2 py-1 rounded text-sm ${TC.input} ${TC.borderClass} border`}
+          >
+            <option value={15}>15 {t("planner.minutes")}</option>
+            <option value={30}>30 {t("planner.minutes")}</option>
+            <option value={60}>60 {t("planner.minutes")}</option>
+          </select>
+        </SettingRow>
+
         <SettingRow
           label={locale === "ru" ? "Извлекать URL из названия" : "Auto-extract URL from title"}
           description={locale === "ru" ? "Автоматически переносить ссылку из названия задачи в поле URL" : "Automatically move links from task title to the URL field"}>

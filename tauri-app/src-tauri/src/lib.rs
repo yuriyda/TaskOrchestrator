@@ -5,7 +5,9 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::Mutex;
-use tauri::{Manager, State};
+#[cfg(not(debug_assertions))]
+use tauri::Manager;
+use tauri::State;
 
 struct OAuthListener(Mutex<Option<TcpListener>>);
 
@@ -81,20 +83,28 @@ async fn oauth_await_code(state: State<'_, OAuthListener>) -> Result<String, Str
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .manage(OAuthListener(Mutex::new(None)))
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Focus existing window when second instance is launched
+        .invoke_handler(tauri::generate_handler![oauth_start, oauth_await_code]);
+
+    // Single-instance only in release builds (dev and release use the same identifier,
+    // so the plugin would block dev when release is running)
+    #[cfg(not(debug_assertions))]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_focus();
             }
-        }))
-        .invoke_handler(tauri::generate_handler![oauth_start, oauth_await_code])
+        }));
+    }
+
+    builder
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

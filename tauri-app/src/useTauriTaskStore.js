@@ -13,12 +13,13 @@ import { ulid } from './ulid.js'
 import { safeIsoDate, localDateStr } from './core/date.js'
 import { VALID_STATUSES, VALID_PRIORITIES } from './core/constants.js'
 import { handleTaskDone, isTaskBlocked, computeNextCycleStatus } from './core/taskActions.js'
-import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_V5, MIGRATIONS_V6, MIGRATIONS_V7, LATEST_SCHEMA_VERSION } from './store/migrations.js'
+import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_V5, MIGRATIONS_V6, MIGRATIONS_V7, MIGRATIONS_V8, MIGRATIONS_V9, LATEST_SCHEMA_VERSION } from './store/migrations.js'
 import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, withTransaction, fetchAll, buildSqlOps, logChange, nextLamport } from './store/helpers.js'
 import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
 import { exportDeltas, clearSyncLog, getVectorClock, buildSyncRequest, computeSyncPackage, importSyncPackage } from './store/sync.js'
 import { isConnected as gdriveIsConnected, connect as gdriveConnect, disconnect as gdriveDisconnect, syncWithDrive, hasSyncFile as gdriveHasSyncFile, deleteSyncFile as gdriveDeleteSyncFile, readSyncFile as gdriveReadSyncFile, loadTokens as gdriveLoadTokens } from './store/googleDrive.js'
+import { getOrCreatePlan, getPlanByDate, getSlotsByPlan, getEffectiveSlots, getSlotsByDate, addTaskSlot, addBlockedSlot, moveSlot, resizeSlot, removeSlot, updateSlotTitle, updateSlotRecurrence, updatePlanHours } from './store/dayPlanner.js'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -96,6 +97,18 @@ async function openDb() {
     // Backfill lamport_ts from rowid order for existing tasks
     try { await _db.execute("UPDATE tasks SET lamport_ts = rowid WHERE lamport_ts = 0") } catch (_) {}
     await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','7')")
+  }
+  if (version < 8) {
+    for (const sql of MIGRATIONS_V8) {
+      try { await _db.execute(sql) } catch (_) { /* table/index already exists */ }
+    }
+    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','8')")
+  }
+  if (version < 9) {
+    for (const sql of MIGRATIONS_V9) {
+      try { await _db.execute(sql) } catch (_) { /* column already exists */ }
+    }
+    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','9')")
   }
 
   return _db
@@ -647,6 +660,8 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db) return
     await withTransaction(db, async () => {
+      await db.execute('DELETE FROM day_plan_slots')
+      await db.execute('DELETE FROM day_plans')
       await db.execute('DELETE FROM tasks')
       await db.execute('DELETE FROM notes')
       await db.execute('DELETE FROM tags')
@@ -1026,6 +1041,110 @@ export function useTauriTaskStore() {
     return result
   }, [refreshRef])
 
+  // ── Day Planner ─────────────────────────────────────────────────────────────
+
+  const [dayPlanSlots, setDayPlanSlots] = useState([])
+  const [currentPlan,  setCurrentPlan]  = useState(null)
+
+  const plannerLoadDay = useCallback(async (date, defaults) => {
+    const db = dbRef.current
+    if (!db) return
+    const did = deviceIdRef.current
+    const plan = await getOrCreatePlan(db, date, did, defaults)
+    // Sync plan hours with current settings if they differ
+    const wantStart = defaults?.dayStartHour ?? 9
+    const wantEnd = defaults?.dayEndHour ?? 17
+    if (plan.dayStartHour !== wantStart || plan.dayEndHour !== wantEnd) {
+      await updatePlanHours(db, plan.id, wantStart, wantEnd, did)
+      plan.dayStartHour = wantStart
+      plan.dayEndHour = wantEnd
+    }
+    // Get own slots + recurring blocked slots from other days (virtual, not copied)
+    const slots = await getEffectiveSlots(db, date, plan.id)
+    // Always create a new object to ensure React detects state change
+    setCurrentPlan({ ...plan })
+    setDayPlanSlots(slots)
+    return plan
+  }, [])
+
+  const plannerRefreshSlots = useCallback(async () => {
+    const db = dbRef.current
+    if (!db || !currentPlan) return
+    const slots = await getEffectiveSlots(db, currentPlan.date, currentPlan.id)
+    setDayPlanSlots(slots)
+  }, [currentPlan])
+
+  const plannerAddTaskSlot = useCallback(async (taskId, startTime, endTime, currentTasks) => {
+    const db = dbRef.current
+    if (!db || !currentPlan) return null
+    const did = deviceIdRef.current
+    setHistory(h => [...h.slice(-5), currentTasks])
+    const slot = await addTaskSlot(db, currentPlan.id, taskId, startTime, endTime, did)
+    setDayPlanSlots(prev => [...prev, slot].sort((a, b) => a.startTime.localeCompare(b.startTime)))
+    return slot
+  }, [currentPlan])
+
+  const plannerAddBlockedSlot = useCallback(async (title, startTime, endTime) => {
+    const db = dbRef.current
+    if (!db || !currentPlan) return null
+    const did = deviceIdRef.current
+    const slot = await addBlockedSlot(db, currentPlan.id, title, startTime, endTime, did)
+    setDayPlanSlots(prev => [...prev, slot].sort((a, b) => a.startTime.localeCompare(b.startTime)))
+    return slot
+  }, [currentPlan])
+
+  const plannerMoveSlot = useCallback(async (slotId, startTime, endTime, currentTasks) => {
+    const db = dbRef.current
+    if (!db) return
+    setHistory(h => [...h.slice(-5), currentTasks])
+    const did = deviceIdRef.current
+    await moveSlot(db, slotId, startTime, endTime, did)
+    setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, startTime, endTime } : s)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime)))
+  }, [])
+
+  const plannerResizeSlot = useCallback(async (slotId, endTime, currentTasks) => {
+    const db = dbRef.current
+    if (!db) return
+    setHistory(h => [...h.slice(-5), currentTasks])
+    const did = deviceIdRef.current
+    await resizeSlot(db, slotId, endTime, did)
+    setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, endTime } : s))
+  }, [])
+
+  const plannerRemoveSlot = useCallback(async (slotId, currentTasks) => {
+    const db = dbRef.current
+    if (!db) return
+    setHistory(h => [...h.slice(-5), currentTasks])
+    const did = deviceIdRef.current
+    await removeSlot(db, slotId, did)
+    setDayPlanSlots(prev => prev.filter(s => s.id !== slotId))
+  }, [])
+
+  const plannerUpdateSlotTitle = useCallback(async (slotId, title) => {
+    const db = dbRef.current
+    if (!db) return
+    const did = deviceIdRef.current
+    await updateSlotTitle(db, slotId, title, did)
+    setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, title } : s))
+  }, [])
+
+  const plannerUpdateSlotRecurrence = useCallback(async (slotId, recurrence) => {
+    const db = dbRef.current
+    if (!db) return
+    const did = deviceIdRef.current
+    await updateSlotRecurrence(db, slotId, recurrence, did)
+    setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, recurrence } : s))
+  }, [])
+
+  const plannerUpdateHours = useCallback(async (dayStartHour, dayEndHour) => {
+    const db = dbRef.current
+    if (!db || !currentPlan) return
+    const did = deviceIdRef.current
+    await updatePlanHours(db, currentPlan.id, dayStartHour, dayEndHour, did)
+    setCurrentPlan(prev => ({ ...prev, dayStartHour, dayEndHour }))
+  }, [currentPlan])
+
   return {
     tasks, lists, tags, flows, flowMeta, personas,
     addTask, updateTask, bulkStatus, bulkCycle, bulkDelete, bulkPriority, bulkDueShift, bulkSnooze, bulkAssignToday,
@@ -1038,5 +1157,11 @@ export function useTauriTaskStore() {
     exportSync, importSync, exportSyncRequest, handleSyncRequest, importSyncClipboard, getSyncLog, getSyncStats, clearSyncData,
     gdriveCheckConnection, gdriveConnectAccount, gdriveDisconnectAccount, gdriveSyncNow, gdriveGetConfig, gdriveCheckSyncFile, gdrivePurgeSyncFile, gdriveReadSyncFile: gdriveReadSyncFileCb,
     openUrl: createSafeOpenUrl(openUrl),
+    // Day Planner
+    dayPlanSlots, currentPlan,
+    plannerLoadDay, plannerRefreshSlots,
+    plannerAddTaskSlot, plannerAddBlockedSlot,
+    plannerMoveSlot, plannerResizeSlot, plannerRemoveSlot,
+    plannerUpdateSlotTitle, plannerUpdateSlotRecurrence, plannerUpdateHours,
   }
 }

@@ -112,6 +112,7 @@ export function Sidebar({ tasks, filters, setFilter, clearFilter, onOpenSettings
     ["Shift+P",       t("hk.postpone")],
     ["Ctrl+Z",        t("hk.undo")],
     ["Ctrl+E",        t("hk.search")],
+    ["Ctrl+D",        t("hk.planner")],
     ["Esc",           t("hk.escape")],
   ];
 

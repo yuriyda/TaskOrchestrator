@@ -108,4 +108,39 @@ export const MIGRATIONS_V7: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_sync_log_entity ON sync_log(entity, entity_id)`,
 ]
 
-export const LATEST_SCHEMA_VERSION: number = 7
+export const MIGRATIONS_V8: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS day_plans (
+     id             TEXT PRIMARY KEY,
+     date           TEXT NOT NULL UNIQUE,
+     day_start_hour INTEGER NOT NULL DEFAULT 9,
+     day_end_hour   INTEGER NOT NULL DEFAULT 17,
+     created_at     TEXT NOT NULL,
+     updated_at     TEXT NOT NULL,
+     device_id      TEXT,
+     lamport_ts     INTEGER NOT NULL DEFAULT 0
+   )`,
+  `CREATE TABLE IF NOT EXISTS day_plan_slots (
+     id          TEXT PRIMARY KEY,
+     plan_id     TEXT NOT NULL REFERENCES day_plans(id) ON DELETE CASCADE,
+     task_id     TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+     title       TEXT,
+     start_time  TEXT NOT NULL,
+     end_time    TEXT NOT NULL,
+     slot_type   TEXT NOT NULL DEFAULT 'task',
+     sort_order  INTEGER NOT NULL DEFAULT 0,
+     recurrence  TEXT,
+     created_at  TEXT NOT NULL,
+     device_id   TEXT,
+     lamport_ts  INTEGER NOT NULL DEFAULT 0
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_day_plans_date ON day_plans(date)`,
+  `CREATE INDEX IF NOT EXISTS idx_day_plan_slots_plan ON day_plan_slots(plan_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_day_plan_slots_task ON day_plan_slots(task_id)`,
+]
+
+// v9: add recurrence column to day_plan_slots (may already exist if v8 was applied fresh)
+export const MIGRATIONS_V9: readonly string[] = [
+  `ALTER TABLE day_plan_slots ADD COLUMN recurrence TEXT`,
+]
+
+export const LATEST_SCHEMA_VERSION: number = 9
