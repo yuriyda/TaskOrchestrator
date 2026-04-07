@@ -31,7 +31,7 @@ export function SettingRow({ label, description, children }) {
   );
 }
 
-export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }) {
+export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks, filteredTasks, hasActiveFilter, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }) {
   const { t, locale, setLocale, theme, setTheme, TC, settings, updateSetting } = useApp();
   const [activeTab, setActiveTab] = useState(initialTab || "general");
   const [clearStep, setClearStep] = useState(0);
@@ -124,6 +124,94 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
 
   const toggleCsvField = (key, checked) => {
     setCsvFields(prev => { const n = new Set(prev); checked ? n.add(key) : n.delete(key); return n; });
+  };
+
+  const [obsExportScope, setObsExportScope] = useState("all");
+  const [obsExportMsg, setObsExportMsg] = useState(null);
+  const getExportTasks = () => obsExportScope === "filtered" && filteredTasks ? filteredTasks : tasks;
+
+  const sanitizeFilename = (name) => name.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim().slice(0, 120) || "untitled";
+
+  const taskToFrontmatter = (task) => {
+    const lines = ["---"];
+    lines.push(`id: "${task.id}"`);
+    lines.push(`status: ${task.status || "inbox"}`);
+    lines.push(`priority: ${task.priority || 4}`);
+    if (task.due) lines.push(`due: ${task.due}`);
+    if (task.list) lines.push(`list: "${task.list}"`);
+    if (task.tags?.length) lines.push(`tags: [${task.tags.map(t => `"${t}"`).join(", ")}]`);
+    if (task.personas?.length) lines.push(`personas: [${task.personas.map(p => `"${p}"`).join(", ")}]`);
+    if (task.recurrence) lines.push(`recurrence: ${task.recurrence}`);
+    if (task.estimate) lines.push(`estimate: "${task.estimate}"`);
+    if (task.url) lines.push(`url: "${task.url}"`);
+    lines.push(`created: ${task.createdAt?.slice(0, 10) || ""}`);
+    lines.push("---");
+    return lines.join("\n");
+  };
+
+  const exportObsidianFiles = async () => {
+    try {
+      const dir = await window.showDirectoryPicker();
+      const exportTasks = getExportTasks();
+      const usedNames = new Set();
+      for (const task of exportTasks) {
+        let name = sanitizeFilename(task.title);
+        if (usedNames.has(name.toLowerCase())) name += ` (${task.id.slice(-4)})`;
+        usedNames.add(name.toLowerCase());
+        const fm = taskToFrontmatter(task);
+        const body = (task.notes || []).map(n => n.content).join("\n\n");
+        const content = fm + "\n\n" + body;
+        const file = await dir.getFileHandle(`${name}.md`, { create: true });
+        const writable = await file.createWritable();
+        await writable.write(content);
+        await writable.close();
+      }
+      setObsExportMsg(`${t("settings.export.done")}: ${exportTasks.length}`);
+      setTimeout(() => setObsExportMsg(null), 3000);
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      console.error("Obsidian files export error:", e);
+    }
+  };
+
+  const exportObsidianList = async () => {
+    try {
+      if (typeof window.showSaveFilePicker !== "function") return;
+      const handle = await window.showSaveFilePicker({
+        suggestedName: "tasks.md",
+        types: [{ description: "Markdown", accept: { "text/markdown": [".md"] } }],
+      });
+      const exportTasks = getExportTasks();
+      const byList = {};
+      for (const task of exportTasks) {
+        const list = task.list || (locale === "ru" ? "Без списка" : "No list");
+        if (!byList[list]) byList[list] = [];
+        byList[list].push(task);
+      }
+      const lines = [];
+      for (const [list, listTasks] of Object.entries(byList)) {
+        lines.push(`## ${list}\n`);
+        for (const task of listTasks) {
+          const done = task.status === "done" ? "x" : " ";
+          const parts = [`- [${done}] ${task.title}`];
+          if (task.due) parts.push(`📅 ${task.due}`);
+          if (task.priority && task.priority < 4) parts.push(`⏫`.repeat(4 - task.priority));
+          if (task.tags?.length) parts.push(task.tags.map(t => `#${t}`).join(" "));
+          if (task.recurrence) parts.push(`🔁 ${task.recurrence}`);
+          if (task.estimate) parts.push(`⏱️ ${task.estimate}`);
+          lines.push(parts.join(" "));
+        }
+        lines.push("");
+      }
+      const writable = await handle.createWritable();
+      await writable.write(lines.join("\n"));
+      await writable.close();
+      setObsExportMsg(`${t("settings.export.done")}: ${exportTasks.length}`);
+      setTimeout(() => setObsExportMsg(null), 3000);
+    } catch (e) {
+      if (e.name === "AbortError") return;
+      console.error("Obsidian list export error:", e);
+    }
   };
 
   const renderGeneral = () => (
@@ -334,8 +422,10 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
   );
 
   const renderExport = () => (
-    <div>
+    <div className="space-y-4">
       <h2 className={`text-base font-semibold mb-4 ${TC.text}`}>{t("settings.export.title")}</h2>
+
+      {/* CSV */}
       <div className={`rounded-lg border p-4 ${TC.borderClass}`}>
         <div className={`font-medium text-sm mb-1 ${TC.text}`}>{t("settings.export.csv")}</div>
         <div className={`text-xs mb-4 ${TC.textMuted}`}>{t("settings.export.csvDesc")}</div>
@@ -356,6 +446,48 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
           className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors ${csvFields.size > 0 ? "bg-emerald-600 hover:bg-emerald-500 text-white" : "bg-gray-700 text-gray-500 cursor-not-allowed"}`}>
           <Download size={14} />{t("settings.export.csvBtn")}
         </button>
+      </div>
+
+      {/* Obsidian */}
+      <div className={`rounded-lg border p-4 ${TC.borderClass}`}>
+        <div className={`font-medium text-sm mb-1 ${TC.text}`}>{t("settings.export.obsidian")}</div>
+
+        {/* Scope selector */}
+        <div className="flex items-center gap-3 my-3">
+          <span className={`text-xs ${TC.textMuted}`}>{t("settings.export.scope")}:</span>
+          <label className="flex items-center gap-1.5 cursor-pointer">
+            <input type="radio" name="obsScope" checked={obsExportScope === "all"} onChange={() => setObsExportScope("all")} className="accent-sky-500" />
+            <span className={`text-xs ${TC.textSec}`}>{t("settings.export.scopeAll")} ({tasks.length})</span>
+          </label>
+          {hasActiveFilter && (
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input type="radio" name="obsScope" checked={obsExportScope === "filtered"} onChange={() => setObsExportScope("filtered")} className="accent-sky-500" />
+              <span className={`text-xs ${TC.textSec}`}>{t("settings.export.scopeFiltered")} ({filteredTasks?.length || 0})</span>
+            </label>
+          )}
+        </div>
+
+        {obsExportMsg && <div className="text-xs text-green-400 mb-3">{obsExportMsg}</div>}
+
+        {/* Variant 1: Individual files */}
+        <div className={`rounded border p-3 mb-3 ${TC.borderClass}`}>
+          <div className={`text-xs font-medium mb-1 ${TC.text}`}>{t("settings.export.obsidianFiles")}</div>
+          <div className={`text-xs mb-3 ${TC.textMuted}`}>{t("settings.export.obsidianFilesDesc")}</div>
+          <button onClick={exportObsidianFiles}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors bg-violet-600 hover:bg-violet-500 text-white">
+            <FolderOpen size={14} />{t("settings.export.obsidianFilesBtn")}
+          </button>
+        </div>
+
+        {/* Variant 2: Single file */}
+        <div className={`rounded border p-3 ${TC.borderClass}`}>
+          <div className={`text-xs font-medium mb-1 ${TC.text}`}>{t("settings.export.obsidianList")}</div>
+          <div className={`text-xs mb-3 ${TC.textMuted}`}>{t("settings.export.obsidianListDesc")}</div>
+          <button onClick={exportObsidianList}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors bg-violet-600 hover:bg-violet-500 text-white">
+            <Download size={14} />{t("settings.export.obsidianListBtn")}
+          </button>
+        </div>
       </div>
     </div>
   );

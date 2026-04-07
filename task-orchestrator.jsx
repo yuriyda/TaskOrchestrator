@@ -1496,6 +1496,8 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
             onClose={() => setShowSettings(false)}
             onTriggerRtmImport={() => rtmFileRef.current?.click()}
             tasks={tasks}
+            filteredTasks={filtered}
+            hasActiveFilter={hasAnyFilter || !!calendarFilter}
             onClearAll={async () => {
               await store.clearAll?.();
               setSelected(new Set());
