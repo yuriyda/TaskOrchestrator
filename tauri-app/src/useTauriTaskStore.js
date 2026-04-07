@@ -185,8 +185,9 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db) return
     setHistory(h => [...h.slice(-5), currentTasks])
-    await fn(db)
+    const result = await fn(db)
     setTasks(await fetchAll(db))
+    return result
   }, [])
 
   const refreshRef = useCallback(async () => {
@@ -235,6 +236,7 @@ export function useTauriTaskStore() {
     for (const p of task.personas) await logChange(db, 'personas', p, 'insert', { name: p }, lts, did)
     if (task.flowId) await logChange(db, 'flows', task.flowId, 'insert', { name: task.flowId }, lts, did)
     refreshRef()
+    return task
   }), [mutate, refreshRef])
 
   const bulkStatus = useCallback((ids, status, cur) => {

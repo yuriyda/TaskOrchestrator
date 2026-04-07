@@ -21,7 +21,7 @@ export function taskReducer(state, action) {
       return [...state, {
         url: null, dateStart: null, estimate: null, postponed: 0, notes: [], rtmSeriesId: null,
         ...action.payload,
-        id: uid(), subtasks: [], createdAt: new Date().toISOString(),
+        id: action.payload.id || uid(), subtasks: [], createdAt: new Date().toISOString(),
       }];
     case "IMPORT_RTM":
       return [...state, ...action.tasks];
@@ -77,7 +77,7 @@ export function useTaskStore() {
     flows:    MOCK_FLOWS,
     personas: MOCK_PERSONAS,
     // ── mutations ─────────────────────────────────────────────────────────────
-    addTask:      (data, cur)          => mutate({ type: "ADD_TASK",       payload: data }, cur),
+    addTask:      (data, cur)          => { const id = uid(); mutate({ type: "ADD_TASK", payload: { ...data, id } }, cur); return { ...data, id }; },
     updateTask:   (id, changes, cur)   => mutate({ type: "UPDATE_TASK",    id, changes }, cur),
     bulkStatus:   (ids, status, cur)   => mutate({ type: "BULK_STATUS",    ids, status }, cur),
     bulkCycle:    (ids, cur)           => mutate({ type: "BULK_CYCLE",     ids }, cur),

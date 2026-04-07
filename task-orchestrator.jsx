@@ -506,42 +506,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   }, [store.plannerAddBlockedSlot, t, settings.plannerDayEnd, store.dayPlanSlots]);
 
   const pendingSlotTimeRef = useRef(null);
-  const prevTaskCountRef = useRef(0);
 
   const handlePlannerCreateTask = useCallback((time) => {
     pendingSlotTimeRef.current = time;
     document.getElementById("quick-entry")?.focus();
   }, []);
-
-  // When a new task appears while pendingSlotTime is set, create a slot for it
-  useEffect(() => {
-    if (pendingSlotTimeRef.current && tasks.length > prevTaskCountRef.current && store.plannerAddTaskSlot && store.currentPlan) {
-      const newest = tasks[tasks.length - 1]; // newest task (added last)
-      if (newest) {
-        const time = pendingSlotTimeRef.current;
-        pendingSlotTimeRef.current = null;
-        const startMin = timeToMinutes(time);
-        const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
-        const slots = store.dayPlanSlots || [];
-        let maxAvailable = dayEnd - startMin;
-        for (const s of slots) {
-          const sStart = timeToMinutes(s.startTime);
-          const sEnd = timeToMinutes(s.endTime);
-          // Clicked time is inside an existing slot
-          if (sStart <= startMin && sEnd > startMin) { maxAvailable = 0; break; }
-          // Slot starts at or after our position
-          if (sStart >= startMin && sStart - startMin < maxAvailable) {
-            maxAvailable = sStart - startMin;
-          }
-        }
-        const duration = Math.min(60, maxAvailable);
-        if (duration <= 0) return;
-        const endTime = minutesToTime(startMin + duration);
-        store.plannerAddTaskSlot(newest.id, time, endTime, tasks);
-      }
-    }
-    prevTaskCountRef.current = tasks.length;
-  }, [tasks, store.plannerAddTaskSlot, store.currentPlan]);
 
   // ── Rubber-band drag (window-level) ──────────────────────────────────────
   useEffect(() => {
@@ -905,7 +874,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
       : `${t("toast.deleted")}: ${n} ${n === 1 ? "task" : "tasks"}`);
   };
 
-  const handleAdd = (taskData) => {
+  const handleAdd = async (taskData) => {
     const data = { ...taskData };
     // Apply active filters as defaults so the new task stays in the current view
     if (!data.due && filters.dateRange) {
@@ -936,7 +905,30 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
       data.personas = [...(data.personas || []), filters.persona];
     }
 
-    store.addTask(data, tasks);
+    const task = await store.addTask(data, tasks);
+
+    // If created from planner ("Create task here"), place it in the clicked slot
+    if (task && pendingSlotTimeRef.current && store.plannerAddTaskSlot && store.currentPlan) {
+      const time = pendingSlotTimeRef.current;
+      pendingSlotTimeRef.current = null;
+      const startMin = timeToMinutes(time);
+      const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
+      const slots = store.dayPlanSlots || [];
+      let maxAvailable = dayEnd - startMin;
+      for (const s of slots) {
+        const sStart = timeToMinutes(s.startTime);
+        const sEnd = timeToMinutes(s.endTime);
+        if (sStart <= startMin && sEnd > startMin) { maxAvailable = 0; break; }
+        if (sStart >= startMin && sStart - startMin < maxAvailable) {
+          maxAvailable = sStart - startMin;
+        }
+      }
+      const duration = Math.min(60, maxAvailable);
+      if (duration > 0) {
+        const endTime = minutesToTime(startMin + duration);
+        store.plannerAddTaskSlot(task.id, time, endTime, tasks);
+      }
+    }
   };
 
   const handleUpdate = (id, rawChanges) => {

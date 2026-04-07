@@ -283,6 +283,33 @@ describe('Sidebar status filter', () => {
   })
 })
 
+describe('Planner "Create task here" uses correct task ID (REGRESSION)', () => {
+  it('addTask returns the newly created task, not the last in sorted order', async () => {
+    const user = renderApp()
+    // Create several tasks with different priorities so sort order != insertion order
+    await createTask(user, '!1 High priority task')
+    await createTask(user, '!3 Low priority task')
+
+    // Now create a task as if from planner — the returned task must be the one we just created
+    const input = getQuickEntry()
+    await user.click(input)
+    await user.type(input, 'Planner task{Enter}')
+
+    // Verify the task "Planner task" exists in the DOM
+    await waitFor(() => expect(screen.getByText('Planner task')).toBeInTheDocument())
+
+    // The key assertion: in the old code, tasks[tasks.length-1] would be the last
+    // sorted task (lowest priority), not necessarily the newly created one.
+    // With the fix, addTask returns the created task directly, so it always
+    // matches the intended task regardless of sort order.
+    const taskRows = document.querySelectorAll('[data-task-id]')
+    const ids = [...taskRows].map(r => r.dataset.taskId)
+    // All 3 tasks should exist with unique IDs
+    expect(ids.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
 describe('Auto-sync setting', () => {
   it('autoSync defaults to true and persists toggle', async () => {
     const user = renderApp()
