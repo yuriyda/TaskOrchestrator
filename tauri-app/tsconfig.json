@@ -15,7 +15,7 @@
     "isolatedModules": true,
     "baseUrl": ".",
     "paths": {
-      "@app": ["./src/TaskOrchestrator.jsx"]
+      "@app": ["./src/TaskOrchestrator.tsx"]
     }
   },
   "include": ["src/**/*"],

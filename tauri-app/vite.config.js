@@ -14,7 +14,7 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      '@app': path.resolve(__dirname, 'src/TaskOrchestrator.jsx'),
+      '@app': path.resolve(__dirname, 'src/TaskOrchestrator.tsx'),
       // Pin React to a single copy — workspace root also has react, causing duplicates
       'react':        path.resolve(__dirname, 'node_modules/react'),
       'react-dom':    path.resolve(__dirname, 'node_modules/react-dom'),
