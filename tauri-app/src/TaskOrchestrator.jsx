@@ -5,10 +5,9 @@
  */
 import { useState, useReducer, useRef, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
-import { STATUSES, STATUS_ICONS, PRIORITY_COLORS, STATUS_ORDER, SORT_FIELDS, FONTS, DATE_FORMATS, CSV_FIELDS } from "./core/constants.js";
-import { swapLayout } from "./core/layout.js";
-import { localIsoDate, parseDateInput, fmtDate } from "./core/date.js";
-import { OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG, overdueLevel } from "./core/overdue.js";
+import { STATUSES, STATUS_ICONS, PRIORITY_COLORS, SORT_FIELDS, FONTS, DATE_FORMATS, CSV_FIELDS } from "./core/constants.js";
+import { parseDateInput, fmtDate } from "./core/date.js";
+import { OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG } from "./core/overdue.js";
 import { ruPlural, humanRecurrence } from "./core/recurrence.js";
 import { CHIP_STYLE, parseShorthand, getSuggestions, getTokenType, tryCommitToken, buildFromChips } from "./parse/quickEntry.js";
 import { MOCK_LISTS, MOCK_TAGS, MOCK_FLOWS, MOCK_PERSONAS, INITIAL_TASKS, buildDemoTasks } from "./core/demo.js";
@@ -35,11 +34,12 @@ import { SortBar } from "./ui/SortBar.jsx";
 import { StatusBar } from "./ui/StatusBar.jsx";
 import { GUIDE_STEPS, GuideOverlay } from "./ui/GuideOverlay.jsx";
 import { DayPlanner } from "./ui/DayPlanner.jsx";
-import { useSettings } from "./hooks/useSettings.jsx";
-import { useSync } from "./hooks/useSync.jsx";
-import { useDayPlanner } from "./hooks/useDayPlanner.jsx";
-import { useKeyboard } from "./hooks/useKeyboard.jsx";
-import { useTaskActions } from "./hooks/useTaskActions.jsx";
+import { useSettings } from "./hooks/useSettings";
+import { useSync } from "./hooks/useSync";
+import { useDayPlanner } from "./hooks/useDayPlanner";
+import { useKeyboard } from "./hooks/useKeyboard";
+import { useTaskActions } from "./hooks/useTaskActions";
+import { useFilteredTasks } from "./hooks/useFilteredTasks";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -152,98 +152,10 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   };
 
   // ── Filtered + sorted list ────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    let r = tasks;
-    // Status filter
-    if (filters.status) r = r.filter(tk => tk.status === filters.status);
-    // Date range filter
-    if (filters.dateRange) {
-      const todayStr = localIsoDate(new Date());
-      const isPastDue = tt => tt.due && tt.due < todayStr && tt.status !== "done" && tt.status !== "cancelled";
-      const v = filters.dateRange;
-      if (v === "overdue") r = r.filter(isPastDue);
-      else if (v === "today") r = r.filter(tt => tt.due === todayStr || isPastDue(tt));
-      else if (v === "tomorrow") { const d = new Date(); d.setDate(d.getDate() + 1); const tom = localIsoDate(d); r = r.filter(tt => tt.due === tom || isPastDue(tt)); }
-      else if (v === "week") { const d = new Date(); d.setDate(d.getDate() + 7); const max = localIsoDate(d); r = r.filter(tt => (tt.due && tt.due >= todayStr && tt.due <= max) || isPastDue(tt)); }
-      else if (v === "month") { const d = new Date(); d.setDate(d.getDate() + 30); const max = localIsoDate(d); r = r.filter(tt => (tt.due && tt.due >= todayStr && tt.due <= max) || isPastDue(tt)); }
-    }
-    // List filter
-    if (filters.list) r = r.filter(tk => tk.list === filters.list);
-    // Tag filter
-    if (filters.tag) r = r.filter(tk => tk.tags.includes(filters.tag));
-    // Flow filter
-    if (filters.flow) r = r.filter(tk => tk.flowId === filters.flow);
-    // Persona filter
-    if (filters.persona) r = r.filter(tk => (tk.personas || []).includes(filters.persona));
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      const altQ = swapLayout(q);
-      const match = (str) => { const s = str.toLowerCase(); return s.includes(q) || (altQ !== q && s.includes(altQ)); };
-      r = r.filter(t =>
-        match(t.title) ||
-        t.tags.some(tag => match(tag)) ||
-        (t.list && match(t.list))
-      );
-    }
-    if (calendarFilter) r = r.filter(t => t.due === calendarFilter);
-
-    // Primary sort by selected field (if any), secondary always by title
-    const field = sort?.field ?? null;
-    const mul = sort ? (sort.dir === "asc" ? 1 : -1) : 1;
-    r = [...r].sort((a, b) => {
-      if (field === "priority") {
-        const va = a.priority ?? 99, vb = b.priority ?? 99;
-        if (va !== vb) return (va - vb) * mul;
-      } else if (field === "status") {
-        const va = STATUS_ORDER[a.status] ?? 99, vb = STATUS_ORDER[b.status] ?? 99;
-        if (va !== vb) return (va - vb) * mul;
-      } else if (field === "due") {
-        if (!a.due && !b.due) { /* fall through to title */ }
-        else if (!a.due) return 1;
-        else if (!b.due) return -1;
-        else if (a.due !== b.due) return (a.due < b.due ? -1 : 1) * mul;
-      } else if (field === "createdAt") {
-        if (a.createdAt !== b.createdAt) return (a.createdAt < b.createdAt ? -1 : 1) * mul;
-      }
-      // Secondary: always by title
-      return a.title.localeCompare(b.title, locale);
-    });
-
-    return r;
-  }, [tasks, filters, searchQuery, calendarFilter, sort, locale]);
-
-  // Overdue tasks float to the top of the list
-  const displayFiltered = useMemo(() => {
-    const isOverdue = t => overdueLevel(t) !== null;
-    const over = filtered.filter(isOverdue);
-    if (over.length === 0) return filtered;
-    return [...over, ...filtered.filter(t => !isOverdue(t))];
-  }, [filtered]);
-
-  const overdueCount = useMemo(
-    () => displayFiltered.filter(t => overdueLevel(t) !== null).length,
-    [displayFiltered]
-  );
-
-  // Compute set of blocked task IDs (dependsOn points to an incomplete task)
-  const blockedIds = useMemo(() => {
-    const doneSet = new Set(tasks.filter(t => t.status === "done").map(t => t.id));
-    const blocked = new Set();
-    for (const t of tasks) {
-      if (t.dependsOn && !doneSet.has(t.dependsOn)) blocked.add(t.id);
-    }
-    return blocked;
-  }, [tasks]);
-
-  useEffect(() => {
-    if (displayFiltered.length > 0 && cursor >= displayFiltered.length) setCursor(displayFiltered.length - 1);
-    // Remove selected IDs that are no longer in the visible list
-    const visibleIds = new Set(displayFiltered.map(t => t.id));
-    setSelected(prev => {
-      const next = new Set([...prev].filter(id => visibleIds.has(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [displayFiltered]);
+  const { filtered, displayFiltered, overdueCount, blockedIds } = useFilteredTasks({
+    tasks, filters, searchQuery, calendarFilter, sort, locale,
+    cursor, setCursor, setSelected,
+  });
 
   const handleUpdate = (id, rawChanges) => {
     const { __title__, ...rest } = rawChanges;

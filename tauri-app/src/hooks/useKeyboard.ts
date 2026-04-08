@@ -1,23 +1,64 @@
 /**
- * @file useKeyboard.jsx
+ * @file useKeyboard.ts
  * @description Custom hook for keyboard shortcuts, rubber-band drag selection,
- *   and browser context menu suppression. Extracted from task-orchestrator.jsx.
- *   This hook attaches/detaches window-level event listeners. No state of its own.
+ *   and browser context menu suppression. Attaches/detaches window-level event
+ *   listeners. No state of its own.
  */
-import { useEffect } from "react";
+import { useEffect, type MutableRefObject, type Dispatch, type SetStateAction } from "react";
+import type { Task, TaskId, BulkResult } from "../types";
 
-export function useKeyboard({
-  store, tasks, displayFiltered, cursor, setCursor, selected, setSelected,
-  lastIdx, setLastIdx, blockedIds, addToast, showFlowToasts, t, locale,
-  searchQuery, setSearchQuery, searchExpanded, setSearchExpanded, searchInputRef,
-  showSettings, setShowSettings, editTaskId, setEditTaskId,
-  contextMenu, setContextMenu, confirmPending, setConfirmPending,
-  clearAllFilters, autoSyncTimerRef, setShowPlanner, setShowDbSwitched,
-  dragStartRef, didDragRef, setDragRect, filtered,
-}) {
+interface UseKeyboardParams {
+  store: any;
+  tasks: Task[];
+  displayFiltered: Task[];
+  filtered: Task[];
+  cursor: number;
+  setCursor: (n: number) => void;
+  selected: Set<TaskId>;
+  setSelected: Dispatch<SetStateAction<Set<TaskId>>>;
+  lastIdx: number | null;
+  setLastIdx: (n: number) => void;
+  blockedIds: Set<TaskId>;
+  addToast: (msg: string) => void;
+  showFlowToasts: (result: BulkResult | void) => void;
+  t: (key: string) => string;
+  locale: string;
+  searchQuery: string;
+  setSearchQuery: (q: string) => void;
+  searchExpanded: boolean;
+  setSearchExpanded: (v: boolean) => void;
+  searchInputRef: MutableRefObject<HTMLInputElement | null>;
+  showSettings: false | string;
+  setShowSettings: (v: false | string) => void;
+  editTaskId: TaskId | null;
+  setEditTaskId: (id: TaskId | null) => void;
+  contextMenu: any;
+  setContextMenu: (v: any) => void;
+  confirmPending: any;
+  setConfirmPending: (v: any) => void;
+  clearAllFilters: () => void;
+  autoSyncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  setShowPlanner: Dispatch<SetStateAction<boolean>>;
+  setShowDbSwitched: (v: boolean) => void;
+  dragStartRef: MutableRefObject<any>;
+  didDragRef: MutableRefObject<boolean>;
+  setDragRect: (v: any) => void;
+}
+
+export function useKeyboard(params: UseKeyboardParams) {
+  const {
+    store, tasks, displayFiltered, cursor, setCursor, selected, setSelected,
+    lastIdx, setLastIdx, blockedIds, addToast, showFlowToasts, t, locale,
+    searchQuery, setSearchQuery, searchExpanded, setSearchExpanded, searchInputRef,
+    showSettings, setShowSettings, editTaskId, setEditTaskId,
+    contextMenu, setContextMenu, confirmPending, setConfirmPending,
+    clearAllFilters, autoSyncTimerRef, setShowPlanner, setShowDbSwitched,
+    dragStartRef, didDragRef, setDragRect, filtered,
+  } = params;
+
   // ── Rubber-band drag (window-level) ──────────────────────────────────────
   useEffect(() => {
-    const onMouseMove = (e) => {
+    const onMouseMove = (e: MouseEvent) => {
       if (!dragStartRef.current) return;
       const { x, y, bounds } = dragStartRef.current;
       const dx = e.clientX - x, dy = e.clientY - y;
@@ -56,7 +97,7 @@ export function useKeyboard({
 
   // ── Keyboard handler ──────────────────────────────────────────────────────
   useEffect(() => {
-    const onKey = async (e) => {
+    const onKey = async (e: KeyboardEvent) => {
       if (showSettings) return;
       const tag = e.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
@@ -224,7 +265,7 @@ export function useKeyboard({
 
   // ── Suppress browser context menu everywhere ──────────────────────────────
   useEffect(() => {
-    const suppress = (e) => e.preventDefault();
+    const suppress = (e: Event) => e.preventDefault();
     window.addEventListener("contextmenu", suppress);
     return () => window.removeEventListener("contextmenu", suppress);
   }, []);

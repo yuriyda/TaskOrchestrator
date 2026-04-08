@@ -1,35 +1,49 @@
 /**
- * @file useSync.jsx
+ * @file useSync.ts
  * @description Custom hook for Google Drive sync: connection state, sync logging,
- *   manual/auto sync triggers with debounce. Extracted from task-orchestrator.jsx.
+ *   manual/auto sync triggers with debounce.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
+import type { Task } from "../types";
+import type { AppSettings } from "./useSettings";
 
-export function useSync(store, tasks, locale, t, settings) {
+interface SyncResult {
+  applied: number;
+  outdated: number;
+  uploaded: number;
+}
+
+export function useSync(
+  store: any,
+  tasks: Task[],
+  locale: string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+  settings: AppSettings,
+) {
   const [gdriveConnected, setGdriveConnected] = useState(false);
-  const [gdriveLog, setGdriveLog] = useState([]);
+  const [gdriveLog, setGdriveLog] = useState<string[]>([]);
   const [autoSyncing, setAutoSyncing] = useState(false);
-  const autoSyncTimerRef = useRef(null);
+  const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncInProgressRef = useRef(false);
 
   useEffect(() => {
-    store.gdriveCheckConnection?.().then(ok => setGdriveConnected(!!ok));
+    store.gdriveCheckConnection?.().then((ok: boolean) => setGdriveConnected(!!ok));
   }, [store, store.metaSettings]);
 
-  const addGdriveLog = (msg) => {
+  const addGdriveLog = (msg: string) => {
     const ts = new Date().toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     setGdriveLog(prev => [...prev, `[${ts}] ${msg}`]);
   };
 
-  const handleSyncNow = store.gdriveSyncNow ? async () => {
+  const handleSyncNow = store.gdriveSyncNow ? async (): Promise<SyncResult | undefined> => {
     addGdriveLog(t("sync.gdriveSyncing"));
-    const result = await store.gdriveSyncNow();
+    const result: SyncResult | undefined = await store.gdriveSyncNow();
     if (result) {
       addGdriveLog(
         t("sync.gdriveSynced")
-          .replace("{applied}", result.applied)
-          .replace("{outdated}", result.outdated)
-          .replace("{uploaded}", result.uploaded)
+          .replace("{applied}", String(result.applied))
+          .replace("{outdated}", String(result.outdated))
+          .replace("{uploaded}", String(result.uploaded))
       );
     }
     return result;
@@ -46,7 +60,7 @@ export function useSync(store, tasks, locale, t, settings) {
     if (!handleSyncNow || settings.autoSync === false) return;
     if (!gdriveConnected) return;
     if (syncInProgressRef.current) return;
-    clearTimeout(autoSyncTimerRef.current);
+    if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
     autoSyncTimerRef.current = setTimeout(async () => {
       if (syncInProgressRef.current) return;
       syncInProgressRef.current = true;
@@ -57,7 +71,6 @@ export function useSync(store, tasks, locale, t, settings) {
     }, 3000);
   }, [handleSyncNow, settings.autoSync, gdriveConnected]);
 
-  // Trigger auto-sync whenever tasks change (debounced), skip if sync caused the change
   const prevTasksRef = useRef(tasks);
   useEffect(() => {
     if (prevTasksRef.current !== tasks && prevTasksRef.current.length > 0 && !syncInProgressRef.current) {

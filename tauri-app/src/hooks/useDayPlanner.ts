@@ -1,13 +1,14 @@
 /**
- * @file useDayPlanner.jsx
+ * @file useDayPlanner.ts
  * @description Custom hook for Day Planner integration: load day, drop tasks,
  *   move/resize/remove slots, block slots, create tasks from planner.
- *   Extracted from task-orchestrator.jsx.
  */
 import { useEffect, useCallback, useRef } from "react";
 import { timeToMinutes, minutesToTime } from "../store/dayPlanner.js";
+import type { Task, TaskId } from "../types";
+import type { AppSettings } from "./useSettings";
 
-function parseEstimateMinutes(estimate) {
+function parseEstimateMinutes(estimate: string | null | undefined): number {
   if (!estimate) return 60;
   const est = estimate.toLowerCase();
   const hMatch = est.match(/([\d.]+)\s*h/);
@@ -18,8 +19,25 @@ function parseEstimateMinutes(estimate) {
   return Math.max(15, min);
 }
 
-export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPlanner, plannerDate }) {
-  // ── Load day when planner opens or date changes ───────────────────────────
+interface Slot {
+  id: string;
+  startTime: string;
+  endTime: string;
+  taskId: string | null;
+  slotType: string;
+}
+
+interface UseDayPlannerParams {
+  store: any;
+  tasks: Task[];
+  settings: AppSettings;
+  t: (key: string) => string;
+  handleUpdate: (id: TaskId, changes: Partial<Task>) => void;
+  showPlanner: boolean;
+  plannerDate: string;
+}
+
+export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPlanner, plannerDate }: UseDayPlannerParams) {
   useEffect(() => {
     if (showPlanner && store.plannerLoadDay) {
       store.plannerLoadDay(plannerDate, {
@@ -29,8 +47,7 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
     }
   }, [showPlanner, plannerDate, store.plannerLoadDay, settings.plannerDayStart, settings.plannerDayEnd]);
 
-  // Plain function (not useCallback) to always read fresh props/state
-  const handlePlannerDropTask = (taskIds, startTime, currentSlots) => {
+  const handlePlannerDropTask = (taskIds: TaskId[], startTime: string, currentSlots: Slot[]) => {
     if (!store.plannerAddTaskSlot) return;
     const dayStart = (settings.plannerDayStart ?? 9) * 60;
     const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
@@ -44,7 +61,7 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
       })
       .sort((a, b) => a.start - b.start);
 
-    const findFree = (startMin, dur) => {
+    const findFree = (startMin: number, dur: number): number => {
       let c = startMin;
       let changed = true;
       while (changed) {
@@ -80,7 +97,7 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
       if (freeEnd > dayEnd) break;
       const overlaps = occupied.some(b => freeStart < b.end && freeEnd > b.start);
       if (overlaps) break;
-      const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+      const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
       store.plannerAddTaskSlot(id, fmt(freeStart), fmt(freeEnd), tasks);
       occupied.push({ start: freeStart, end: freeEnd });
       occupied.sort((a, b) => a.start - b.start);
@@ -88,14 +105,14 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
     }
   };
 
-  const handlePlannerMoveSlot = useCallback((slotId, startTime, endTime) => {
+  const handlePlannerMoveSlot = useCallback((slotId: string, startTime: string, endTime: string) => {
     store.plannerMoveSlot?.(slotId, startTime, endTime, tasks);
   }, [store.plannerMoveSlot, tasks]);
 
-  const handlePlannerResizeSlot = useCallback((slotId, endTime) => {
-    const slotEl = document.querySelector(`[data-slot-id="${slotId}"]`);
+  const handlePlannerResizeSlot = useCallback((slotId: string, endTime: string) => {
+    const slotEl = document.querySelector(`[data-slot-id="${slotId}"]`) as HTMLElement | null;
     const startTime = slotEl?.dataset.startTime;
-    const slot = (store.dayPlanSlots || []).find(s => s.id === slotId);
+    const slot = ((store.dayPlanSlots || []) as Slot[]).find(s => s.id === slotId);
     if (slot?.taskId && startTime) {
       const startMin = parseInt(startTime.split(":")[0]) * 60 + parseInt(startTime.split(":")[1]);
       const endMin = parseInt(endTime.split(":")[0]) * 60 + parseInt(endTime.split(":")[1]);
@@ -110,15 +127,15 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
     store.plannerResizeSlot?.(slotId, endTime, tasks);
   }, [store.plannerResizeSlot, store.dayPlanSlots, tasks, handleUpdate]);
 
-  const handlePlannerRemoveSlot = useCallback((slotId) => {
+  const handlePlannerRemoveSlot = useCallback((slotId: string) => {
     store.plannerRemoveSlot?.(slotId, tasks);
   }, [store.plannerRemoveSlot, tasks]);
 
-  const handlePlannerBlockSlot = useCallback((time) => {
+  const handlePlannerBlockSlot = useCallback((time: string) => {
     if (!store.plannerAddBlockedSlot) return;
     const startMin = timeToMinutes(time);
     const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
-    const slots = store.dayPlanSlots || [];
+    const slots: Slot[] = store.dayPlanSlots || [];
     let maxAvailable = dayEnd - startMin;
     for (const s of slots) {
       const sStart = timeToMinutes(s.startTime);
@@ -134,9 +151,9 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
     store.plannerAddBlockedSlot(t("planner.blocked"), time, endTime);
   }, [store.plannerAddBlockedSlot, t, settings.plannerDayEnd, store.dayPlanSlots]);
 
-  const pendingSlotTimeRef = useRef(null);
+  const pendingSlotTimeRef = useRef<string | null>(null);
 
-  const handlePlannerCreateTask = useCallback((time) => {
+  const handlePlannerCreateTask = useCallback((time: string) => {
     pendingSlotTimeRef.current = time;
     document.getElementById("quick-entry")?.focus();
   }, []);
