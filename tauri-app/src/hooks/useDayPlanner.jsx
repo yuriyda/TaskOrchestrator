@@ -5,7 +5,7 @@
  *   Extracted from task-orchestrator.jsx.
  */
 import { useEffect, useCallback, useRef } from "react";
-import { timeToMinutes, minutesToTime } from "../tauri-app/src/store/dayPlanner.js";
+import { timeToMinutes, minutesToTime } from "../store/dayPlanner.js";
 
 function parseEstimateMinutes(estimate) {
   if (!estimate) return 60;

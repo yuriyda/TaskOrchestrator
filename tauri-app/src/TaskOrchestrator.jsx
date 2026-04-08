@@ -1,44 +1,40 @@
 /**
  * TaskOrchestrator — main UI component tree for the task management app.
  * Contains all React components: sidebar, task list, detail panel, dialogs, calendar, etc.
- * Domain logic, constants, parsers, and store are imported from tauri-app/src/ modules.
+ * Domain logic, constants, parsers, and store are imported from sibling modules.
  */
 import { useState, useReducer, useRef, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
-import { ulid } from "./tauri-app/src/ulid.js";
-import { LOCALE_NAMES } from "./tauri-app/src/i18n/locales.js";
-import { STATUSES, STATUS_ICONS, PRIORITY_COLORS, STATUS_ORDER, SORT_FIELDS, FONTS, DATE_FORMATS, CSV_FIELDS } from "./tauri-app/src/core/constants.js";
-import { COLOR_THEMES, buildTC } from "./tauri-app/src/core/themes.js";
-import { swapLayout } from "./tauri-app/src/core/layout.js";
-import { localIsoDate, parseDateInput, fmtDate } from "./tauri-app/src/core/date.js";
-import { OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG, overdueLevel } from "./tauri-app/src/core/overdue.js";
-import { ruPlural, humanRecurrence } from "./tauri-app/src/core/recurrence.js";
-import { CHIP_STYLE, parseShorthand, getSuggestions, getTokenType, tryCommitToken, buildFromChips } from "./tauri-app/src/parse/quickEntry.js";
-import { MOCK_LISTS, MOCK_TAGS, MOCK_FLOWS, MOCK_PERSONAS, INITIAL_TASKS, buildDemoTasks } from "./tauri-app/src/core/demo.js";
-import { useTaskStore } from "./tauri-app/src/store/memoryStore.js";
+import { STATUSES, STATUS_ICONS, PRIORITY_COLORS, STATUS_ORDER, SORT_FIELDS, FONTS, DATE_FORMATS, CSV_FIELDS } from "./core/constants.js";
+import { swapLayout } from "./core/layout.js";
+import { localIsoDate, parseDateInput, fmtDate } from "./core/date.js";
+import { OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG, overdueLevel } from "./core/overdue.js";
+import { ruPlural, humanRecurrence } from "./core/recurrence.js";
+import { CHIP_STYLE, parseShorthand, getSuggestions, getTokenType, tryCommitToken, buildFromChips } from "./parse/quickEntry.js";
+import { MOCK_LISTS, MOCK_TAGS, MOCK_FLOWS, MOCK_PERSONAS, INITIAL_TASKS, buildDemoTasks } from "./core/demo.js";
+import { useTaskStore } from "./store/memoryStore.js";
 export { useTaskStore };
 
-import { AppContext, useApp } from "./tauri-app/src/ui/AppContext.jsx";
-import { PanelLeftIcon, PanelRightIcon, AutoThemeIcon, themeOptions } from "./tauri-app/src/ui/icons.jsx";
-import { PriorityBadge, StatusBadge } from "./tauri-app/src/ui/badges.jsx";
-import { TokenChip, ChipPill, SectionDivider, ConfirmDialog, BulkBar, ToastContainer } from "./tauri-app/src/ui/common.jsx";
-import { ContextMenu } from "./tauri-app/src/ui/ContextMenu.jsx";
-import { QuickEntry } from "./tauri-app/src/ui/QuickEntry.jsx";
-import { TaskRow } from "./tauri-app/src/ui/TaskRow.jsx";
-import { Combobox } from "./tauri-app/src/ui/Combobox.jsx";
-import { SettingsDialog } from "./tauri-app/src/ui/SettingsDialog.jsx";
-import { Sidebar } from "./tauri-app/src/ui/Sidebar.jsx";
-import { FlowView } from "./tauri-app/src/ui/FlowView.jsx";
-import { CalendarPanel } from "./tauri-app/src/ui/CalendarPanel.jsx";
-import { DatePicker, DatePickerAnchor, DateField } from "./tauri-app/src/ui/DatePicker.jsx";
-import { DetailPanel } from "./tauri-app/src/ui/DetailPanel.jsx";
-import { TaskEditDialog } from "./tauri-app/src/ui/TaskEditDialog.jsx";
-import { RtmImportDialog, ImportProgressOverlay } from "./tauri-app/src/ui/RtmImportDialog.jsx";
-import { SortBar } from "./tauri-app/src/ui/SortBar.jsx";
-import { StatusBar } from "./tauri-app/src/ui/StatusBar.jsx";
-import { GUIDE_STEPS, GuideOverlay } from "./tauri-app/src/ui/GuideOverlay.jsx";
-import { DayPlanner } from "./tauri-app/src/ui/DayPlanner.jsx";
-import { defaultEndTime, timeToMinutes, minutesToTime } from "./tauri-app/src/store/dayPlanner.js";
+import { AppContext, useApp } from "./ui/AppContext.jsx";
+import { PanelLeftIcon, PanelRightIcon, AutoThemeIcon, themeOptions } from "./ui/icons.jsx";
+import { PriorityBadge, StatusBadge } from "./ui/badges.jsx";
+import { TokenChip, ChipPill, SectionDivider, ConfirmDialog, BulkBar, ToastContainer } from "./ui/common.jsx";
+import { ContextMenu } from "./ui/ContextMenu.jsx";
+import { QuickEntry } from "./ui/QuickEntry.jsx";
+import { TaskRow } from "./ui/TaskRow.jsx";
+import { Combobox } from "./ui/Combobox.jsx";
+import { SettingsDialog } from "./ui/SettingsDialog.jsx";
+import { Sidebar } from "./ui/Sidebar.jsx";
+import { FlowView } from "./ui/FlowView.jsx";
+import { CalendarPanel } from "./ui/CalendarPanel.jsx";
+import { DatePicker, DatePickerAnchor, DateField } from "./ui/DatePicker.jsx";
+import { DetailPanel } from "./ui/DetailPanel.jsx";
+import { TaskEditDialog } from "./ui/TaskEditDialog.jsx";
+import { RtmImportDialog, ImportProgressOverlay } from "./ui/RtmImportDialog.jsx";
+import { SortBar } from "./ui/SortBar.jsx";
+import { StatusBar } from "./ui/StatusBar.jsx";
+import { GUIDE_STEPS, GuideOverlay } from "./ui/GuideOverlay.jsx";
+import { DayPlanner } from "./ui/DayPlanner.jsx";
 import { useSettings } from "./hooks/useSettings.jsx";
 import { useSync } from "./hooks/useSync.jsx";
 import { useDayPlanner } from "./hooks/useDayPlanner.jsx";

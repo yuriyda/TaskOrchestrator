@@ -14,10 +14,8 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      // Single source of truth: the JSX file in the parent folder
-      '@app': path.resolve(__dirname, '../task-orchestrator.jsx'),
-      // Explicit package paths — needed because task-orchestrator.jsx lives
-      // outside tauri-app/ and Vite cannot find its bare imports otherwise
+      '@app': path.resolve(__dirname, 'src/TaskOrchestrator.jsx'),
+      // Pin React to a single copy — workspace root also has react, causing duplicates
       'react':        path.resolve(__dirname, 'node_modules/react'),
       'react-dom':    path.resolve(__dirname, 'node_modules/react-dom'),
       'react/jsx-dev-runtime': path.resolve(__dirname, 'node_modules/react/jsx-dev-runtime'),

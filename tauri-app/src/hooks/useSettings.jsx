@@ -9,8 +9,8 @@
  *   resolvedTheme, TC, t, settings, updateSetting, showSettings, setShowSettings }}
  */
 import { useState, useEffect } from "react";
-import { LOCALES } from "../tauri-app/src/i18n/locales.js";
-import { buildTC } from "../tauri-app/src/core/themes.js";
+import { LOCALES } from "../i18n/locales.js";
+import { buildTC } from "../core/themes.js";
 
 const SETTINGS_DEFAULTS = {
   firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal",

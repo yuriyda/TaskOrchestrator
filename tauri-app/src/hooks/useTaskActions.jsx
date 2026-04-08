@@ -4,8 +4,8 @@
  *   flow operations, row click, bulk actions, add/edit/delete, RTM import,
  *   checkbox confirm. Extracted from task-orchestrator.jsx.
  */
-import { localIsoDate } from "../tauri-app/src/core/date.js";
-import { timeToMinutes, minutesToTime } from "../tauri-app/src/store/dayPlanner.js";
+import { localIsoDate } from "../core/date.js";
+import { timeToMinutes, minutesToTime } from "../store/dayPlanner.js";
 
 export function useTaskActions({
   store, tasks, locale, t, filters, selected, setSelected, setCursor,
