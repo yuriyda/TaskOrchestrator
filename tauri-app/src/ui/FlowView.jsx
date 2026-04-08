@@ -13,7 +13,7 @@
  * @param {Function} [props.onDeleteFlow] - Callback to delete the flow entirely.
  */
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useApp } from "./AppContext";
 import { PriorityBadge } from "./badges";
 import {
@@ -26,15 +26,39 @@ import {
   Calendar,
   Check,
   X,
+  CheckCircle,
+  RotateCcw,
+  Pencil,
+  Unlink,
+  XCircle,
 } from "lucide-react";
 
-export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDeleteFlow }) {
+export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDeleteFlow, onCompleteTask, onReopenTask, onEditTask, onDeleteTask, onRemoveFromFlow, onRemoveDependency }) {
   const { t, TC, flowMeta } = useApp();
   const meta = flowMeta[activeFlow] || {};
   const flowTasks = tasks.filter(t => t.flowId === activeFlow);
   if (!flowTasks.length && !meta.description) return null;
 
   const doneSet = new Set(tasks.filter(t => t.status === "done").map(t => t.id));
+
+  // Context menu state
+  const [ctxMenu, setCtxMenu] = useState(null); // { x, y, task }
+  const ctxRef = useRef(null);
+
+  useEffect(() => {
+    if (!ctxMenu) return;
+    const close = (e) => { if (ctxRef.current && !ctxRef.current.contains(e.target)) setCtxMenu(null); };
+    const esc = (e) => { if (e.key === "Escape") setCtxMenu(null); };
+    window.addEventListener("mousedown", close);
+    window.addEventListener("keydown", esc);
+    return () => { window.removeEventListener("mousedown", close); window.removeEventListener("keydown", esc); };
+  }, [ctxMenu]);
+
+  const handleNodeContext = useCallback((e, task) => {
+    e.preventDefault();
+    const rect = e.currentTarget.closest(".flow-view-root")?.getBoundingClientRect() || { left: 0, top: 0 };
+    setCtxMenu({ x: e.clientX, y: e.clientY, task });
+  }, []);
 
   // Is a task blocked within this flow?
   const isBlocked = (task) => task.dependsOn && !doneSet.has(task.dependsOn);
@@ -81,7 +105,9 @@ export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDelet
     return (
       <div key={task.id} className="flex items-start gap-2">
         {depth > 0 && <div className="flex items-center text-gray-600 pt-3"><ArrowRight size={14} /></div>}
-        <div className={`border rounded-lg px-3 py-2 min-w-[10rem] ${sc}`}>
+        <div className={`border rounded-lg px-3 py-2 min-w-[10rem] cursor-context-menu ${sc}`}
+          onContextMenu={(e) => handleNodeContext(e, task)}
+          onDoubleClick={() => onEditTask?.(task.id)}>
           <div className="flex items-center gap-2">
             {blocked && task.status !== "done" && <Lock size={11} className="text-yellow-500/70" />}
             <PriorityBadge priority={task.priority} />
@@ -98,7 +124,7 @@ export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDelet
   };
 
   return (
-    <div className="mt-4 p-4 bg-gray-800/30 border border-gray-700/50 rounded-xl">
+    <div className="mt-4 p-4 bg-gray-800/30 border border-gray-700/50 rounded-xl flow-view-root relative">
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
         <Zap size={14} style={meta.color ? { color: meta.color } : {}} className={meta.color ? "" : "text-pink-400"} />
@@ -183,6 +209,51 @@ export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDelet
       {/* Dependency tree */}
       {flowTasks.length > 0 && (
         <div className="flex items-start gap-2 overflow-x-auto pb-2">{roots.map(r => renderNode(r))}</div>
+      )}
+
+      {/* Context menu */}
+      {ctxMenu && (
+        <div ref={ctxRef}
+          className={`fixed z-50 py-1 rounded-lg shadow-xl border min-w-[180px] text-sm ${TC.elevated} ${TC.borderClass}`}
+          style={{ left: ctxMenu.x, top: ctxMenu.y }}>
+          {ctxMenu.task.status === "done" ? (
+            <button className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 text-sky-400`}
+              onClick={() => { onReopenTask?.(ctxMenu.task.id); setCtxMenu(null); }}>
+              <RotateCcw size={13} /> {t("planner.reopenTask")}
+            </button>
+          ) : !isBlocked(ctxMenu.task) && (
+            <button className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 text-emerald-400`}
+              onClick={() => { onCompleteTask?.(ctxMenu.task.id); setCtxMenu(null); }}>
+              <CheckCircle size={13} /> {t("planner.completeTask")}
+            </button>
+          )}
+          {isReady(ctxMenu.task) && onStartNext && (
+            <button className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 text-amber-400`}
+              onClick={() => { onStartNext(ctxMenu.task.id); setCtxMenu(null); }}>
+              <Play size={13} /> {t("flow.startNext")}
+            </button>
+          )}
+          <button className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 ${TC.text}`}
+            onClick={() => { onEditTask?.(ctxMenu.task.id); setCtxMenu(null); }}>
+            <Pencil size={13} /> {t("planner.editTask")}
+          </button>
+          <div className={`my-1 border-t ${TC.borderClass}`} />
+          {ctxMenu.task.dependsOn && (
+            <button className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 ${TC.textSec}`}
+              onClick={() => { onRemoveDependency?.(ctxMenu.task.id); setCtxMenu(null); }}>
+              <Unlink size={13} /> {t("flow.removeDep")}
+            </button>
+          )}
+          <button className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 ${TC.textSec}`}
+            onClick={() => { onRemoveFromFlow?.(ctxMenu.task.id); setCtxMenu(null); }}>
+            <XCircle size={13} /> {t("flow.removeFromFlow")}
+          </button>
+          <div className={`my-1 border-t ${TC.borderClass}`} />
+          <button className={`w-full text-left px-3 py-1.5 flex items-center gap-2 hover:bg-white/10 text-red-400`}
+            onClick={() => { onDeleteTask?.(ctxMenu.task.id); setCtxMenu(null); }}>
+            <Trash2 size={13} /> {t("ctx.delete")}
+          </button>
+        </div>
       )}
     </div>
   );

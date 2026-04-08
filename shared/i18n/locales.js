@@ -242,6 +242,8 @@ export const LOCALES = {
     "flow.activated": "Auto-activated: {names}",
     "flow.skippedBlocked": "Skipped {n} blocked task(s)",
     "flow.readyHint": "Ready to start",
+    "flow.removeDep": "Remove dependency",
+    "flow.removeFromFlow": "Remove from flow",
     // maintenance
     "group.overdue": "Overdue",
     "settings.tab.maintenance": "Maintenance",
@@ -593,6 +595,8 @@ export const LOCALES = {
     "flow.activated": "Авто-активация: {names}",
     "flow.skippedBlocked": "Пропущено заблокированных: {n}",
     "flow.readyHint": "Готова к старту",
+    "flow.removeDep": "Снять зависимость",
+    "flow.removeFromFlow": "Убрать из потока",
     // maintenance
     "group.overdue": "Просрочено",
     "settings.tab.maintenance": "Обслуживание",

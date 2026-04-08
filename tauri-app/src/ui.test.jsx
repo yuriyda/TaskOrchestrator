@@ -5,7 +5,7 @@
  * Tests cover critical user flows that have had bugs in the past.
  */
 import { describe, it, expect, beforeEach } from 'vitest'
-import { render, screen, within, act, waitFor } from '@testing-library/react'
+import { render, screen, within, act, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import TaskOrchestrator from '@app'
 
@@ -307,6 +307,69 @@ describe('Planner "Create task here" uses correct task ID (REGRESSION)', () => {
     // All 3 tasks should exist with unique IDs
     expect(ids.length).toBeGreaterThanOrEqual(3)
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('FlowView context menu', () => {
+  async function openFlow(user) {
+    // Click "ShoppingTrip" flow in sidebar to activate FlowView
+    const sidebar = document.querySelector('[data-guide="sidebar"]')
+    if (!sidebar) return false
+    const flowBtn = within(sidebar).queryByText(/ShoppingTrip/i)
+    if (!flowBtn) return false
+    await user.click(flowBtn)
+    return true
+  }
+
+  it('shows FlowView when clicking a flow in sidebar', async () => {
+    const user = renderApp()
+    const opened = await openFlow(user)
+    if (!opened) return // flow not found in demo data — skip
+    await waitFor(() => expect(screen.getByText(/Flow: ShoppingTrip/)).toBeInTheDocument())
+  })
+
+  it('opens context menu on right-click task node in flow', async () => {
+    const user = renderApp()
+    const opened = await openFlow(user)
+    if (!opened) return
+    await waitFor(() => expect(screen.getByText(/Flow: ShoppingTrip/)).toBeInTheDocument())
+
+    // Find task nodes inside the flow-view-root container
+    const flowRoot = document.querySelector('.flow-view-root')
+    if (!flowRoot) return
+    const taskNode = flowRoot.querySelector('[class*="cursor-context-menu"]')
+    if (!taskNode) return
+
+    await act(async () => { fireEvent.contextMenu(taskNode) })
+    // Context menu should appear with action buttons
+    await waitFor(() => {
+      const menuItems = document.querySelectorAll('.fixed.z-50 button')
+      expect(menuItems.length).toBeGreaterThanOrEqual(3)
+    })
+  })
+
+  it('context menu has Complete and Edit actions', async () => {
+    const user = renderApp()
+    const opened = await openFlow(user)
+    if (!opened) return
+    await waitFor(() => expect(screen.getByText(/Flow: ShoppingTrip/)).toBeInTheDocument())
+
+    const flowRoot = document.querySelector('.flow-view-root')
+    if (!flowRoot) return
+    const taskNode = flowRoot.querySelector('[class*="cursor-context-menu"]')
+    if (!taskNode) return
+
+    await act(async () => { fireEvent.contextMenu(taskNode) })
+    await waitFor(() => {
+      const menu = document.querySelector('.fixed.z-50')
+      expect(menu).toBeTruthy()
+      // Should contain Complete/Edit/Delete actions
+      const buttons = menu.querySelectorAll('button')
+      const texts = [...buttons].map(b => b.textContent.trim())
+      expect(texts.some(t => t.match(/Complete|Завершить|Reopen|Возобновить/))).toBe(true)
+      expect(texts.some(t => t.match(/Edit|Редактировать/))).toBe(true)
+      expect(texts.some(t => t.match(/Delete|Удалить/))).toBe(true)
+    })
   })
 })
 

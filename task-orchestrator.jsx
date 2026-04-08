@@ -1335,7 +1335,14 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
               </div>
             )}
 
-            {activeFlowName && <FlowView tasks={tasks} activeFlow={activeFlowName} onStartNext={handleFlowStartNext} onUpdateFlow={handleFlowUpdate} onDeleteFlow={handleFlowDelete} />}
+            {activeFlowName && <FlowView tasks={tasks} activeFlow={activeFlowName} onStartNext={handleFlowStartNext} onUpdateFlow={handleFlowUpdate} onDeleteFlow={handleFlowDelete}
+              onCompleteTask={(id) => handleUpdate(id, { status: "done" })}
+              onReopenTask={(id) => handleUpdate(id, { status: "active" })}
+              onEditTask={(id) => setEditTaskId(id)}
+              onDeleteTask={(id) => { store.bulkDelete(new Set([id]), tasks); }}
+              onRemoveFromFlow={(id) => handleUpdate(id, { flowId: null })}
+              onRemoveDependency={(id) => handleUpdate(id, { dependsOn: null })}
+            />}
           </main>
 
           {selected.size > 0 && (
