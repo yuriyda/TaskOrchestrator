@@ -1317,6 +1317,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
                         isSelected={selected.has(task.id)}
                         isBlocked={blockedIds.has(task.id)}
                         isPlanned={store.plannedTaskIds?.has(task.id)}
+                        hideStatus={!!filters.status}
                         compact={showRightPanel}
                         dataGuide={idx === 0 ? "task-row" : undefined}
                         onStatusCycle={async () => {

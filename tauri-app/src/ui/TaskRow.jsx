@@ -14,7 +14,7 @@ import { PRIORITY_COLORS } from "../core/constants.js";
 import { fmtDate } from "../core/date.js";
 import { humanRecurrence } from "../core/recurrence.js";
 
-export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlanned = false, onStatusCycle, onClick, onCheckboxClick, onDoubleClick, onContextMenu, compact = false, dataGuide }) {
+export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlanned = false, hideStatus = false, onStatusCycle, onClick, onCheckboxClick, onDoubleClick, onContextMenu, compact = false, dataGuide }) {
   const { t, TC, locale, settings } = useApp();
   const isDone = task.status === "done";
   const [hovered, setHovered] = useState(false);
@@ -67,7 +67,7 @@ export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlann
           <User size={9} />{p}
         </span>
       ))}
-      <StatusBadge status={task.status} onClick={e => { e.stopPropagation(); onStatusCycle(); }} />
+      {!hideStatus && <StatusBadge status={task.status} onClick={e => { e.stopPropagation(); onStatusCycle(); }} />}
       <PriorityBadge priority={task.priority} />
       <div className="flex-1 min-w-0">
         <span className={`text-sm ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-500" : TC.text}`}>{task.title}</span>
