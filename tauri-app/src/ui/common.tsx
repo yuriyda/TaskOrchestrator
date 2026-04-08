@@ -12,7 +12,11 @@ import { X, AlertTriangle } from "lucide-react";
 import { CHIP_STYLE } from "../parse/quickEntry.js";
 import { useApp } from "./AppContext.jsx";
 
-export function TokenChip({ token }) {
+interface TokenChipProps {
+  token: { type: string; value: string };
+}
+
+export function TokenChip({ token }: TokenChipProps) {
   const s = CHIP_STYLE[token.type] || CHIP_STYLE.text;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", fontSize: 12, fontWeight: 500, fontFamily: "monospace", whiteSpace: "nowrap", ...s }}>
@@ -22,7 +26,12 @@ export function TokenChip({ token }) {
 }
 
 // Committed chip pill rendered inside the input field.
-export function ChipPill({ chip, onRemove }) {
+interface ChipPillProps {
+  chip: { type: string; raw: string };
+  onRemove: () => void;
+}
+
+export function ChipPill({ chip, onRemove }: ChipPillProps) {
   const s = CHIP_STYLE[chip.type] || CHIP_STYLE.text;
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 500,
@@ -40,7 +49,12 @@ export function ChipPill({ chip, onRemove }) {
   );
 }
 
-export function SectionDivider({ label, count }) {
+interface SectionDividerProps {
+  label: string;
+  count: number;
+}
+
+export function SectionDivider({ label, count }: SectionDividerProps) {
   const { TC } = useApp();
   return (
     <div className="flex items-center gap-2.5 py-0.5">
@@ -54,7 +68,13 @@ export function SectionDivider({ label, count }) {
   );
 }
 
-export function ConfirmDialog({ message, onConfirm, onCancel }) {
+interface ConfirmDialogProps {
+  message: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+export function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogProps) {
   const { t, TC } = useApp();
   useEffect(() => {
     const handler = (e) => {
@@ -89,7 +109,17 @@ export function ConfirmDialog({ message, onConfirm, onCancel }) {
   );
 }
 
-export function BulkBar({ count, onDone, onCycle, onShift, onToday, onDelete, onClear }) {
+interface BulkBarProps {
+  count: number;
+  onDone: () => void;
+  onCycle: () => void;
+  onShift: () => void;
+  onToday: () => void;
+  onDelete: () => void;
+  onClear: () => void;
+}
+
+export function BulkBar({ count, onDone, onCycle, onShift, onToday, onDelete, onClear }: BulkBarProps) {
   const { t } = useApp();
   return (
     <div className="flex items-center gap-3 px-4 py-2 bg-sky-900/30 border border-sky-500/30 rounded-lg flex-wrap">
@@ -106,7 +136,11 @@ export function BulkBar({ count, onDone, onCycle, onShift, onToday, onDelete, on
   );
 }
 
-export function ToastContainer({ toasts }) {
+interface ToastContainerProps {
+  toasts: { id: string; msg: string }[];
+}
+
+export function ToastContainer({ toasts }: ToastContainerProps) {
   const { TC } = useApp();
   if (!toasts.length) return null;
   return (

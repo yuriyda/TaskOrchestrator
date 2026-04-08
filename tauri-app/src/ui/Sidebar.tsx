@@ -13,8 +13,17 @@ import {
 import { STATUSES, STATUS_ICONS } from "../core/constants";
 import { localIsoDate } from "../core/date";
 import { themeOptions } from "./icons";
+import type { Task } from "../types";
 
-export function Sidebar({ tasks, filters, setFilter, clearFilter, onOpenSettings }) {
+interface SidebarProps {
+  tasks: Task[];
+  filters: Record<string, string | null>;
+  setFilter: (key: string, value: string) => void;
+  clearFilter: (key: string) => void;
+  onOpenSettings: () => void;
+}
+
+export function Sidebar({ tasks, filters, setFilter, clearFilter, onOpenSettings }: SidebarProps) {
   const { t, theme, setTheme, TC, settings, flowMeta, openUrl: ctxOpenUrl } = useApp();
 
   const lists    = useMemo(() => { const m = {}; tasks.forEach(t => { if (t.list) m[t.list] = (m[t.list] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); }, [tasks]);

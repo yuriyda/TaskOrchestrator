@@ -19,8 +19,13 @@ import {
 } from "../parse/quickEntry.js";
 import { TokenChip, ChipPill } from "./common.jsx";
 import { swapLayout } from "../core/layout.js";
+import type { Task } from "../types";
 
-export function QuickEntry({ onAdd }) {
+interface QuickEntryProps {
+  onAdd: (data: Partial<Task> & { title: string }) => void;
+}
+
+export function QuickEntry({ onAdd }: QuickEntryProps) {
   const { t, TC, lists, tags, flows, personas, settings } = useApp();
   const skipToken = (commit) => !commit || (commit.tokenType === "list" && hasListChip) || (commit.tokenType === "url" && settings?.autoExtractUrl === false);
   // chips  — committed token pills shown inside the input field

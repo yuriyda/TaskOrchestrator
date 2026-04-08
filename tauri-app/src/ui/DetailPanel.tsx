@@ -15,8 +15,16 @@ import { DatePickerAnchor } from "./DatePicker";
 import { fmtDate, parseDateInput } from "../core/date";
 import { humanRecurrence } from "../core/recurrence";
 import { STATUSES, STATUS_ICONS } from "../core/constants";
+import type { Task, TaskId } from "../types";
 
-export function DetailPanel({ selected, tasks, onUpdate, onEditFull }) {
+interface DetailPanelProps {
+  selected: Set<TaskId>;
+  tasks: Task[];
+  onUpdate: (id: TaskId, changes: Partial<Task>) => void;
+  onEditFull: (id: TaskId) => void;
+}
+
+export function DetailPanel({ selected, tasks, onUpdate, onEditFull }: DetailPanelProps) {
   const { t, TC, lists, locale, settings, openUrl: ctxOpenUrl } = useApp();
   const dateLocale = t("footer.dateLocale");
   const [editingField, setEditingField] = useState(null);

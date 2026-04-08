@@ -8,8 +8,16 @@ import { useState, useRef, useEffect } from "react";
 import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 import { useApp } from "./AppContext";
 import { localIsoDate, parseDateInput, fmtDate } from "../core/date";
+import type { RefObject } from "react";
 
-export function DatePicker({ value, onChange, onClose, anchorRef }) {
+interface DatePickerProps {
+  value: string | null;
+  onChange: (date: string | null) => void;
+  onClose: () => void;
+  anchorRef?: RefObject<HTMLElement | null>;
+}
+
+export function DatePicker({ value, onChange, onClose, anchorRef }: DatePickerProps) {
   const { t, TC, settings } = useApp();
   const initial = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value + "T12:00:00") : new Date();
   const [viewDate, setViewDate] = useState(() => new Date(initial.getFullYear(), initial.getMonth(), 1));
@@ -99,7 +107,13 @@ export function DatePicker({ value, onChange, onClose, anchorRef }) {
   );
 }
 
-export function DatePickerAnchor({ value, onChange, onClose }) {
+interface DatePickerAnchorProps {
+  value: string | null;
+  onChange: (date: string | null) => void;
+  onClose: () => void;
+}
+
+export function DatePickerAnchor({ value, onChange, onClose }: DatePickerAnchorProps) {
   const anchorRef = useRef(null);
   return (
     <span ref={anchorRef} className="inline-block">
@@ -108,7 +122,13 @@ export function DatePickerAnchor({ value, onChange, onClose }) {
   );
 }
 
-export function DateField({ value, onChange, className }) {
+interface DateFieldProps {
+  value: string;
+  onChange: (date: string) => void;
+  className?: string;
+}
+
+export function DateField({ value, onChange, className }: DateFieldProps) {
   const { settings, locale, TC } = useApp();
   const fmt = settings?.dateFormat || "iso";
   const [open, setOpen] = useState(false);

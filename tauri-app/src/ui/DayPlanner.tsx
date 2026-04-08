@@ -8,6 +8,7 @@ import { Clock, ChevronLeft, ChevronRight, Plus, Lock, Check, Play, Repeat, Grip
 import { useApp } from "./AppContext.jsx";
 import { PRIORITY_COLORS } from "../core/constants.js";
 import { getWeekDates, timeToMinutes, minutesToTime, snapToGrid } from "../store/dayPlanner.js";
+import type { Task, TaskId } from "../types";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -16,6 +17,29 @@ const DAY_NAMES_EN = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const DAY_NAMES_RU = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
 // ─── Component ──────────────────────────────────────────────────────────────
+
+interface DayPlannerProps {
+  slots: any[];
+  currentPlan: any;
+  tasks: Task[];
+  selectedDate: string;
+  onSelectDate: (date: string) => void;
+  onDropTask: (taskId: TaskId, time: string, date?: string) => void;
+  onMoveSlot: (slotId: string, time: string) => void;
+  onResizeSlot: (slotId: string, endTime: string) => void;
+  onRemoveSlot: (slotId: string) => void;
+  onBlockSlot: (time: string, endTime: string) => void;
+  onUnblockSlot: (slotId: string) => void;
+  onUpdateSlotTitle: (slotId: string, title: string) => void;
+  onUpdateSlotRecurrence: (slotId: string, recurrence: string | null) => void;
+  onCompleteTask: (taskId: TaskId) => void;
+  onEditTask: (taskId: TaskId) => void;
+  onCreateTaskHere: (time: string) => void;
+  onSelectTask: (taskId: TaskId) => void;
+  slotStep?: number;
+  settingsDayStart: number;
+  settingsDayEnd: number;
+}
 
 export function DayPlanner({
   slots,
@@ -38,7 +62,7 @@ export function DayPlanner({
   slotStep = 30,
   settingsDayStart,
   settingsDayEnd,
-}) {
+}: DayPlannerProps) {
   const { t, TC, locale } = useApp();
   const gridRef = useRef(null);
   const [nowMinutes, setNowMinutes] = useState(() => {

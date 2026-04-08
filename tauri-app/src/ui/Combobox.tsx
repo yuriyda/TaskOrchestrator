@@ -8,12 +8,26 @@
  */
 
 import { useState, useRef, useEffect } from "react";
+import type { CSSProperties, KeyboardEvent, FocusEvent } from "react";
 import { useApp } from "./AppContext";
+
+interface ComboboxProps {
+  value: string;
+  onChange: (value: string) => void;
+  options?: (string | { value: string; label: string })[];
+  placeholder?: string;
+  className?: string;
+  style?: CSSProperties;
+  onBlur?: (e: FocusEvent<HTMLInputElement>) => void;
+  onKeyDown?: (e: KeyboardEvent<HTMLInputElement>) => void;
+  onCommit?: (value: string) => void;
+  autoFocus?: boolean;
+}
 
 export function Combobox({
   value, onChange, options = [], placeholder,
   className, style, onBlur, onKeyDown, onCommit, autoFocus,
-}) {
+}: ComboboxProps) {
   const { TC } = useApp();
   const [open, setOpen]           = useState(false);
   const [activeIdx, setActiveIdx] = useState(-1);

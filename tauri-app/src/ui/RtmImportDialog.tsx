@@ -8,7 +8,22 @@
 import { useState } from "react";
 import { useApp } from "./AppContext";
 
-export function RtmImportDialog({ data, onConfirm, onCancel }) {
+interface RtmImportData {
+  tasks?: any[];
+  lists?: any[];
+  tags?: any[];
+  notes?: any[];
+  locations?: any[];
+  smart_lists?: any[];
+}
+
+interface RtmImportDialogProps {
+  data: RtmImportData;
+  onConfirm: (includeCompleted: boolean) => void;
+  onCancel: () => void;
+}
+
+export function RtmImportDialog({ data, onConfirm, onCancel }: RtmImportDialogProps) {
   const { t, TC } = useApp();
   const [includeCompleted, setIncludeCompleted] = useState(false);
 
@@ -66,7 +81,12 @@ export function RtmImportDialog({ data, onConfirm, onCancel }) {
 
 // ─── ImportProgressOverlay ────────────────────────────────────────────────────
 
-export function ImportProgressOverlay({ current, total }) {
+interface ImportProgressOverlayProps {
+  current: number;
+  total: number;
+}
+
+export function ImportProgressOverlay({ current, total }: ImportProgressOverlayProps) {
   const { t, TC } = useApp();
   const pct = total > 0 ? Math.round((current / total) * 100) : 0;
   return (

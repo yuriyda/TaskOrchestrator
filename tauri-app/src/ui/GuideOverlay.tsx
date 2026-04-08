@@ -15,7 +15,18 @@ export const GUIDE_STEPS = [
   { target: "detail-panel", titleKey: "guide.step.detailPanel.title",  descKey: "guide.step.detailPanel.desc" },
 ];
 
-export function GuideOverlay({ step, total, target, titleKey, descKey, onNext, onBack, onSkip }) {
+interface GuideOverlayProps {
+  step: number;
+  total: number;
+  target: string;
+  titleKey: string;
+  descKey: string;
+  onNext: () => void;
+  onBack: () => void;
+  onSkip: () => void;
+}
+
+export function GuideOverlay({ step, total, target, titleKey, descKey, onNext, onBack, onSkip }: GuideOverlayProps) {
   const { t, TC } = useApp();
   const [rect, setRect] = useState(null);
 

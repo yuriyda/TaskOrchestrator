@@ -12,6 +12,7 @@ import { ulid } from "../ulid";
 import { Combobox } from "./Combobox";
 import { DateField } from "./DatePicker";
 import { STATUSES, PRIORITY_COLORS } from "../core/constants";
+import type { Task } from "../types";
 
 function normalizeEstimate(raw) {
   const s = (raw || "").trim();
@@ -40,7 +41,14 @@ function normalizeRecurrence(raw) {
   return "";
 }
 
-export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }) {
+interface TaskEditDialogProps {
+  task: Task;
+  tasks?: Task[];
+  onSave: (changes: Partial<Task>) => void;
+  onCancel: () => void;
+}
+
+export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }: TaskEditDialogProps) {
   const { t, TC, lists, tags: allTags, flows, personas: allPersonas } = useApp();
   const [form, setForm] = useState({
     title:      task.title      || "",

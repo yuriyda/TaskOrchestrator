@@ -16,8 +16,16 @@ import { useState, useMemo } from "react";
 import { useApp } from "./AppContext";
 import { localIsoDate } from "../core/date";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import type { Task } from "../types";
 
-export function CalendarPanel({ tasks, calendarFilter, setCalendarFilter, dateRange }) {
+interface CalendarPanelProps {
+  tasks: Task[];
+  calendarFilter: string | null;
+  setCalendarFilter: (date: string | null) => void;
+  dateRange: string | null;
+}
+
+export function CalendarPanel({ tasks, calendarFilter, setCalendarFilter, dateRange }: CalendarPanelProps) {
   const { t, TC, settings } = useApp();
   const today = new Date();
   const [viewDate, setViewDate] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));

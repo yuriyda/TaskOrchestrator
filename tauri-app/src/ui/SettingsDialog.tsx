@@ -1,10 +1,10 @@
 /**
- * @file SettingsDialog.jsx
+ * @file SettingsDialog.tsx
  * Full-screen modal settings dialog with tabbed navigation.
  * Includes General, Appearance, AI, Import, Export, About, Maintenance, and Danger tabs.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useApp } from "./AppContext";
 import {
   Settings, Globe, Sun, Moon, Monitor, Upload, Download,
@@ -17,8 +17,15 @@ import { FONTS, DATE_FORMATS, CSV_FIELDS } from "../core/constants";
 import { COLOR_THEMES } from "../core/themes";
 import { LOCALE_NAMES } from "../i18n/locales";
 import { themeOptions, AutoThemeIcon } from "./icons";
+import type { Task, BackupInfo } from "../types";
 
-export function SettingRow({ label, description, children }) {
+interface SettingRowProps {
+  label: string;
+  description?: string;
+  children: ReactNode;
+}
+
+export function SettingRow({ label, description, children }: SettingRowProps) {
   const { TC } = useApp();
   return (
     <div className="flex flex-col gap-2 py-3">
@@ -31,7 +38,42 @@ export function SettingRow({ label, description, children }) {
   );
 }
 
-export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks, filteredTasks, hasActiveFilter, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }) {
+interface SettingsDialogProps {
+  initialTab?: string;
+  onClose: () => void;
+  onTriggerRtmImport: () => void;
+  tasks: Task[];
+  filteredTasks: Task[];
+  hasActiveFilter: boolean;
+  onClearAll: () => Promise<void>;
+  dbPath?: string;
+  onRevealDb?: () => void;
+  onOpenDb?: () => Promise<void>;
+  onCreateNewDb?: () => Promise<void>;
+  onMoveDb?: () => Promise<void>;
+  onRestartGuide: () => void;
+  onCreateBackup?: () => Promise<boolean>;
+  onListBackups?: () => Promise<BackupInfo[]>;
+  onRestoreBackup?: (path: string) => Promise<void>;
+  onExportSyncRequest?: () => Promise<string>;
+  onHandleSyncRequest?: (request: string) => Promise<string>;
+  onImportSyncClipboard?: () => Promise<any>;
+  onGetSyncLog?: () => Promise<any[]>;
+  onGetSyncStats?: () => Promise<any>;
+  onClearSyncData?: () => Promise<void>;
+  onGdriveCheckConnection?: () => Promise<boolean>;
+  onGdriveConnect?: (clientId: string, clientSecret: string) => Promise<void>;
+  onGdriveDisconnect?: () => Promise<void>;
+  onGdriveSyncNow?: () => Promise<any>;
+  onGdriveGetConfig?: () => Promise<any>;
+  onGdriveCheckSyncFile?: () => Promise<any>;
+  onGdrivePurgeSyncFile?: () => Promise<void>;
+  onGdriveReadSyncFile?: () => Promise<string>;
+  gdriveLog: string[];
+  onGdriveLog: (msg: string) => void;
+}
+
+export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks, filteredTasks, hasActiveFilter, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }: SettingsDialogProps) {
   const { t, locale, setLocale, theme, setTheme, TC, settings, updateSetting } = useApp();
   const [activeTab, setActiveTab] = useState(initialTab || "general");
   const [clearStep, setClearStep] = useState(0);
