@@ -445,10 +445,15 @@ export function DayPlanner({
               {task?.personas?.map(p => (
                 <span key={p} className="text-[9px] text-indigo-400/90 bg-indigo-400/10 px-1 rounded flex-shrink-0">{p}</span>
               ))}
-              <span className={`text-xs font-medium truncate flex-1
+              <span className={`text-xs font-medium truncate
                 ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-400" : TC.text}`}>
                 {isBlocked ? (slot.title || t("planner.blocked")) : (task?.title || "—")}
               </span>
+              {task?.list && <span className="text-[9px] text-sky-400/60 flex-shrink-0 truncate max-w-[80px]">@{task.list}</span>}
+              {task?.tags?.slice(0, 2).map(tag => (
+                <span key={tag} className="text-[9px] text-sky-400/50 flex-shrink-0">#{tag}</span>
+              ))}
+              <span className="flex-1" />
               {isBlocked && slot.recurrence && <Repeat size={9} className="text-gray-400/70 flex-shrink-0" />}
               <span className={`text-[9px] flex-shrink-0 ${TC.textMuted}`}>{slot.startTime}–{slot.endTime}</span>
             </div>
@@ -466,6 +471,10 @@ export function DayPlanner({
                   {isBlocked ? (slot.title || t("planner.blocked")) : (task?.title || "—")}
                 </span>
                 {isBlocked && slot.recurrence && <Repeat size={9} className="text-gray-400/70 flex-shrink-0" />}
+                {height < 50 && task?.list && <span className="text-[9px] text-sky-400/60 flex-shrink-0 truncate max-w-[80px]">@{task.list}</span>}
+                {height < 50 && task?.tags?.slice(0, 2).map(tag => (
+                  <span key={tag} className="text-[9px] text-sky-400/50 flex-shrink-0">#{tag}</span>
+                ))}
               </div>
               {height >= 50 && task && (
                 <div className="flex items-center gap-1 mt-0.5 overflow-hidden">
