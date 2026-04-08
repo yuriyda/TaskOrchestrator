@@ -1,0 +1,86 @@
+/**
+ * @file useSync.ts
+ * @description Custom hook for Google Drive sync: connection state, sync logging,
+ *   manual/auto sync triggers with debounce.
+ */
+import { useState, useRef, useEffect, useCallback } from "react";
+import type { Task } from "../types";
+import type { AppSettings } from "./useSettings";
+
+interface SyncResult {
+  applied: number;
+  outdated: number;
+  uploaded: number;
+}
+
+export function useSync(
+  store: any,
+  tasks: Task[],
+  locale: string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+  settings: AppSettings,
+) {
+  const [gdriveConnected, setGdriveConnected] = useState(false);
+  const [gdriveLog, setGdriveLog] = useState<string[]>([]);
+  const [autoSyncing, setAutoSyncing] = useState(false);
+  const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const syncInProgressRef = useRef(false);
+
+  useEffect(() => {
+    store.gdriveCheckConnection?.().then((ok: boolean) => setGdriveConnected(!!ok));
+  }, [store, store.metaSettings]);
+
+  const addGdriveLog = (msg: string) => {
+    const ts = new Date().toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setGdriveLog(prev => [...prev, `[${ts}] ${msg}`]);
+  };
+
+  const handleSyncNow = store.gdriveSyncNow ? async (): Promise<SyncResult | undefined> => {
+    addGdriveLog(t("sync.gdriveSyncing"));
+    const result: SyncResult | undefined = await store.gdriveSyncNow();
+    if (result) {
+      addGdriveLog(
+        t("sync.gdriveSynced")
+          .replace("{applied}", String(result.applied))
+          .replace("{outdated}", String(result.outdated))
+          .replace("{uploaded}", String(result.uploaded))
+      );
+    }
+    return result;
+  } : undefined;
+
+  const wrappedSyncNow = useCallback(async () => {
+    if (!handleSyncNow) return;
+    syncInProgressRef.current = true;
+    try { return await handleSyncNow(); }
+    finally { syncInProgressRef.current = false; }
+  }, [handleSyncNow]);
+
+  const triggerAutoSync = useCallback(() => {
+    if (!handleSyncNow || settings.autoSync === false) return;
+    if (!gdriveConnected) return;
+    if (syncInProgressRef.current) return;
+    if (autoSyncTimerRef.current) clearTimeout(autoSyncTimerRef.current);
+    autoSyncTimerRef.current = setTimeout(async () => {
+      if (syncInProgressRef.current) return;
+      syncInProgressRef.current = true;
+      setAutoSyncing(true);
+      try { await handleSyncNow(); } catch {}
+      syncInProgressRef.current = false;
+      setAutoSyncing(false);
+    }, 3000);
+  }, [handleSyncNow, settings.autoSync, gdriveConnected]);
+
+  const prevTasksRef = useRef(tasks);
+  useEffect(() => {
+    if (prevTasksRef.current !== tasks && prevTasksRef.current.length > 0 && !syncInProgressRef.current) {
+      triggerAutoSync();
+    }
+    prevTasksRef.current = tasks;
+  }, [tasks, triggerAutoSync]);
+
+  return {
+    gdriveConnected, gdriveLog, setGdriveLog, addGdriveLog,
+    wrappedSyncNow, autoSyncing, autoSyncTimerRef,
+  };
+}
