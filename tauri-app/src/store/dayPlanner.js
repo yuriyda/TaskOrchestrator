@@ -153,6 +153,12 @@ export async function getSlotsByDate(db, date) {
   return getEffectiveSlots(db, date, plan.id)
 }
 
+/** Get all task IDs that have at least one slot in any plan. Returns a Set. */
+export async function getPlannedTaskIds(db) {
+  const rows = await db.select('SELECT DISTINCT task_id FROM day_plan_slots WHERE task_id IS NOT NULL AND slot_type = ?', ['task'])
+  return new Set(rows.map(r => r.task_id))
+}
+
 const SLOT_INSERT = 'INSERT INTO day_plan_slots (id, plan_id, task_id, title, start_time, end_time, slot_type, sort_order, recurrence, created_at, device_id, lamport_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
 
 /** Add a task slot to the plan. Returns the new slot. */

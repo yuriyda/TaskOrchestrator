@@ -6,7 +6,7 @@
  * cursor outline, overdue stripe colouring, and blocked-task dimming.
  */
 import { useState } from "react";
-import { Check, Lock, User, Calendar, Repeat, Zap, AlertTriangle, FileText } from "lucide-react";
+import { Check, Lock, User, Calendar, Repeat, Zap, AlertTriangle, FileText, Clock } from "lucide-react";
 import { useApp } from "./AppContext.jsx";
 import { StatusBadge, PriorityBadge } from "./badges.jsx";
 import { overdueLevel, OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG } from "../core/overdue.js";
@@ -14,7 +14,7 @@ import { PRIORITY_COLORS } from "../core/constants.js";
 import { fmtDate } from "../core/date.js";
 import { humanRecurrence } from "../core/recurrence.js";
 
-export function TaskRow({ task, isCursor, isSelected, isBlocked = false, onStatusCycle, onClick, onCheckboxClick, onDoubleClick, onContextMenu, compact = false, dataGuide }) {
+export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlanned = false, onStatusCycle, onClick, onCheckboxClick, onDoubleClick, onContextMenu, compact = false, dataGuide }) {
   const { t, TC, locale, settings } = useApp();
   const isDone = task.status === "done";
   const [hovered, setHovered] = useState(false);
@@ -54,6 +54,11 @@ export function TaskRow({ task, isCursor, isSelected, isBlocked = false, onStatu
       >
         {isDone && <Check size={11} strokeWidth={3} className="text-white" />}
       </button>
+      {isPlanned && (
+        <span className="text-[10px] text-sky-400/60 bg-sky-400/10 px-1 py-0.5 rounded flex-shrink-0" title={t("planner.planned")}>
+          <Clock size={10} />
+        </span>
+      )}
       {isBlocked && task.status !== "done" && task.status !== "cancelled" && (
         <Lock size={12} className="text-yellow-500/70 flex-shrink-0" />
       )}

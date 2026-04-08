@@ -19,7 +19,7 @@ import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from '
 import { createSafeOpenUrl } from './store/storeApi.js'
 import { exportDeltas, clearSyncLog, getVectorClock, buildSyncRequest, computeSyncPackage, importSyncPackage } from './store/sync.js'
 import { isConnected as gdriveIsConnected, connect as gdriveConnect, disconnect as gdriveDisconnect, syncWithDrive, hasSyncFile as gdriveHasSyncFile, deleteSyncFile as gdriveDeleteSyncFile, readSyncFile as gdriveReadSyncFile, loadTokens as gdriveLoadTokens } from './store/googleDrive.js'
-import { getOrCreatePlan, getPlanByDate, getSlotsByPlan, getEffectiveSlots, getSlotsByDate, addTaskSlot, addBlockedSlot, moveSlot, resizeSlot, removeSlot, updateSlotTitle, updateSlotRecurrence, updatePlanHours } from './store/dayPlanner.js'
+import { getOrCreatePlan, getPlanByDate, getSlotsByPlan, getEffectiveSlots, getSlotsByDate, addTaskSlot, addBlockedSlot, moveSlot, resizeSlot, removeSlot, updateSlotTitle, updateSlotRecurrence, updatePlanHours, getPlannedTaskIds } from './store/dayPlanner.js'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -166,6 +166,7 @@ export function useTauriTaskStore() {
       const fm = {}
       for (const r of flowMetaRows) fm[r.name] = { description: r.description || '', color: r.color || '', deadline: r.deadline || null }
       setFlowMeta(fm)
+      getPlannedTaskIds(db).then(setPlannedTaskIds)
 
       // Load persisted app settings from meta table
       const metaRows = await db.select(
@@ -1047,6 +1048,13 @@ export function useTauriTaskStore() {
 
   const [dayPlanSlots, setDayPlanSlots] = useState([])
   const [currentPlan,  setCurrentPlan]  = useState(null)
+  const [plannedTaskIds, setPlannedTaskIds] = useState(new Set())
+
+  const refreshPlannedTaskIds = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return
+    setPlannedTaskIds(await getPlannedTaskIds(db))
+  }, [])
 
   const plannerLoadDay = useCallback(async (date, defaults) => {
     const db = dbRef.current
@@ -1083,8 +1091,9 @@ export function useTauriTaskStore() {
     setHistory(h => [...h.slice(-5), currentTasks])
     const slot = await addTaskSlot(db, currentPlan.id, taskId, startTime, endTime, did)
     setDayPlanSlots(prev => [...prev, slot].sort((a, b) => a.startTime.localeCompare(b.startTime)))
+    refreshPlannedTaskIds()
     return slot
-  }, [currentPlan])
+  }, [currentPlan, refreshPlannedTaskIds])
 
   const plannerAddBlockedSlot = useCallback(async (title, startTime, endTime) => {
     const db = dbRef.current
@@ -1121,7 +1130,8 @@ export function useTauriTaskStore() {
     const did = deviceIdRef.current
     await removeSlot(db, slotId, did)
     setDayPlanSlots(prev => prev.filter(s => s.id !== slotId))
-  }, [])
+    refreshPlannedTaskIds()
+  }, [refreshPlannedTaskIds])
 
   const plannerUpdateSlotTitle = useCallback(async (slotId, title) => {
     const db = dbRef.current
@@ -1160,7 +1170,7 @@ export function useTauriTaskStore() {
     gdriveCheckConnection, gdriveConnectAccount, gdriveDisconnectAccount, gdriveSyncNow, gdriveGetConfig, gdriveCheckSyncFile, gdrivePurgeSyncFile, gdriveReadSyncFile: gdriveReadSyncFileCb,
     openUrl: createSafeOpenUrl(openUrl),
     // Day Planner
-    dayPlanSlots, currentPlan,
+    dayPlanSlots, currentPlan, plannedTaskIds,
     plannerLoadDay, plannerRefreshSlots,
     plannerAddTaskSlot, plannerAddBlockedSlot,
     plannerMoveSlot, plannerResizeSlot, plannerRemoveSlot,
