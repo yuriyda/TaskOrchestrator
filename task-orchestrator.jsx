@@ -6,7 +6,7 @@
 import { useState, useReducer, useRef, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
 import { ulid } from "./tauri-app/src/ulid.js";
-import { LOCALES, LOCALE_NAMES } from "./tauri-app/src/i18n/locales.js";
+import { LOCALE_NAMES } from "./tauri-app/src/i18n/locales.js";
 import { STATUSES, STATUS_ICONS, PRIORITY_COLORS, STATUS_ORDER, SORT_FIELDS, FONTS, DATE_FORMATS, CSV_FIELDS } from "./tauri-app/src/core/constants.js";
 import { COLOR_THEMES, buildTC } from "./tauri-app/src/core/themes.js";
 import { swapLayout } from "./tauri-app/src/core/layout.js";
@@ -39,144 +39,31 @@ import { StatusBar } from "./tauri-app/src/ui/StatusBar.jsx";
 import { GUIDE_STEPS, GuideOverlay } from "./tauri-app/src/ui/GuideOverlay.jsx";
 import { DayPlanner } from "./tauri-app/src/ui/DayPlanner.jsx";
 import { defaultEndTime, timeToMinutes, minutesToTime } from "./tauri-app/src/store/dayPlanner.js";
+import { useSettings } from "./hooks/useSettings.jsx";
+import { useSync } from "./hooks/useSync.jsx";
+import { useDayPlanner } from "./hooks/useDayPlanner.jsx";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
-  // saveMetaRef is populated after the store is initialised (below) so that
-  // updateSetting / locale / theme effects can call it without moving the
-  // storeHook() call (which would change hook order across renders).
   const saveMetaRef = useRef(null);
 
-  // ── UI Guide state ──────────────────────────────────────────────────────
-  const [guideStep, setGuideStep] = useState(-1); // -1 = hidden
-
-  // ── i18n / theme state ────────────────────────────────────────────────────
-  const [locale, setLocale] = useState(() => {
-    try { return localStorage.getItem("to_locale") || "en"; } catch { return "en"; }
-  });
-  const [theme, setTheme]   = useState(() => {
-    try { return localStorage.getItem("to_theme") || "auto"; } catch { return "auto"; }
-  });
-
-  // ── Settings state ────────────────────────────────────────────────────────
-  const [showSettings, setShowSettings] = useState(false); // false | "general" | "about" | etc.
-  const [gdriveLog, setGdriveLog] = useState([]);
-  const [settings, setSettingsState] = useState(() => {
-    try {
-      const saved = localStorage.getItem("to_settings");
-      const def = { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false, autoSync: true, autoExtractUrl: true };
-      return saved ? { ...def, ...JSON.parse(saved) } : def;
-    } catch { return { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false, autoSync: true, autoExtractUrl: true }; }
-  });
-
-  const updateSetting = (key, val) => {
-    setSettingsState(prev => {
-      const next = { ...prev, [key]: val };
-      try { localStorage.setItem("to_settings", JSON.stringify(next)); } catch {}
-      saveMetaRef.current?.("to_settings", JSON.stringify(next));
-      return next;
-    });
-  };
-
-  // Persist locale and theme changes
-  useEffect(() => {
-    try { localStorage.setItem("to_locale", locale); } catch {}
-    saveMetaRef.current?.("to_locale", locale);
-  }, [locale]);
-  useEffect(() => {
-    try { localStorage.setItem("to_theme", theme); } catch {}
-    saveMetaRef.current?.("to_theme", theme);
-  }, [theme]);
-
-  const [resolvedTheme, setResolvedTheme] = useState(() =>
-    typeof window !== "undefined" && window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light"
-  );
-
-  useEffect(() => {
-    if (theme !== "auto") { setResolvedTheme(theme); return; }
-    const mq = window.matchMedia?.("(prefers-color-scheme: dark)");
-    if (!mq) return;
-    const handler = (e) => setResolvedTheme(e.matches ? "dark" : "light");
-    setResolvedTheme(mq.matches ? "dark" : "light");
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [theme]);
-
-  // ── Theme class map ───────────────────────────────────────────────────────
-  const TC = buildTC(resolvedTheme, settings.colorTheme);
-
-  // ── Translation helper ────────────────────────────────────────────────────
-  const t = (key, params = {}) => {
-    let s = (LOCALES[locale] || LOCALES.en)[key] ?? LOCALES.en[key] ?? key;
-    for (const [k, v] of Object.entries(params)) s = s.replaceAll(`{${k}}`, String(v));
-    return s;
-  };
+  // ── Settings / i18n / theme ───────────────────────────────────────────────
+  const {
+    guideStep, setGuideStep, locale, setLocale, theme, setTheme,
+    resolvedTheme, TC, t, settings, updateSetting, showSettings, setShowSettings,
+    applyMeta,
+  } = useSettings(saveMetaRef);
 
   // ── Task state ────────────────────────────────────────────────────────────
   const store = storeHook();
   const { tasks } = store;
 
-  // ── Google Drive connection state ────────────────────────────────────────
-  const [gdriveConnected, setGdriveConnected] = useState(false);
-  useEffect(() => {
-    store.gdriveCheckConnection?.().then(ok => setGdriveConnected(!!ok));
-  }, [store, store.metaSettings]);
-
-  // ── Google Drive sync with logging ───────────────────────────────────────
-  const addGdriveLog = (msg) => {
-    const ts = new Date().toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    setGdriveLog(prev => [...prev, `[${ts}] ${msg}`]);
-  };
-  const handleSyncNow = store.gdriveSyncNow ? async () => {
-    addGdriveLog(t("sync.gdriveSyncing"));
-    const result = await store.gdriveSyncNow();
-    if (result) {
-      addGdriveLog(
-        t("sync.gdriveSynced")
-          .replace("{applied}", result.applied)
-          .replace("{outdated}", result.outdated)
-          .replace("{uploaded}", result.uploaded)
-      );
-    }
-    return result;
-  } : undefined;
-
-  // ── Auto-sync after task edits (debounced) ─────────────────────────────
-  const autoSyncTimerRef = useRef(null);
-  const syncInProgressRef = useRef(false); // true during any sync (manual or auto)
-  const [autoSyncing, setAutoSyncing] = useState(false);
-
-  const wrappedSyncNow = useCallback(async () => {
-    if (!handleSyncNow) return;
-    syncInProgressRef.current = true;
-    try { return await handleSyncNow(); }
-    finally { syncInProgressRef.current = false; }
-  }, [handleSyncNow]);
-
-  const triggerAutoSync = useCallback(() => {
-    if (!handleSyncNow || settings.autoSync === false) return;
-    if (!gdriveConnected) return;
-    if (syncInProgressRef.current) return;
-    clearTimeout(autoSyncTimerRef.current);
-    autoSyncTimerRef.current = setTimeout(async () => {
-      if (syncInProgressRef.current) return;
-      syncInProgressRef.current = true;
-      setAutoSyncing(true);
-      try { await handleSyncNow(); } catch {}
-      syncInProgressRef.current = false;
-      setAutoSyncing(false);
-    }, 3000);
-  }, [handleSyncNow, settings.autoSync, gdriveConnected]);
-
-  // Trigger auto-sync whenever tasks change (debounced), skip if sync caused the change
-  const prevTasksRef = useRef(tasks);
-  useEffect(() => {
-    if (prevTasksRef.current !== tasks && prevTasksRef.current.length > 0 && !syncInProgressRef.current) {
-      triggerAutoSync();
-    }
-    prevTasksRef.current = tasks;
-  }, [tasks, triggerAutoSync]);
+  // ── Google Drive sync ─────────────────────────────────────────────────────
+  const {
+    gdriveConnected, gdriveLog, setGdriveLog, addGdriveLog,
+    wrappedSyncNow, autoSyncing, autoSyncTimerRef,
+  } = useSync(store, tasks, locale, t, settings);
 
   // Wire the saveMeta ref so updateSetting / locale / theme effects can use it
   saveMetaRef.current = store.saveMeta ?? null;
@@ -186,19 +73,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
   useEffect(() => {
     if (!store.metaSettings || metaApplied.current) return;
     metaApplied.current = true;
-    const m = store.metaSettings;
-    if (m["to_locale"]) setLocale(m["to_locale"]);
-    if (m["to_theme"])  setTheme(m["to_theme"]);
-    if (m["to_settings"]) {
-      try {
-        const loaded = JSON.parse(m["to_settings"]);
-        const def = { firstDayOfWeek: 1, dateFormat: "iso", fontFamily: "", fontSize: "normal", condense: false, colorTheme: "default", clockFormat: "24h", newTaskActiveToday: false };
-        setSettingsState({ ...def, ...loaded });
-      } catch {}
-    }
-    if (m["to_guide_completed"] !== "true") {
-      setGuideStep(0);
-    }
+    applyMeta(store.metaSettings);
   }, [store.metaSettings]);
 
   const [cursor, setCursor]   = useState(0);
@@ -372,145 +247,18 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
     });
   }, [displayFiltered]);
 
+  const handleUpdate = (id, rawChanges) => {
+    const { __title__, ...rest } = rawChanges;
+    const changes = __title__ !== undefined ? { ...rest, title: __title__ } : rawChanges;
+    store.updateTask(id, changes, tasks).then(showFlowToasts);
+  };
+
   // ── Day Planner integration ────────────────────────────────────────────
-  useEffect(() => {
-    if (showPlanner && store.plannerLoadDay) {
-      store.plannerLoadDay(plannerDate, {
-        dayStartHour: settings.plannerDayStart ?? 9,
-        dayEndHour: settings.plannerDayEnd ?? 17,
-      });
-    }
-  }, [showPlanner, plannerDate, store.plannerLoadDay, settings.plannerDayStart, settings.plannerDayEnd]);
-
-  const parseEstimateMinutes = (estimate) => {
-    if (!estimate) return 60;
-    const est = estimate.toLowerCase();
-    const hMatch = est.match(/([\d.]+)\s*h/);
-    const mMatch = est.match(/([\d.]+)\s*m/);
-    let min = 60;
-    if (hMatch) min = Math.round(parseFloat(hMatch[1]) * 60);
-    else if (mMatch) min = Math.round(parseFloat(mMatch[1]));
-    return Math.max(15, min);
-  };
-
-  // Plain function (not useCallback) to always read fresh props/state
-  const handlePlannerDropTask = (taskIds, startTime, currentSlots) => {
-    if (!store.plannerAddTaskSlot) return;
-    const dayStart = (settings.plannerDayStart ?? 9) * 60;
-    const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
-    const step = settings.plannerSlotStep ?? 30;
-
-    // Build occupied ranges from slots passed by DayPlanner (guaranteed fresh)
-    const occupied = (currentSlots || [])
-      .map(s => {
-        const [sh, sm] = s.startTime.split(":").map(Number);
-        const [eh, em] = s.endTime.split(":").map(Number);
-        return { start: sh * 60 + sm, end: eh * 60 + em };
-      })
-      .sort((a, b) => a.start - b.start);
-
-    const findFree = (startMin, dur) => {
-      let c = startMin;
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (const b of occupied) {
-          if (c < b.end && c + dur > b.start) {
-            c = Math.ceil(b.end / step) * step;
-            changed = true;
-          }
-        }
-      }
-      // If doesn't fit after last occupied slot, try before first collision
-      if (c + dur > dayEnd) {
-        c = startMin;
-        for (const b of occupied) {
-          if (c < b.end && c + dur > b.start) {
-            c = Math.floor((b.start - dur) / step) * step;
-            break;
-          }
-        }
-      }
-      return Math.max(dayStart, Math.min(c, dayEnd - dur));
-    };
-
-    const [sh, sm] = startTime.split(":").map(Number);
-    let nextStartMin = sh * 60 + sm;
-
-    for (const id of taskIds) {
-      const task = tasks.find(t => t.id === id);
-      const durationMin = parseEstimateMinutes(task?.estimate);
-      // Task too long for the entire day
-      if (durationMin > dayEnd - dayStart) continue;
-      const freeStart = findFree(nextStartMin, durationMin);
-      const freeEnd = freeStart + durationMin;
-      // No space found
-      if (freeEnd > dayEnd) break;
-      // Verify no overlap (final safety check)
-      const overlaps = occupied.some(b => freeStart < b.end && freeEnd > b.start);
-      if (overlaps) break;
-      const fmt = (m) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-      store.plannerAddTaskSlot(id, fmt(freeStart), fmt(freeEnd), tasks);
-      occupied.push({ start: freeStart, end: freeEnd });
-      occupied.sort((a, b) => a.start - b.start);
-      nextStartMin = freeEnd;
-    }
-  };
-
-  const handlePlannerMoveSlot = useCallback((slotId, startTime, endTime) => {
-    store.plannerMoveSlot?.(slotId, startTime, endTime, tasks);
-  }, [store.plannerMoveSlot, tasks]);
-
-  const handlePlannerResizeSlot = useCallback((slotId, endTime) => {
-    // Read slot from DOM data attribute (always fresh, set during resize preview)
-    const slotEl = document.querySelector(`[data-slot-id="${slotId}"]`);
-    const startTime = slotEl?.dataset.startTime;
-    // Find taskId from current state
-    const slot = (store.dayPlanSlots || []).find(s => s.id === slotId);
-    if (slot?.taskId && startTime) {
-      const startMin = parseInt(startTime.split(":")[0]) * 60 + parseInt(startTime.split(":")[1]);
-      const endMin = parseInt(endTime.split(":")[0]) * 60 + parseInt(endTime.split(":")[1]);
-      const durationMin = endMin - startMin;
-      if (durationMin > 0) {
-        const estimateStr = durationMin >= 60
-          ? `${(durationMin / 60).toFixed(durationMin % 60 ? 1 : 0)} hours`
-          : `${durationMin} min`;
-        handleUpdate(slot.taskId, { estimate: estimateStr });
-      }
-    }
-    store.plannerResizeSlot?.(slotId, endTime, tasks);
-  }, [store.plannerResizeSlot, store.dayPlanSlots, tasks]);
-
-  const handlePlannerRemoveSlot = useCallback((slotId) => {
-    store.plannerRemoveSlot?.(slotId, tasks);
-  }, [store.plannerRemoveSlot, tasks]);
-
-  const handlePlannerBlockSlot = useCallback((time) => {
-    if (!store.plannerAddBlockedSlot) return;
-    const startMin = timeToMinutes(time);
-    const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
-    const slots = store.dayPlanSlots || [];
-    let maxAvailable = dayEnd - startMin;
-    for (const s of slots) {
-      const sStart = timeToMinutes(s.startTime);
-      const sEnd = timeToMinutes(s.endTime);
-      if (sStart <= startMin && sEnd > startMin) { maxAvailable = 0; break; }
-      if (sStart >= startMin && sStart - startMin < maxAvailable) {
-        maxAvailable = sStart - startMin;
-      }
-    }
-    const duration = Math.min(60, maxAvailable);
-    if (duration <= 0) return;
-    const endTime = minutesToTime(startMin + duration);
-    store.plannerAddBlockedSlot(t("planner.blocked"), time, endTime);
-  }, [store.plannerAddBlockedSlot, t, settings.plannerDayEnd, store.dayPlanSlots]);
-
-  const pendingSlotTimeRef = useRef(null);
-
-  const handlePlannerCreateTask = useCallback((time) => {
-    pendingSlotTimeRef.current = time;
-    document.getElementById("quick-entry")?.focus();
-  }, []);
+  const {
+    handlePlannerDropTask, handlePlannerMoveSlot, handlePlannerResizeSlot,
+    handlePlannerRemoveSlot, handlePlannerBlockSlot, handlePlannerCreateTask,
+    pendingSlotTimeRef,
+  } = useDayPlanner({ store, tasks, settings, t, handleUpdate, showPlanner, plannerDate });
 
   // ── Rubber-band drag (window-level) ──────────────────────────────────────
   useEffect(() => {
@@ -929,14 +677,6 @@ export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
         store.plannerAddTaskSlot(task.id, time, endTime, tasks);
       }
     }
-  };
-
-  const handleUpdate = (id, rawChanges) => {
-    // Inline title editing uses the synthetic key "__title__" to avoid collision;
-    // normalize it back to "title" before persisting.
-    const { __title__, ...rest } = rawChanges;
-    const changes = __title__ !== undefined ? { ...rest, title: __title__ } : rawChanges;
-    store.updateTask(id, changes, tasks).then(showFlowToasts);
   };
 
   const handleEditFull = (taskId) => setEditTaskId(taskId);
