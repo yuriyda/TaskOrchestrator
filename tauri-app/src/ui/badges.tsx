@@ -1,26 +1,36 @@
 /**
- * @file badges.jsx
+ * @file badges.tsx
  * Inline badge components for task priority and status.
  * PriorityBadge — colored pill with flag icon indicating task priority level.
  * StatusBadge — clickable status indicator with icon and translated label.
  */
+import { type MouseEvent } from "react";
 import { Flag } from "lucide-react";
-import { PRIORITY_COLORS, STATUS_ICONS } from "../core/constants.js";
-import { useApp } from "./AppContext.jsx";
+import { PRIORITY_COLORS, STATUS_ICONS } from "../core/constants";
+import { useApp } from "./AppContext";
+import type { TaskPriority, TaskStatus } from "../types";
 
-export function PriorityBadge({ priority }) {
+interface PriorityBadgeProps {
+  priority: TaskPriority;
+}
+
+export function PriorityBadge({ priority }: PriorityBadgeProps) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 6px", borderRadius: 4, fontSize: 11, fontWeight: 600, color: "#fff", background: PRIORITY_COLORS[priority], flexShrink: 0 }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "2px 6px", borderRadius: 4, fontSize: 11, fontWeight: 600, color: "#fff", background: (PRIORITY_COLORS as Record<number, string>)[priority], flexShrink: 0 }}>
       <Flag size={10} /> {priority}
     </span>
   );
 }
 
-export function StatusBadge({ status, onClick }) {
+interface StatusBadgeProps {
+  status: TaskStatus;
+  onClick: (e: MouseEvent) => void;
+}
+
+export function StatusBadge({ status, onClick }: StatusBadgeProps) {
   const { t } = useApp();
-  // Defensive: fall back to 'inbox' if status is not a known value (e.g. corrupted DB data)
-  const safeStatus = STATUS_ICONS[status] ? status : "inbox";
-  const Icon = STATUS_ICONS[safeStatus];
+  const safeStatus = (STATUS_ICONS as Record<string, any>)[status] ? status : "inbox";
+  const Icon = (STATUS_ICONS as Record<string, any>)[safeStatus];
   const cls = {
     inbox:     "bg-gray-600/50 text-gray-200 border border-gray-500/40",
     active:    "bg-sky-600/20 text-sky-300 border border-sky-500/40",

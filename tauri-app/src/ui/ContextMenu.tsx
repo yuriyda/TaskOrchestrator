@@ -10,7 +10,24 @@ import { ChevronRight } from "lucide-react";
 import { useApp } from "./AppContext";
 import { STATUS_ICONS, STATUSES } from "../core/constants";
 
-export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onSnooze, onAssignToday, onSetStatus, onMarkDone, onDuplicate, onDelete }) {
+import type { Task, TaskId, TaskStatus } from "../types";
+
+interface ContextMenuProps {
+  x: number;
+  y: number;
+  task: Task;
+  selectedIds: Set<TaskId>;
+  onClose: () => void;
+  onOpen: (taskId: TaskId) => void;
+  onSnooze: (ids: Set<TaskId>, days: number, months: number) => void;
+  onAssignToday: (ids: Set<TaskId>) => void;
+  onSetStatus: (ids: Set<TaskId>, status: TaskStatus) => void;
+  onMarkDone: (ids: Set<TaskId>) => void;
+  onDuplicate: (taskId: TaskId) => void;
+  onDelete: (ids: Set<TaskId>) => void;
+}
+
+export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onSnooze, onAssignToday, onSetStatus, onMarkDone, onDuplicate, onDelete }: ContextMenuProps) {
   const { t, TC } = useApp();
   const ref = useRef(null);
   const isMulti = selectedIds.size > 1 && selectedIds.has(task.id);

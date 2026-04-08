@@ -33,7 +33,23 @@ import {
   XCircle,
 } from "lucide-react";
 
-export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDeleteFlow, onCompleteTask, onReopenTask, onEditTask, onDeleteTask, onRemoveFromFlow, onRemoveDependency }) {
+import type { Task, TaskId, FlowMeta } from "../types";
+
+interface FlowViewProps {
+  tasks: Task[];
+  activeFlow: string;
+  onStartNext?: (taskId: TaskId) => void;
+  onUpdateFlow?: (name: string, changes: Partial<FlowMeta>) => void;
+  onDeleteFlow?: (name: string) => void;
+  onCompleteTask?: (taskId: TaskId) => void;
+  onReopenTask?: (taskId: TaskId) => void;
+  onEditTask?: (taskId: TaskId) => void;
+  onDeleteTask?: (taskId: TaskId) => void;
+  onRemoveFromFlow?: (taskId: TaskId) => void;
+  onRemoveDependency?: (taskId: TaskId) => void;
+}
+
+export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDeleteFlow, onCompleteTask, onReopenTask, onEditTask, onDeleteTask, onRemoveFromFlow, onRemoveDependency }: FlowViewProps) {
   const { t, TC, flowMeta } = useApp();
   const meta = flowMeta[activeFlow] || {};
   const flowTasks = tasks.filter(t => t.flowId === activeFlow);

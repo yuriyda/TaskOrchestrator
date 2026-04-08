@@ -1,5 +1,5 @@
 /**
- * @file StatusBar.jsx
+ * @file StatusBar.tsx
  * @description Bottom status bar showing task counters, daily progress, and last action info.
  */
 
@@ -7,8 +7,22 @@ import { useState, useEffect } from "react";
 import { HardDrive, RefreshCw } from "lucide-react";
 import { useApp } from "./AppContext";
 import { fmtDate, localIsoDate } from "../core/date";
+import type { Task } from "../types";
 
-export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings }) {
+interface StatusBarProps {
+  tasks: Task[];
+  lastAction: string;
+  canUndo: boolean;
+  clockFormat: string;
+  dateFormat: string;
+  dbPath?: string;
+  lastSync?: string;
+  onSyncNow?: () => Promise<void>;
+  autoSyncing: boolean;
+  onOpenSyncSettings?: () => void;
+}
+
+export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings }: StatusBarProps) {
   const { t, TC, locale } = useApp();
   const [now, setNow] = useState(new Date());
   const [syncing, setSyncing] = useState(false);

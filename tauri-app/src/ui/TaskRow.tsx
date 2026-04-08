@@ -1,20 +1,37 @@
 /**
- * @file TaskRow.jsx
+ * @file TaskRow.tsx
  * Single task row rendered inside the task list.
  * Displays checkbox, status/priority badges, title, tags, due date, recurrence icon,
  * flow badge, dependency indicators, and note count. Supports selection highlighting,
  * cursor outline, overdue stripe colouring, and blocked-task dimming.
  */
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { Check, Lock, User, Calendar, Repeat, Zap, AlertTriangle, FileText, Clock } from "lucide-react";
-import { useApp } from "./AppContext.jsx";
-import { StatusBadge, PriorityBadge } from "./badges.jsx";
-import { overdueLevel, OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG } from "../core/overdue.js";
-import { PRIORITY_COLORS } from "../core/constants.js";
-import { fmtDate } from "../core/date.js";
-import { humanRecurrence } from "../core/recurrence.js";
+import { useApp } from "./AppContext";
+import { StatusBadge, PriorityBadge } from "./badges";
+import { overdueLevel, OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG } from "../core/overdue";
+import { PRIORITY_COLORS } from "../core/constants";
+import { fmtDate } from "../core/date";
+import { humanRecurrence } from "../core/recurrence";
+import type { Task } from "../types";
 
-export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlanned = false, hideStatus = false, onStatusCycle, onClick, onCheckboxClick, onDoubleClick, onContextMenu, compact = false, dataGuide }) {
+interface TaskRowProps {
+  task: Task;
+  isCursor: boolean;
+  isSelected: boolean;
+  isBlocked?: boolean;
+  isPlanned?: boolean;
+  hideStatus?: boolean;
+  onStatusCycle: () => void;
+  onClick: (e: MouseEvent) => void;
+  onCheckboxClick: () => void;
+  onDoubleClick: (e: MouseEvent) => void;
+  onContextMenu: (e: MouseEvent) => void;
+  compact?: boolean;
+  dataGuide?: string;
+}
+
+export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlanned = false, hideStatus = false, onStatusCycle, onClick, onCheckboxClick, onDoubleClick, onContextMenu, compact = false, dataGuide }: TaskRowProps) {
   const { t, TC, locale, settings } = useApp();
   const isDone = task.status === "done";
   const [hovered, setHovered] = useState(false);
