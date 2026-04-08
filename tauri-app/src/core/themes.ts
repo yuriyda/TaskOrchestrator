@@ -83,7 +83,9 @@ export const COLOR_THEMES = {
   },
 };
 
-export function buildTC(resolvedTheme, colorTheme = "default") {
-  const theme = COLOR_THEMES[colorTheme] ?? COLOR_THEMES.default;
+export type ThemeClasses = typeof COLOR_THEMES.default.dark;
+
+export function buildTC(resolvedTheme: string, colorTheme: string = "default"): ThemeClasses {
+  const theme = COLOR_THEMES[colorTheme as keyof typeof COLOR_THEMES] ?? COLOR_THEMES.default;
   return resolvedTheme === "light" ? theme.light : theme.dark;
 }

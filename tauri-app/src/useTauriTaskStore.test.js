@@ -14,9 +14,9 @@ import { safeIsoDate } from './core/date.js'
 import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow } from './store/helpers.js'
 
 // Read source files for schema consistency checks
-const HELPERS_SRC = fs.readFileSync(path.resolve(__dirname, 'store/helpers.js'), 'utf8')
+const HELPERS_SRC = fs.readFileSync(path.resolve(__dirname, 'store/helpers.ts'), 'utf8')
 const MIGRATIONS_SRC = fs.readFileSync(path.resolve(__dirname, 'store/migrations.ts'), 'utf8')
-const STORE_SRC = fs.readFileSync(path.resolve(__dirname, 'useTauriTaskStore.js'), 'utf8')
+const STORE_SRC = fs.readFileSync(path.resolve(__dirname, 'useTauriTaskStore.ts'), 'utf8')
 
 // ── Extract schema columns from migrations source ───────────────────────────
 
