@@ -4,10 +4,16 @@
  */
 
 import { useState, useEffect } from "react";
-import { HardDrive, RefreshCw } from "lucide-react";
+import { HardDrive, RefreshCw, Clock } from "lucide-react";
 import { useApp } from "./AppContext";
 import { fmtDate, localIsoDate } from "../core/date";
 import type { Task } from "../types";
+
+interface Slot {
+  slotType: string;
+  startTime: string;
+  endTime: string;
+}
 
 interface StatusBarProps {
   tasks: Task[];
@@ -20,9 +26,17 @@ interface StatusBarProps {
   onSyncNow?: () => Promise<void>;
   autoSyncing: boolean;
   onOpenSyncSettings?: () => void;
+  plannerSlots?: Slot[];
+  plannerDayStart?: number;
+  plannerDayEnd?: number;
 }
 
-export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings }: StatusBarProps) {
+function timeToMinutes(t: string): number {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+}
+
+export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings, plannerSlots = [], plannerDayStart, plannerDayEnd }: StatusBarProps) {
   const { t, TC, locale } = useApp();
   const [now, setNow] = useState(new Date());
   const [syncing, setSyncing] = useState(false);
@@ -44,6 +58,18 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
 
   const progressTotal = activeToday + doneToday;
   const progressPct = progressTotal > 0 ? Math.round(doneToday / progressTotal * 100) : 0;
+
+  // Planner summary (only when planner is visible and has slots)
+  const plannerSummary = plannerSlots.length > 0 ? (() => {
+    const taskSlots = plannerSlots.filter(s => s.slotType === "task");
+    const blockedSlots = plannerSlots.filter(s => s.slotType === "blocked");
+    const plannedMin = taskSlots.reduce((sum, s) => sum + timeToMinutes(s.endTime) - timeToMinutes(s.startTime), 0);
+    const blockedMin = blockedSlots.reduce((sum, s) => sum + timeToMinutes(s.endTime) - timeToMinutes(s.startTime), 0);
+    const dayStart = (plannerDayStart ?? 8) * 60;
+    const dayEnd = (plannerDayEnd ?? 20) * 60;
+    const totalAvail = (dayEnd - dayStart) - blockedMin;
+    return { planned: (plannedMin / 60).toFixed(1), total: (totalAvail / 60).toFixed(1) };
+  })() : null;
 
   return (
     <div className={`flex items-center gap-2 px-4 py-1 text-[10px] flex-shrink-0 border-t select-none overflow-hidden whitespace-nowrap min-h-0 ${TC.borderClass} ${TC.textMuted}`}>
@@ -89,6 +115,14 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
 
       {/* Spacer */}
       <span className="flex-1 min-w-0" />
+
+      {/* Planner summary */}
+      {plannerSummary && (
+        <span className="flex items-center gap-1 flex-shrink-0 text-amber-400/70">
+          <Clock size={10} />
+          <span>{plannerSummary.planned} / {plannerSummary.total} h {t("planner.planned")}</span>
+        </span>
+      )}
 
       {/* Last action + undo hint */}
       {lastAction && (

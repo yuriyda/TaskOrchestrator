@@ -1,7 +1,7 @@
 /**
  * @file DayPlanner.jsx
  * Day Planner panel — shows a daily time grid where tasks can be dragged into time slots.
- * Displays week tabs for navigation, current time indicator, blocked slots, and summary footer.
+ * Displays week tabs for navigation, current time indicator, and blocked slots.
  */
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Clock, ChevronLeft, ChevronRight, Plus, Lock, Check, Play, Repeat, GripVertical, Trash2, Edit3, X } from "lucide-react";
@@ -361,20 +361,6 @@ export function DayPlanner({
     onCreateTaskHere(time);
   }, [yToMinutes, slotStep, dayStartHour, onCreateTaskHere]);
 
-  // ─── Summary ──────────────────────────────────────────────────────────────
-
-  const summary = useMemo(() => {
-    const taskSlots = slots.filter(s => s.slotType === "task");
-    const blockedSlots = slots.filter(s => s.slotType === "blocked");
-    const plannedMin = taskSlots.reduce((sum, s) => sum + timeToMinutes(s.endTime) - timeToMinutes(s.startTime), 0);
-    const blockedMin = blockedSlots.reduce((sum, s) => sum + timeToMinutes(s.endTime) - timeToMinutes(s.startTime), 0);
-    const totalAvail = totalMinutes - blockedMin;
-    return {
-      planned: (plannedMin / 60).toFixed(1),
-      total: (totalAvail / 60).toFixed(1),
-    };
-  }, [slots, totalMinutes]);
-
   // ─── Render helpers ───────────────────────────────────────────────────────
 
   const renderHourLines = () => {
@@ -606,11 +592,6 @@ export function DayPlanner({
         </div>
       </div>
 
-      {/* Summary footer */}
-      <div className={`flex-shrink-0 px-3 py-1.5 border-t text-[11px] flex items-center gap-2 ${TC.borderClass} ${TC.textMuted}`}>
-        <Clock size={12} />
-        <span>{summary.planned} / {summary.total} h {t("planner.planned")}</span>
-      </div>
 
       {/* Context menu */}
       {contextMenu && (

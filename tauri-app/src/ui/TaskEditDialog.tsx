@@ -412,12 +412,14 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
         {/* Footer */}
         <div className={`flex gap-2 justify-end px-6 py-4 border-t flex-shrink-0 ${TC.borderClass}`}>
           <button onClick={onCancel}
-            className={`px-4 py-2 rounded-lg text-sm transition-colors ${TC.elevated} ${TC.textSec} hover:opacity-80`}>
+            className={`px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${TC.elevated} ${TC.textSec} hover:opacity-80`}>
             {t("confirm.cancel")}
+            <kbd className={`text-xs px-1 py-0.5 rounded font-mono leading-none opacity-60 ${TC.surface}`}>Esc</kbd>
           </button>
           <button onClick={handleSave}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-sky-600 hover:bg-sky-500 text-white transition-colors">
+            className="px-4 py-2 rounded-lg text-sm font-medium bg-sky-600 hover:bg-sky-500 text-white transition-colors flex items-center gap-2">
             {t("edit.save")}
+            <kbd className="text-xs bg-sky-500/40 text-white/80 px-1 py-0.5 rounded font-mono leading-none">↵</kbd>
           </button>
         </div>
       </div>

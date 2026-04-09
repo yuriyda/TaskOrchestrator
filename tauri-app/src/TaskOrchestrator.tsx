@@ -547,7 +547,6 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               <BulkBar count={selected.size} onDone={bulkDone} onCycle={bulkCycle} onToday={bulkToday} onShift={bulkShift} onDelete={bulkDelete} onClear={() => setSelected(new Set())} />
             </div>
           )}
-          <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? wrappedSyncNow : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} />
           </div>
 
           {showPlanner && (<>
@@ -620,6 +619,8 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
             </div>
           )}
         </div>
+
+        <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? wrappedSyncNow : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} plannerSlots={showPlanner ? (store.dayPlanSlots || []) : []} plannerDayStart={settings.plannerDayStart} plannerDayEnd={settings.plannerDayEnd} />
 
         <ToastContainer toasts={toasts} />
 
