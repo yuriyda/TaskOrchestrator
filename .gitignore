@@ -21,6 +21,9 @@ tauri-app/src-tauri/target/
 pwa/dist/
 pwa/android/
 
+# Vite cache
+.vite/
+
 # OS
 .DS_Store
 Thumbs.db
