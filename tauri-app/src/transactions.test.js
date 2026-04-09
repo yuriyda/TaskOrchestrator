@@ -268,3 +268,77 @@ describe('SQLite Transaction Behavior with file-based DB', () => {
     }
   });
 });
+
+// ─── Undo FK cascade regression test (CRITICAL) ────────────────────────────
+// This test verifies that the undo pattern (DELETE FROM tasks + re-INSERT)
+// does NOT destroy day_plan_slots.task_id via FK ON DELETE SET NULL cascade.
+
+describe('Undo must not destroy planner slot references (REGRESSION)', () => {
+  let db;
+
+  beforeEach(() => {
+    db = new Database(':memory:');
+    db.exec('PRAGMA foreign_keys = ON');
+    db.exec(`CREATE TABLE tasks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      status TEXT DEFAULT 'inbox'
+    )`);
+    db.exec(`CREATE TABLE day_plan_slots (
+      id TEXT PRIMARY KEY,
+      task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+      slot_type TEXT DEFAULT 'task',
+      start_time TEXT,
+      end_time TEXT
+    )`);
+    // Seed data: one task with a planner slot
+    db.exec("INSERT INTO tasks VALUES ('t1', 'My Task', 'active')");
+    db.exec("INSERT INTO day_plan_slots VALUES ('s1', 't1', 'task', '09:00', '10:00')");
+  });
+
+  it('DELETE FROM tasks cascades FK → task_id becomes NULL (demonstrates the bug)', () => {
+    // This is the BROKEN pattern: DELETE + INSERT with FK enabled
+    db.exec('DELETE FROM tasks');
+    db.exec("INSERT INTO tasks VALUES ('t1', 'My Task', 'active')");
+
+    const slot = db.prepare('SELECT task_id FROM day_plan_slots WHERE id = ?').get('s1');
+    // FK cascade already fired — task_id is NULL even though task was re-inserted
+    expect(slot.task_id).toBeNull();
+  });
+
+  it('PRAGMA foreign_keys=OFF prevents cascade during undo (the fix)', () => {
+    // This is the FIXED pattern: disable FK before DELETE
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('DELETE FROM tasks');
+    db.exec("INSERT INTO tasks VALUES ('t1', 'My Task', 'active')");
+    db.exec('PRAGMA foreign_keys = ON');
+
+    const slot = db.prepare('SELECT task_id FROM day_plan_slots WHERE id = ?').get('s1');
+    // task_id is preserved because FK cascade was disabled
+    expect(slot.task_id).toBe('t1');
+  });
+
+  it('planner slot survives full undo cycle (delete all tasks + re-insert)', () => {
+    // Simulate: add a second task, undo should restore state without breaking slots
+    db.exec("INSERT INTO tasks VALUES ('t2', 'Second Task', 'inbox')");
+    db.exec("INSERT INTO day_plan_slots VALUES ('s2', 't2', 'task', '10:00', '11:00')");
+
+    // Save snapshot (what undo stores)
+    const snapshot = db.prepare('SELECT * FROM tasks').all();
+
+    // Undo with FK disabled (the fix)
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('DELETE FROM tasks');
+    for (const t of snapshot) {
+      db.exec(`INSERT INTO tasks VALUES ('${t.id}', '${t.title}', '${t.status}')`);
+    }
+    db.exec('PRAGMA foreign_keys = ON');
+
+    // Both slots should still reference their tasks
+    const slots = db.prepare('SELECT id, task_id FROM day_plan_slots ORDER BY id').all();
+    expect(slots).toEqual([
+      { id: 's1', task_id: 't1' },
+      { id: 's2', task_id: 't2' },
+    ]);
+  });
+});

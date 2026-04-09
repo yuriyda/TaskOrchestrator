@@ -763,6 +763,8 @@ export function useTauriTaskStore() {
       ;(async () => {
         const db = dbRef.current
         if (!db) return
+        // Disable FK constraints to prevent ON DELETE SET NULL cascading to day_plan_slots
+        await db.execute('PRAGMA foreign_keys = OFF')
         await db.execute('DELETE FROM tasks')
         for (const task of prev) {
           await db.execute(
@@ -770,6 +772,7 @@ export function useTauriTaskStore() {
             taskToRow(task)
           )
         }
+        await db.execute('PRAGMA foreign_keys = ON')
         setTasks(prev)
         if (onDone) onDone()
       })()

@@ -134,6 +134,13 @@ export async function getSlotsByPlan(db: any, planId: string): Promise<Slot[]> {
  * Recurring slots are returned with their ORIGINAL id (edits/deletes operate on the original).
  */
 export async function getEffectiveSlots(db: any, date: string, planId: string): Promise<Slot[]> {
+  // Clean up orphan task slots (task deleted → FK set task_id to NULL)
+  await db.execute("DELETE FROM day_plan_slots WHERE plan_id = ? AND slot_type = 'task' AND task_id IS NULL", [planId])
+  // Also clean up slots referencing soft-deleted tasks
+  await db.execute(
+    "DELETE FROM day_plan_slots WHERE plan_id = ? AND slot_type = 'task' AND task_id IN (SELECT id FROM tasks WHERE deleted_at IS NOT NULL)",
+    [planId]
+  )
   // 1. Own slots for this plan
   const ownRows = await db.select(
     'SELECT * FROM day_plan_slots WHERE plan_id = ? ORDER BY start_time, sort_order',
