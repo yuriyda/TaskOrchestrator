@@ -1,4 +1,5 @@
 /**
+ * @file taskActions.ts
  * Storage-agnostic business logic for task mutations.
  *
  * This module contains the core rules that must behave identically
@@ -6,45 +7,46 @@
  *   - Status cycling with dependency blocking
  *   - Recurring task spawning on completion
  *   - Dependent task activation on completion
- *
- * All functions are either pure (no side-effects) or accept a storage
- * adapter (`ops`) so they can work with any persistence backend.
- *
- * Storage adapter interface (`ops`):
- *   getTask(id)                   → Promise<task | null>
- *   insertTask(task)              → Promise<void>
- *   findInboxDependents(taskId)   → Promise<[{id, title, dependsOn}]>
- *   isBlockerActive(taskId)       → Promise<boolean>  (true = not done)
- *   activateTask(id, lts, did)    → Promise<void>
  */
 
 import { nextDue } from './recurrence.js'
+import type { TaskStatus } from '../types'
+
+// ─── Storage adapter interface ─────────────────────────────────────────────
+
+interface StorageOps {
+  getTask(id: string): Promise<any | null>
+  insertTask(task: any): Promise<void>
+  findInboxDependents(taskId: string): Promise<Array<{ id: string; title: string; dependsOn?: string; depends_on?: string }>>
+  isBlockerActive(taskId: string): Promise<boolean>
+  activateTask(id: string, lts: number, did: string): Promise<void>
+}
+
+interface TaskDoneResult {
+  spawned: any | null
+  activated: Array<{ id: string; title: string }>
+}
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
-export const FULL_CYCLE    = ['inbox', 'active', 'done', 'cancelled']
-export const BLOCKED_CYCLE = ['inbox', 'cancelled']
+export const FULL_CYCLE: TaskStatus[]    = ['inbox', 'active', 'done', 'cancelled']
+export const BLOCKED_CYCLE: TaskStatus[] = ['inbox', 'cancelled']
 
 // ─── Pure functions ─────────────────────────────────────────────────────────
 
-/**
- * Compute the next status in the cycle.
- * Blocked tasks skip 'active' and 'done'.
- */
-export function computeNextCycleStatus(currentStatus, isBlocked) {
+export function computeNextCycleStatus(currentStatus: string, isBlocked: boolean): TaskStatus {
   const cycle = isBlocked ? BLOCKED_CYCLE : FULL_CYCLE
-  const curIdx = cycle.indexOf(currentStatus)
+  const curIdx = cycle.indexOf(currentStatus as TaskStatus)
   if (curIdx === -1) return cycle[0]
   return cycle[(curIdx + 1) % cycle.length]
 }
 
-/**
- * Build the next occurrence object for a recurring task.
- * Returns a new task object (not persisted) or null if not recurring / unknown pattern.
- *
- * Handles both SQL row (snake_case) and IDB record (camelCase) field names.
- */
-export function buildNextOccurrence(task, generateId, lamportTs, deviceId) {
+export function buildNextOccurrence(
+  task: any,
+  generateId: () => string,
+  lamportTs: number,
+  deviceId: string,
+): any | null {
   if (!task || !task.recurrence) return null
   const newDue = nextDue(task.due, task.recurrence)
   if (!newDue) return null
@@ -81,17 +83,15 @@ export function buildNextOccurrence(task, generateId, lamportTs, deviceId) {
 
 // ─── Orchestrator functions (use storage adapter) ───────────────────────────
 
-/**
- * Handle all side-effects when a task transitions to 'done':
- *   1. Spawn next occurrence if recurring
- *   2. Activate dependent tasks whose blockers are now satisfied
- *
- * Returns { spawned, activated } so the caller can handle sync logging.
- */
-export async function handleTaskDone(ops, taskId, generateId, lamportTs, deviceId) {
-  const result = { spawned: null, activated: [] }
+export async function handleTaskDone(
+  ops: StorageOps,
+  taskId: string,
+  generateId: () => string,
+  lamportTs: number,
+  deviceId: string,
+): Promise<TaskDoneResult> {
+  const result: TaskDoneResult = { spawned: null, activated: [] }
 
-  // 1. Spawn next occurrence
   const task = await ops.getTask(taskId)
   const nextTask = buildNextOccurrence(task, generateId, lamportTs, deviceId)
   if (nextTask) {
@@ -99,10 +99,10 @@ export async function handleTaskDone(ops, taskId, generateId, lamportTs, deviceI
     result.spawned = nextTask
   }
 
-  // 2. Activate dependents
   const dependents = await ops.findInboxDependents(taskId)
   for (const dep of dependents) {
     const depOn = dep.dependsOn ?? dep.depends_on
+    if (!depOn) continue
     const stillBlocked = await ops.isBlockerActive(depOn)
     if (!stillBlocked) {
       await ops.activateTask(dep.id, lamportTs, deviceId)
@@ -113,10 +113,7 @@ export async function handleTaskDone(ops, taskId, generateId, lamportTs, deviceI
   return result
 }
 
-/**
- * Check whether a task is blocked by an unfinished dependency.
- */
-export async function isTaskBlocked(ops, taskId) {
+export async function isTaskBlocked(ops: StorageOps, taskId: string): Promise<boolean> {
   const task = await ops.getTask(taskId)
   const dependsOn = task?.dependsOn ?? task?.depends_on
   if (!dependsOn) return false

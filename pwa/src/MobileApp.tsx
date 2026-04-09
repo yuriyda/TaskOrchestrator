@@ -184,7 +184,14 @@ function Drawer({ open, onClose, children }) {
 
 // ─── Filter Chips ─────────────────────────────────────────────────────────────
 
-function FilterBar({ filter, onFilter, counts, t }) {
+interface FilterBarProps {
+  filter: string | null;
+  onFilter: (key: string | null) => void;
+  counts: { all: number; inbox: number; active: number; done: number };
+  t: (key: string) => string;
+}
+
+function FilterBar({ filter, onFilter, counts, t }: FilterBarProps) {
   const items = [
     { key: null, label: t('filter.all'), count: counts.all, icon: Filter },
     { key: 'inbox', label: t('status.inbox'), count: counts.inbox, icon: Inbox },
@@ -210,7 +217,14 @@ function FilterBar({ filter, onFilter, counts, t }) {
   )
 }
 
-function AgendaBar({ dateRange, onDateRange, agendaCounts, t }) {
+interface AgendaBarProps {
+  dateRange: string | null;
+  onDateRange: (range: string | null) => void;
+  agendaCounts: Record<string, number>;
+  t: (key: string) => string;
+}
+
+function AgendaBar({ dateRange, onDateRange, agendaCounts, t }: AgendaBarProps) {
   const items = [
     { key: 'today',    label: t('agenda.today'),    count: agendaCounts.today,    icon: Calendar },
     { key: 'tomorrow', label: t('agenda.tomorrow'), count: agendaCounts.tomorrow, icon: Calendar },
@@ -343,7 +357,14 @@ function TaskItem({ task, onTap, onCycle, onComplete, onDelete }) {
 
 // ─── Task Detail (full-screen, editable) ──────────────────────────────────────
 
-function TaskDetail({ task, store, onBack, t }) {
+interface TaskDetailProps {
+  task: any;
+  store: any;
+  onBack: () => void;
+  t: (key: string) => string;
+}
+
+function TaskDetail({ task, store, onBack, t }: TaskDetailProps) {
   if (!task) return null
   const today = localIsoDate(new Date())
   const [editing, setEditing] = useState(false)
@@ -585,7 +606,16 @@ function TaskDetail({ task, store, onBack, t }) {
 
 // ─── Bottom Sheet (Add Task) ──────────────────────────────────────────────────
 
-function AddTaskSheet({ open, onClose, onAdd, lists, t, extractUrls }) {
+interface AddTaskSheetProps {
+  open: boolean;
+  onClose: () => void;
+  onAdd: (data: any) => void;
+  lists: string[];
+  t: (key: string) => string;
+  extractUrls: boolean;
+}
+
+function AddTaskSheet({ open, onClose, onAdd, lists, t, extractUrls }: AddTaskSheetProps) {
   const [title, setTitle] = useState('')
   const [due, setDue] = useState('')
   const [list, setList] = useState('')
@@ -725,7 +755,11 @@ function SearchBar({ query, onChange, t }) {
 
 // ─── Main Mobile App ──────────────────────────────────────────────────────────
 
-export default function MobileApp({ store }) {
+interface MobileAppProps {
+  store: any; // BrowserTaskStore — typed when browserStore.ts is fully typed
+}
+
+export default function MobileApp({ store }: MobileAppProps) {
   const [locale, setLocale] = useState(() => navigator.language?.startsWith('ru') ? 'ru' : 'en')
   const t = useTranslation(locale)
   const [syncLog, setSyncLog] = useState([])

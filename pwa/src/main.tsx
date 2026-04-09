@@ -5,7 +5,7 @@
 
 import React from 'react'
 import { createRoot } from 'react-dom/client'
-import MobileApp from './MobileApp.jsx'
+import MobileApp from './MobileApp'
 import { useBrowserTaskStore } from './store/browserStore'
 
 // Register service worker for offline support

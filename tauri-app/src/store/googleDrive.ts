@@ -8,7 +8,7 @@
  * Scope: drive.file — access only to files created by this application.
  *
  * Editing rules:
- * - Keep transport-agnostic: sync logic lives in sync.js, this module only
+ * - Keep transport-agnostic: sync logic lives in sync.ts, this module only
  *   handles OAuth and Drive read/write.
  * - Tokens are stored via the db adapter (meta table) — will be replaced
  *   with SecureStore abstraction when cross-platform support is added.
@@ -21,9 +21,36 @@ import { fetch as tauriFetch } from '@tauri-apps/plugin-http'
 const SCOPES = 'https://www.googleapis.com/auth/drive.appdata'
 const SYNC_FILENAME = 'task-orchestrator-sync.json'
 
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+interface Tokens {
+  access_token: string | null
+  refresh_token: string | null
+  client_id: string | null
+  client_secret: string | null
+}
+
+interface DriveFile {
+  id: string
+  name: string
+  modifiedTime: string
+}
+
+interface SyncFileResult {
+  file: DriveFile
+  data: any
+}
+
+interface SyncResult {
+  applied: number
+  outdated: number
+  uploaded: number
+  fileId: string
+}
+
 // ─── Token storage (meta table) ─────────────────────────────────────────────
 
-async function saveTokens(db, tokens) {
+async function saveTokens(db: any, tokens: Partial<Record<string, string>>): Promise<void> {
   for (const [key, value] of Object.entries(tokens)) {
     if (value !== undefined) {
       await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", [`gdrive_${key}`, value])
@@ -31,23 +58,23 @@ async function saveTokens(db, tokens) {
   }
 }
 
-async function loadTokens(db) {
-  const keys = ['access_token', 'refresh_token', 'client_id', 'client_secret']
-  const result = {}
+async function loadTokens(db: any): Promise<Tokens> {
+  const keys = ['access_token', 'refresh_token', 'client_id', 'client_secret'] as const
+  const result: Record<string, string | null> = {}
   for (const key of keys) {
     const [row] = await db.select("SELECT value FROM meta WHERE key = ?", [`gdrive_${key}`])
     result[key] = row?.value || null
   }
-  return result
+  return result as Tokens
 }
 
-async function clearTokens(db) {
+async function clearTokens(db: any): Promise<void> {
   await db.execute("DELETE FROM meta WHERE key LIKE 'gdrive_%'")
 }
 
 // ─── OAuth2 ─────────────────────────────────────────────────────────────────
 
-async function startOAuthFlow(db, clientId, clientSecret) {
+async function startOAuthFlow(db: any, clientId: string, clientSecret: string): Promise<boolean> {
   // Start loopback listener (Rust command)
   const port = await invoke('oauth_start')
   const redirectUri = `http://127.0.0.1:${port}`
@@ -67,7 +94,7 @@ async function startOAuthFlow(db, clientId, clientSecret) {
   await openUrl(authUrl)
 
   // Wait for redirect (blocks until user completes auth or timeout)
-  const code = await invoke('oauth_await_code')
+  const code = await invoke('oauth_await_code') as string
 
   // Exchange code for tokens
   const tokenResponse = await tauriFetch('https://oauth2.googleapis.com/token', {
@@ -98,7 +125,7 @@ async function startOAuthFlow(db, clientId, clientSecret) {
   return true
 }
 
-async function refreshAccessToken(db) {
+async function refreshAccessToken(db: any): Promise<string> {
   const tokens = await loadTokens(db)
   if (!tokens.refresh_token || !tokens.client_id || !tokens.client_secret) {
     throw new Error('No refresh token available — re-authorize')
@@ -124,7 +151,7 @@ async function refreshAccessToken(db) {
 
 // ─── Drive API helpers ──────────────────────────────────────────────────────
 
-async function driveRequest(db, url, options = {}) {
+async function driveRequest(db: any, url: string, options: any = {}): Promise<Response> {
   const tokens = await loadTokens(db)
   if (!tokens.access_token) throw new Error('Not authorized')
 
@@ -151,7 +178,7 @@ async function driveRequest(db, url, options = {}) {
   return response
 }
 
-async function findSyncFile(db) {
+async function findSyncFile(db: any): Promise<DriveFile | null> {
   const q = encodeURIComponent(`name='${SYNC_FILENAME}' and 'appDataFolder' in parents and trashed=false`)
   const response = await driveRequest(db,
     `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,name,modifiedTime)`)
@@ -162,7 +189,7 @@ async function findSyncFile(db) {
   return data.files?.[0] || null
 }
 
-async function downloadSyncFile(db, fileId) {
+async function downloadSyncFile(db: any, fileId: string): Promise<any> {
   const response = await driveRequest(db,
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`)
 
@@ -171,7 +198,7 @@ async function downloadSyncFile(db, fileId) {
   return response.json()
 }
 
-async function uploadSyncFile(db, content, existingFileId) {
+async function uploadSyncFile(db: any, content: any, existingFileId: string | null): Promise<any> {
   const metadata = { name: SYNC_FILENAME, ...(existingFileId ? {} : { parents: ['appDataFolder'] }) }
   const boundary = '---task_orchestrator_sync'
   const body =
@@ -196,23 +223,23 @@ async function uploadSyncFile(db, content, existingFileId) {
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
-export async function isConnected(db) {
+export async function isConnected(db: any): Promise<boolean> {
   const tokens = await loadTokens(db)
   return !!(tokens.access_token && tokens.client_id)
 }
 
-export async function connect(db, clientId, clientSecret) {
+export async function connect(db: any, clientId: string, clientSecret: string): Promise<boolean> {
   return startOAuthFlow(db, clientId, clientSecret)
 }
 
-export async function disconnect(db) {
+export async function disconnect(db: any): Promise<void> {
   await clearTokens(db)
 }
 
 /**
  * Check if a sync file exists on Google Drive.
  */
-export async function hasSyncFile(db) {
+export async function hasSyncFile(db: any): Promise<boolean> {
   const file = await findSyncFile(db)
   return !!file
 }
@@ -221,7 +248,7 @@ export async function hasSyncFile(db) {
  * Download and return the full contents of the sync file from Google Drive.
  * Returns { file: { id, name, modifiedTime }, data: <parsed JSON> } or null if no file.
  */
-export async function readSyncFile(db) {
+export async function readSyncFile(db: any): Promise<SyncFileResult | null> {
   const file = await findSyncFile(db)
   if (!file) return null
   const data = await downloadSyncFile(db, file.id)
@@ -232,7 +259,7 @@ export async function readSyncFile(db) {
  * Delete the sync file from Google Drive. Destructive — all sync data
  * on Drive is lost. Other devices will start fresh on next sync.
  */
-export async function deleteSyncFile(db) {
+export async function deleteSyncFile(db: any): Promise<boolean> {
   const file = await findSyncFile(db)
   if (!file) return false
 
@@ -248,15 +275,19 @@ export async function deleteSyncFile(db) {
 
 /**
  * Sync with Google Drive. Uses the same two-phase protocol as clipboard sync:
- * 1. Download remote sync file → treat as incoming sync_package
- * 2. Compute our package for the remote → upload updated sync file
+ * 1. Download remote sync file -> treat as incoming sync_package
+ * 2. Compute our package for the remote -> upload updated sync file
  *
  * Returns { applied, outdated, uploaded }
  */
-export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageFn) {
+export async function syncWithDrive(
+  db: any,
+  computeSyncPackageFn: (db: any, targetVC: Record<string, number>) => Promise<any>,
+  importSyncPackageFn: (db: any, pkg: any) => Promise<{ stats: { applied: number; outdated: number } }>
+): Promise<SyncResult> {
   // Find or create the sync file on Drive
   let file = await findSyncFile(db)
-  let remotePkg = null
+  let remotePkg: any = null
 
   if (file) {
     remotePkg = await downloadSyncFile(db, file.id)
@@ -271,7 +302,7 @@ export async function syncWithDrive(db, computeSyncPackageFn, importSyncPackageF
       deviceId: remotePkg.deviceId,
       tasksCount: remotePkg.tasks?.length,
       vc: remotePkg.vectorClock,
-      tasks: remotePkg.tasks?.map(t => ({ id: t.id?.slice(0,8), title: t.title?.slice(0,20), status: t.status, lts: t.lamportTs, did: t.deviceId?.slice(0,8) })),
+      tasks: remotePkg.tasks?.map((t: any) => ({ id: t.id?.slice(0,8), title: t.title?.slice(0,20), status: t.status, lts: t.lamportTs, did: t.deviceId?.slice(0,8) })),
     })
     const result = await importSyncPackageFn(db, remotePkg)
     applied = result.stats.applied

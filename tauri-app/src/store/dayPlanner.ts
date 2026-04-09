@@ -7,9 +7,42 @@
 import { ulid } from '../ulid.js'
 import { logChange, nextLamport } from './helpers.js'
 
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+export interface Plan {
+  id: string
+  date: string
+  dayStartHour: number
+  dayEndHour: number
+  createdAt: string
+  updatedAt: string
+  deviceId: string
+  lamportTs: number
+}
+
+export interface Slot {
+  id: string
+  planId: string
+  taskId: string | null
+  title: string | null
+  startTime: string
+  endTime: string
+  slotType: 'task' | 'blocked'
+  sortOrder: number
+  recurrence: string | null
+  createdAt: string
+  deviceId: string
+  lamportTs: number
+}
+
+interface PlanDefaults {
+  dayStartHour?: number
+  dayEndHour?: number
+}
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function rowToPlan(row) {
+function rowToPlan(row: any): Plan {
   return {
     id:           row.id,
     date:         row.date,
@@ -22,7 +55,7 @@ function rowToPlan(row) {
   }
 }
 
-function rowToSlot(row) {
+function rowToSlot(row: any): Slot {
   return {
     id:        row.id,
     planId:    row.plan_id,
@@ -42,13 +75,13 @@ function rowToSlot(row) {
 // ─── Plan CRUD ──────────────────────────────────────────────────────────────
 
 /** Get or create a plan for the given date. Returns the plan object. */
-export async function getOrCreatePlan(db, date, deviceId, defaults = {}) {
+export async function getOrCreatePlan(db: any, date: string, deviceId: string, defaults: PlanDefaults = {}): Promise<Plan> {
   const [existing] = await db.select('SELECT * FROM day_plans WHERE date = ?', [date])
   if (existing) return rowToPlan(existing)
 
   const lts = await nextLamport(db, deviceId)
   const now = new Date().toISOString()
-  const plan = {
+  const plan: Plan = {
     id:           ulid(),
     date,
     dayStartHour: defaults.dayStartHour ?? 9,
@@ -67,13 +100,13 @@ export async function getOrCreatePlan(db, date, deviceId, defaults = {}) {
 }
 
 /** Fetch a plan by date. Returns null if not found. */
-export async function getPlanByDate(db, date) {
+export async function getPlanByDate(db: any, date: string): Promise<Plan | null> {
   const [row] = await db.select('SELECT * FROM day_plans WHERE date = ?', [date])
   return row ? rowToPlan(row) : null
 }
 
 /** Update plan hours. */
-export async function updatePlanHours(db, planId, dayStartHour, dayEndHour, deviceId) {
+export async function updatePlanHours(db: any, planId: string, dayStartHour: number, dayEndHour: number, deviceId: string): Promise<void> {
   const lts = await nextLamport(db, deviceId)
   const now = new Date().toISOString()
   await db.execute(
@@ -86,7 +119,7 @@ export async function updatePlanHours(db, planId, dayStartHour, dayEndHour, devi
 // ─── Slot CRUD ──────────────────────────────────────────────────────────────
 
 /** Fetch all slots for a plan (own slots only). Cleans up orphaned task slots. */
-export async function getSlotsByPlan(db, planId) {
+export async function getSlotsByPlan(db: any, planId: string): Promise<Slot[]> {
   // Remove orphan slots: task-type slots where task was deleted (task_id set to NULL by FK)
   await db.execute("DELETE FROM day_plan_slots WHERE plan_id = ? AND slot_type = 'task' AND task_id IS NULL", [planId])
   const rows = await db.select(
@@ -100,7 +133,7 @@ export async function getSlotsByPlan(db, planId) {
  * Fetch effective slots for a date: own slots + recurring blocked slots from other days.
  * Recurring slots are returned with their ORIGINAL id (edits/deletes operate on the original).
  */
-export async function getEffectiveSlots(db, date, planId) {
+export async function getEffectiveSlots(db: any, date: string, planId: string): Promise<Slot[]> {
   // 1. Own slots for this plan
   const ownRows = await db.select(
     'SELECT * FROM day_plan_slots WHERE plan_id = ? ORDER BY start_time, sort_order',
@@ -109,7 +142,7 @@ export async function getEffectiveSlots(db, date, planId) {
   const own = ownRows.map(rowToSlot)
 
   // 2. Recurring blocked slots from other plans
-  let recurring = []
+  let recurring: Slot[] = []
   try {
     const recRows = await db.select(
       `SELECT s.*, p.date as plan_date FROM day_plan_slots s
@@ -122,7 +155,7 @@ export async function getEffectiveSlots(db, date, planId) {
     const targetDay = targetDate.getDay() // 0=Sun
 
     // Deduplicate: if own plan already has a slot with same title+time, skip
-    const ownKeys = new Set(own.map(s => `${s.title}|${s.startTime}|${s.endTime}`))
+    const ownKeys = new Set(own.map((s: Slot) => `${s.title}|${s.startTime}|${s.endTime}`))
 
     for (const row of recRows) {
       const sourceDate = new Date(row.plan_date + 'T12:00:00')
@@ -147,25 +180,25 @@ export async function getEffectiveSlots(db, date, planId) {
 }
 
 /** Fetch all slots for a date (convenience — resolves plan first). */
-export async function getSlotsByDate(db, date) {
+export async function getSlotsByDate(db: any, date: string): Promise<Slot[]> {
   const plan = await getPlanByDate(db, date)
   if (!plan) return []
   return getEffectiveSlots(db, date, plan.id)
 }
 
 /** Get all task IDs that have at least one slot in any plan. Returns a Set. */
-export async function getPlannedTaskIds(db) {
+export async function getPlannedTaskIds(db: any): Promise<Set<string>> {
   const rows = await db.select('SELECT DISTINCT task_id FROM day_plan_slots WHERE task_id IS NOT NULL AND slot_type = ?', ['task'])
-  return new Set(rows.map(r => r.task_id))
+  return new Set(rows.map((r: any) => r.task_id))
 }
 
 const SLOT_INSERT = 'INSERT INTO day_plan_slots (id, plan_id, task_id, title, start_time, end_time, slot_type, sort_order, recurrence, created_at, device_id, lamport_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
 
 /** Add a task slot to the plan. Returns the new slot. */
-export async function addTaskSlot(db, planId, taskId, startTime, endTime, deviceId) {
+export async function addTaskSlot(db: any, planId: string, taskId: string, startTime: string, endTime: string, deviceId: string): Promise<Slot> {
   const lts = await nextLamport(db, deviceId)
   const now = new Date().toISOString()
-  const slot = {
+  const slot: Slot = {
     id: ulid(), planId, taskId, title: null, startTime, endTime,
     slotType: 'task', sortOrder: 0, recurrence: null, createdAt: now, deviceId, lamportTs: lts,
   }
@@ -176,10 +209,10 @@ export async function addTaskSlot(db, planId, taskId, startTime, endTime, device
 }
 
 /** Add a blocked slot to the plan. Returns the new slot. */
-export async function addBlockedSlot(db, planId, title, startTime, endTime, deviceId, recurrence = null) {
+export async function addBlockedSlot(db: any, planId: string, title: string, startTime: string, endTime: string, deviceId: string, recurrence: string | null = null): Promise<Slot> {
   const lts = await nextLamport(db, deviceId)
   const now = new Date().toISOString()
-  const slot = {
+  const slot: Slot = {
     id: ulid(), planId, taskId: null, title: title || '', startTime, endTime,
     slotType: 'blocked', sortOrder: 0, recurrence, createdAt: now, deviceId, lamportTs: lts,
   }
@@ -190,7 +223,7 @@ export async function addBlockedSlot(db, planId, title, startTime, endTime, devi
 }
 
 /** Move a slot to a new time. */
-export async function moveSlot(db, slotId, startTime, endTime, deviceId) {
+export async function moveSlot(db: any, slotId: string, startTime: string, endTime: string, deviceId: string): Promise<void> {
   const lts = await nextLamport(db, deviceId)
   const now = new Date().toISOString()
   await db.execute(
@@ -204,7 +237,7 @@ export async function moveSlot(db, slotId, startTime, endTime, deviceId) {
 }
 
 /** Resize a slot (change endTime only). */
-export async function resizeSlot(db, slotId, endTime, deviceId) {
+export async function resizeSlot(db: any, slotId: string, endTime: string, deviceId: string): Promise<void> {
   const lts = await nextLamport(db, deviceId)
   const now = new Date().toISOString()
   await db.execute(
@@ -217,7 +250,7 @@ export async function resizeSlot(db, slotId, endTime, deviceId) {
 }
 
 /** Remove a slot from the plan. */
-export async function removeSlot(db, slotId, deviceId) {
+export async function removeSlot(db: any, slotId: string, deviceId: string): Promise<void> {
   const lts = await nextLamport(db, deviceId)
   const now = new Date().toISOString()
   const [slot] = await db.select('SELECT plan_id FROM day_plan_slots WHERE id=?', [slotId])
@@ -227,7 +260,7 @@ export async function removeSlot(db, slotId, deviceId) {
 }
 
 /** Update a blocked slot title. */
-export async function updateSlotTitle(db, slotId, title, deviceId) {
+export async function updateSlotTitle(db: any, slotId: string, title: string, deviceId: string): Promise<void> {
   const lts = await nextLamport(db, deviceId)
   await db.execute(
     'UPDATE day_plan_slots SET title=?, lamport_ts=?, device_id=? WHERE id=?',
@@ -237,7 +270,7 @@ export async function updateSlotTitle(db, slotId, title, deviceId) {
 }
 
 /** Update a slot's recurrence. */
-export async function updateSlotRecurrence(db, slotId, recurrence, deviceId) {
+export async function updateSlotRecurrence(db: any, slotId: string, recurrence: string | null, deviceId: string): Promise<void> {
   const lts = await nextLamport(db, deviceId)
   await db.execute(
     'UPDATE day_plan_slots SET recurrence=?, lamport_ts=?, device_id=? WHERE id=?',
@@ -249,45 +282,45 @@ export async function updateSlotRecurrence(db, slotId, recurrence, deviceId) {
 // ─── Time utilities ─────────────────────────────────────────────────────────
 
 /** Parse "HH:MM" → minutes from midnight. */
-export function timeToMinutes(time) {
+export function timeToMinutes(time: string): number {
   const [h, m] = time.split(':').map(Number)
   return h * 60 + m
 }
 
 /** Minutes from midnight → "HH:MM". */
-export function minutesToTime(minutes) {
+export function minutesToTime(minutes: number): string {
   const h = Math.floor(minutes / 60)
   const m = minutes % 60
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
 /** Snap minutes to nearest grid step. */
-export function snapToGrid(minutes, step = 30) {
+export function snapToGrid(minutes: number, step: number = 30): number {
   return Math.round(minutes / step) * step
 }
 
 /** Calculate default end time given start time and default duration (60 min). */
-export function defaultEndTime(startTime, durationMin = 60) {
+export function defaultEndTime(startTime: string, durationMin: number = 60): string {
   const startMin = timeToMinutes(startTime)
   return minutesToTime(startMin + durationMin)
 }
 
 /** Check if two time ranges overlap. */
-export function timesOverlap(startA, endA, startB, endB) {
+export function timesOverlap(startA: string, endA: string, startB: string, endB: string): boolean {
   const a0 = timeToMinutes(startA), a1 = timeToMinutes(endA)
   const b0 = timeToMinutes(startB), b1 = timeToMinutes(endB)
   return a0 < b1 && b0 < a1
 }
 
 /** Get the week's date range (Mon–Sun) containing the given date. */
-export function getWeekDates(dateStr) {
+export function getWeekDates(dateStr: string): string[] {
   const d = new Date(dateStr + 'T12:00:00')
   const day = d.getDay()  // 0=Sun, 1=Mon, ...
   const mondayOffset = day === 0 ? -6 : 1 - day
   const monday = new Date(d)
   monday.setDate(d.getDate() + mondayOffset)
 
-  const dates = []
+  const dates: string[] = []
   for (let i = 0; i < 7; i++) {
     const date = new Date(monday)
     date.setDate(monday.getDate() + i)

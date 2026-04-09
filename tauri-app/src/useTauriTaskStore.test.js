@@ -48,7 +48,7 @@ function extractRowToTaskColumns() {
 // ── Count taskToRow fields from helpers source ──────────────────────────────
 
 function countTaskToRowFields() {
-  const m = HELPERS_SRC.match(/export function taskToRow\(task\)\s*\{[\s\S]*?return\s*\[([\s\S]*?)\]\s*\}/)
+  const m = HELPERS_SRC.match(/export function taskToRow\(task[^)]*\)[^{]*\{[\s\S]*?return\s*\[([\s\S]*?)\]\s*\}/)
   if (!m) throw new Error('taskToRow not found in helpers source')
   const lines = m[1].split('\n').map(l => l.trim()).filter(l => l && (l.includes('task.') || l.includes('safeIsoDate(')))
   return lines.length
@@ -89,7 +89,7 @@ describe('safeIsoDate (DB-layer date guard)', () => {
 
 describe('taskToRow applies safeIsoDate to date fields', () => {
   it('due and dateStart with non-ISO values are nullified in taskToRow output', () => {
-    const m = HELPERS_SRC.match(/export function taskToRow\(task\)\s*\{[\s\S]*?return\s*\[([\s\S]*?)\]\s*\}/)
+    const m = HELPERS_SRC.match(/export function taskToRow\(task[^)]*\)[^{]*\{[\s\S]*?return\s*\[([\s\S]*?)\]\s*\}/)
     const body = m[1]
     expect(body).toContain('safeIsoDate(task.due)')
     expect(body).toContain('safeIsoDate(task.dateStart)')
@@ -111,7 +111,7 @@ describe('Sync preparation fields (v6)', () => {
   })
 
   it('taskToRow includes sync fields', () => {
-    const m = HELPERS_SRC.match(/export function taskToRow\(task\)\s*\{[\s\S]*?return\s*\[([\s\S]*?)\]\s*\}/)
+    const m = HELPERS_SRC.match(/export function taskToRow\(task[^)]*\)[^{]*\{[\s\S]*?return\s*\[([\s\S]*?)\]\s*\}/)
     const body = m[1]
     expect(body).toContain('task.updatedAt')
     expect(body).toContain('task.deletedAt')

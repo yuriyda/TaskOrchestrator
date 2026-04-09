@@ -8,7 +8,7 @@ import { copyFile, remove, exists, readDir } from '@tauri-apps/plugin-fs'
 export const MAX_BACKUPS = 5
 export const DB_PATH_KEY = 'to_db_path'
 
-export async function resolveDbPath() {
+export async function resolveDbPath(): Promise<string | null> {
   const customPath = localStorage.getItem(DB_PATH_KEY)
   if (customPath) return customPath
   try {
@@ -17,7 +17,7 @@ export async function resolveDbPath() {
   } catch { return null }
 }
 
-export async function backupBeforeMigration(dbPath, fromVersion) {
+export async function backupBeforeMigration(dbPath: string | null, fromVersion: number): Promise<void> {
   if (!dbPath) return
   try {
     const fileExists = await exists(dbPath)
@@ -34,8 +34,8 @@ export async function backupBeforeMigration(dbPath, fromVersion) {
     try {
       const entries = await readDir(dir)
       const backups = entries
-        .filter(e => e.name && e.name.startsWith('tasks.backup-v') && e.name.endsWith('.db'))
-        .map(e => e.name)
+        .filter((e: any) => e.name && e.name.startsWith('tasks.backup-v') && e.name.endsWith('.db'))
+        .map((e: any) => e.name as string)
         .sort()
         .reverse()
       for (const old of backups.slice(MAX_BACKUPS)) {

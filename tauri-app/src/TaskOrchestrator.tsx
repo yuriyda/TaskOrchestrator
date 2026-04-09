@@ -1,5 +1,5 @@
 /**
- * TaskOrchestrator — main UI component tree for the task management app.
+ * TaskOrchestrator.tsx — main UI component tree for the task management app.
  * Contains all React components: sidebar, task list, detail panel, dialogs, calendar, etc.
  * Domain logic, constants, parsers, and store are imported from sibling modules.
  */
@@ -43,7 +43,11 @@ import { useFilteredTasks } from "./hooks/useFilteredTasks";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
-export default function TaskOrchestrator({ storeHook = useTaskStore } = {}) {
+interface TaskOrchestratorProps {
+  storeHook?: () => any
+}
+
+export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrchestratorProps = {}) {
   const saveMetaRef = useRef(null);
 
   // ── Settings / i18n / theme ───────────────────────────────────────────────

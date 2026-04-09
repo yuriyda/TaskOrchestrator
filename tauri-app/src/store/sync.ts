@@ -18,6 +18,67 @@
  */
 
 import { TASK_INSERT_IGN, taskToRow, rowToTask, fetchAll } from './helpers.js'
+import type { Task } from '../types'
+
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+interface VectorClock {
+  [deviceId: string]: number
+}
+
+interface SyncRequest {
+  type: 'sync_request'
+  deviceId: string | null
+  vectorClock: VectorClock
+}
+
+interface SyncNote {
+  id: string
+  taskSeriesId: string
+  content: string
+  createdAt: string
+}
+
+interface FlowMetaEntry {
+  name: string
+  description: string
+  color: string
+  deadline: string | null
+}
+
+interface SyncPackage {
+  type: 'sync_package'
+  deviceId: string | null
+  vectorClock: VectorClock
+  tasks: Task[]
+  notes: SyncNote[]
+  lists: string[]
+  tags: string[]
+  flows: string[]
+  personas: string[]
+  flowMeta: FlowMetaEntry[]
+}
+
+interface SyncDelta {
+  id: string
+  entity: string
+  entityId: string
+  action: string
+  lamportTs: number
+  deviceId: string
+  data: any
+}
+
+interface ExportDeltasResult {
+  deviceId: string | null
+  vectorClock: VectorClock
+  deltas: SyncDelta[]
+}
+
+interface ImportSyncResult {
+  stats: { applied: number; skipped: number; outdated: number }
+  response: SyncPackage
+}
 
 // ─── Sync request (Phase 1) ─────────────────────────────────────────────────
 
@@ -26,11 +87,11 @@ import { TASK_INSERT_IGN, taskToRow, rowToTask, fetchAll } from './helpers.js'
  * who we are and what we already know (our vector clock).
  * The responder uses this to compute a delta package for us.
  */
-export async function buildSyncRequest(db) {
+export async function buildSyncRequest(db: any): Promise<SyncRequest> {
   const [devRow] = await db.select("SELECT value FROM meta WHERE key='device_id'")
   const localDeviceId = devRow?.value || null
   const vcRows = await db.select('SELECT device_id, counter FROM vector_clock')
-  const localVC = Object.fromEntries(vcRows.map(r => [r.device_id, r.counter]))
+  const localVC: VectorClock = Object.fromEntries(vcRows.map((r: any) => [r.device_id, r.counter]))
 
   return {
     type: 'sync_request',
@@ -46,46 +107,46 @@ export async function buildSyncRequest(db) {
  * targetVC: the remote device's vector clock, e.g. { DEVICE_A: 10, DEVICE_B: 5 }
  * Empty targetVC = full export (recovery mode).
  */
-export async function computeSyncPackage(db, targetVC = {}) {
+export async function computeSyncPackage(db: any, targetVC: VectorClock = {}): Promise<SyncPackage> {
   const [devRow] = await db.select("SELECT value FROM meta WHERE key='device_id'")
   const localDeviceId = devRow?.value || null
   const vcRows = await db.select('SELECT device_id, counter FROM vector_clock')
-  const localVC = Object.fromEntries(vcRows.map(r => [r.device_id, r.counter]))
+  const localVC: VectorClock = Object.fromEntries(vcRows.map((r: any) => [r.device_id, r.counter]))
 
   // Find tasks the target hasn't seen:
   // A task is "unseen" if its device_id (last modifier) has a lamport_ts
   // higher than what the target knows for that device.
   const allTasks = await db.select('SELECT * FROM tasks')
-  const tasksToSend = allTasks.filter(t => {
+  const tasksToSend = allTasks.filter((t: any) => {
     if (!t.device_id) return true // unknown origin — always send
     const targetKnows = targetVC[t.device_id] || 0
     return t.lamport_ts > targetKnows
   })
 
   // Notes for those tasks
-  const taskIds = new Set(tasksToSend.map(t => t.id))
-  const seriesIds = new Set(tasksToSend.map(t => t.rtm_series_id || t.id))
+  const taskIds = new Set(tasksToSend.map((t: any) => t.id))
+  const seriesIds = new Set(tasksToSend.map((t: any) => t.rtm_series_id || t.id))
   const allNotes = await db.select('SELECT * FROM notes')
-  const notesToSend = allNotes.filter(n => seriesIds.has(n.task_series_id))
+  const notesToSend = allNotes.filter((n: any) => seriesIds.has(n.task_series_id))
 
   // Always include all lookup tables (small, idempotent)
-  const lists = (await db.select('SELECT name FROM lists')).map(r => r.name)
-  const tags = (await db.select('SELECT name FROM tags')).map(r => r.name)
-  const flows = (await db.select('SELECT name FROM flows')).map(r => r.name)
-  const personas = (await db.select('SELECT name FROM personas')).map(r => r.name)
+  const lists = (await db.select('SELECT name FROM lists')).map((r: any) => r.name)
+  const tags = (await db.select('SELECT name FROM tags')).map((r: any) => r.name)
+  const flows = (await db.select('SELECT name FROM flows')).map((r: any) => r.name)
+  const personas = (await db.select('SELECT name FROM personas')).map((r: any) => r.name)
   const flowMeta = await db.select('SELECT * FROM flow_meta')
 
   return {
     type: 'sync_package',
     deviceId: localDeviceId,
     vectorClock: localVC,
-    tasks: tasksToSend.map(row => rowToTask(row)),
-    notes: notesToSend.map(n => ({
+    tasks: tasksToSend.map((row: any) => rowToTask(row)),
+    notes: notesToSend.map((n: any) => ({
       id: n.id, taskSeriesId: n.task_series_id,
       content: n.content, createdAt: n.created_at,
     })),
     lists, tags, flows, personas,
-    flowMeta: flowMeta.map(r => ({
+    flowMeta: flowMeta.map((r: any) => ({
       name: r.name, description: r.description || '',
       color: r.color || '', deadline: r.deadline || null,
     })),
@@ -98,7 +159,7 @@ export async function computeSyncPackage(db, targetVC = {}) {
  * Apply an incoming sync package and compute a response for the sender.
  * Returns { stats: { applied, skipped, outdated }, response: <package for sender> }
  */
-export async function importSyncPackage(db, pkg) {
+export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<ImportSyncResult> {
   const { deviceId: remoteDeviceId, vectorClock: remoteVC, tasks, notes, lists, tags, flows, personas, flowMeta } = pkg
 
   let applied = 0
@@ -150,7 +211,7 @@ export async function importSyncPackage(db, pkg) {
       }
     }
 
-    // Lamport clock merge rule: ensure local counter ≥ max imported timestamp.
+    // Lamport clock merge rule: ensure local counter >= max imported timestamp.
     // Without this, a device with a low counter could modify an imported task
     // and assign a lamportTs lower than the task's current value, causing
     // the modification to be rejected as "older" on the next sync.
@@ -205,14 +266,14 @@ export async function importSyncPackage(db, pkg) {
 /**
  * Full update of a task from incoming data (all fields).
  */
-async function fullUpdateTask(db, task) {
+async function fullUpdateTask(db: any, task: Partial<Task>): Promise<void> {
   const sets = [
     'title=?', 'status=?', 'priority=?', 'list_name=?', 'due=?',
     'recurrence=?', 'flow_id=?', 'depends_on=?', 'tags=?', 'personas=?',
     'url=?', 'date_start=?', 'estimate=?', 'postponed=?',
     'completed_at=?', 'updated_at=?', 'deleted_at=?', 'lamport_ts=?', 'device_id=?',
   ]
-  const vals = [
+  const vals: any[] = [
     task.title || '', task.status || 'inbox', task.priority || 4,
     task.list || null, task.due || null,
     task.recurrence || null, task.flowId || null, task.dependsOn || null,
@@ -236,7 +297,7 @@ async function fullUpdateTask(db, task) {
 /**
  * Collect sync_log entries (for the delta log viewer in Settings).
  */
-export async function exportDeltas(db, sinceTs = 0) {
+export async function exportDeltas(db: any, sinceTs: number = 0): Promise<ExportDeltasResult> {
   const deltas = await db.select(
     'SELECT * FROM sync_log WHERE lamport_ts > ? ORDER BY lamport_ts',
     [sinceTs]
@@ -246,8 +307,8 @@ export async function exportDeltas(db, sinceTs = 0) {
 
   return {
     deviceId: devRow?.value || null,
-    vectorClock: Object.fromEntries(vectorClock.map(r => [r.device_id, r.counter])),
-    deltas: deltas.map(d => ({
+    vectorClock: Object.fromEntries(vectorClock.map((r: any) => [r.device_id, r.counter])),
+    deltas: deltas.map((d: any) => ({
       id:        d.id,
       entity:    d.entity,
       entityId:  d.entity_id,
@@ -259,16 +320,16 @@ export async function exportDeltas(db, sinceTs = 0) {
   }
 }
 
-export async function clearSyncLog(db, upToLamportTs) {
+export async function clearSyncLog(db: any, upToLamportTs: number): Promise<void> {
   await db.execute('DELETE FROM sync_log WHERE lamport_ts <= ?', [upToLamportTs])
 }
 
-export async function getVectorClock(db) {
+export async function getVectorClock(db: any): Promise<VectorClock> {
   const rows = await db.select('SELECT device_id, counter FROM vector_clock')
-  return Object.fromEntries(rows.map(r => [r.device_id, r.counter]))
+  return Object.fromEntries(rows.map((r: any) => [r.device_id, r.counter]))
 }
 
-export function filterNewDeltas(deltas, localVC) {
+export function filterNewDeltas(deltas: SyncDelta[], localVC: VectorClock): SyncDelta[] {
   return deltas.filter(d => {
     const knownCounter = localVC[d.deviceId] || 0
     return d.lamportTs > knownCounter

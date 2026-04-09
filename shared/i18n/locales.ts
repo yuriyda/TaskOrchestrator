@@ -351,7 +351,6 @@ export const LOCALES = {
     "db.switched.desc": "You are now working with a different database file.",
     // day planner
     "planner.title": "Day Planner",
-    "planner.planned": "planned",
     "planner.blockSlot": "Block slot",
     "planner.unblockSlot": "Unblock slot",
     "planner.editBlock": "Edit title",
@@ -705,7 +704,6 @@ export const LOCALES = {
     "db.switched.desc": "Вы работаете с другим файлом базы данных.",
     // планер дня
     "planner.title": "Планер дня",
-    "planner.planned": "запланировано",
     "planner.blockSlot": "Заблокировать слот",
     "planner.unblockSlot": "Разблокировать слот",
     "planner.editBlock": "Изменить название",
