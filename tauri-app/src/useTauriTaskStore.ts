@@ -336,8 +336,16 @@ export function useTauriTaskStore() {
       for (const id of idArr) {
         await logChange(db, 'tasks', id, 'delete', null, lts, did)
       }
+      // Clean planner slots for soft-deleted tasks
+      await db.execute(
+        `DELETE FROM day_plan_slots WHERE task_id IN (${ph})`,
+        idArr
+      )
     })
     await refreshRef()
+    // Remove deleted tasks' slots from React state immediately
+    const deletedIds = new Set(idArr)
+    setDayPlanSlots(s => s.filter(slot => !slot.taskId || !deletedIds.has(slot.taskId)))
   }, [mutate, refreshRef])
 
   const bulkPriority = useCallback((ids, priority, cur) => mutate(cur, async db => {
@@ -763,17 +771,41 @@ export function useTauriTaskStore() {
       ;(async () => {
         const db = dbRef.current
         if (!db) return
-        // Disable FK constraints to prevent ON DELETE SET NULL cascading to day_plan_slots
-        await db.execute('PRAGMA foreign_keys = OFF')
-        await db.execute('DELETE FROM tasks')
-        for (const task of prev) {
-          await db.execute(
-            TASK_INSERT,
-            taskToRow(task)
-          )
+        // Build diff: avoid DELETE FROM tasks which triggers FK cascade
+        // and destroys day_plan_slots.task_id references
+        const prevIds = new Set(prev.map(t => t.id))
+        const currentRows = await db.select('SELECT id FROM tasks WHERE deleted_at IS NULL')
+        const currentIds = new Set(currentRows.map(r => r.id))
+
+        // 1. Delete tasks added after snapshot + their planner slots
+        for (const row of currentRows) {
+          if (!prevIds.has(row.id)) {
+            await db.execute("DELETE FROM day_plan_slots WHERE task_id = ?", [row.id])
+            await db.execute('DELETE FROM tasks WHERE id = ?', [row.id])
+          }
         }
-        await db.execute('PRAGMA foreign_keys = ON')
+        // 2. Upsert snapshot tasks (UPDATE existing, INSERT missing)
+        for (const task of prev) {
+          if (currentIds.has(task.id)) {
+            const sets = 'title=?, status=?, priority=?, list_name=?, due=?, recurrence=?, flow_id=?, depends_on=?, tags=?, personas=?, url=?, date_start=?, estimate=?, postponed=?, completed_at=?, updated_at=?, deleted_at=?, lamport_ts=?, device_id=?'
+            const vals = [
+              task.title, task.status || 'inbox', task.priority || 4,
+              task.list || null, task.due || null,
+              task.recurrence || null, task.flowId || null, task.dependsOn || null,
+              JSON.stringify(task.tags || []), JSON.stringify(task.personas || []),
+              task.url || null, task.dateStart || null, task.estimate || null, task.postponed || 0,
+              task.completedAt || null, task.updatedAt || null,
+              task.deletedAt || null, task.lamportTs || 0, task.deviceId || null,
+              task.id,
+            ]
+            await db.execute(`UPDATE tasks SET ${sets} WHERE id = ?`, vals)
+          } else {
+            await db.execute(TASK_INSERT, taskToRow(task))
+          }
+        }
         setTasks(prev)
+        // Remove planner slots for deleted tasks from React state
+        setDayPlanSlots(s => s.filter(slot => !slot.taskId || prevIds.has(slot.taskId)))
         if (onDone) onDone()
       })()
       return h.slice(0, -1)
