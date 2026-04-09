@@ -10,8 +10,8 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 
-const SRC = fs.readFileSync(path.resolve(__dirname, 'ulid.js'), 'utf8')
-const STORE_SRC = fs.readFileSync(path.resolve(__dirname, 'useTauriTaskStore.js'), 'utf8')
+const SRC = fs.readFileSync(path.resolve(__dirname, 'ulid.ts'), 'utf8')
+const STORE_SRC = fs.readFileSync(path.resolve(__dirname, 'useTauriTaskStore.ts'), 'utf8')
 
 // Extract the ULID generator code block and build a standalone factory
 function createUlidFactory() {

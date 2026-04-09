@@ -6,7 +6,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react'
 import React from 'react'
-import MobileApp from './MobileApp.jsx'
+import MobileApp from './MobileApp'
 import { useBrowserTaskStore } from './store/browserStore'
 
 let testCounter = 0
