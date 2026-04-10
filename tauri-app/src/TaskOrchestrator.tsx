@@ -385,7 +385,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
           <main className="flex-1 overflow-y-auto p-6 space-y-4"
                 onMouseDown={(e) => {
                   if (e.button !== 0) return;
-                  if (e.target.closest("[data-task-id]") || e.target.closest("button") || e.target.closest("input") || e.target.closest("textarea")) return;
+                  if (e.target.closest("[data-task-id]") || e.target.closest("button") || e.target.closest("input") || e.target.closest("textarea") || e.target.closest(".flow-view-root")) return;
                   e.preventDefault(); // prevent text selection during drag
                   const bounds = e.currentTarget.getBoundingClientRect();
                   dragStartRef.current = { x: e.clientX, y: e.clientY, bounds };
