@@ -300,7 +300,7 @@ describe('BrowserStore — Dependencies', () => {
 
     // Create dependent task
     await act(async () => {
-      await store.current.addTask({ title: 'Dependent', status: 'inbox', dependsOn: blockerId })
+      await store.current.addTask({ title: 'Dependent', status: 'inbox', dependsOn: [blockerId] })
     })
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'))
 
@@ -323,7 +323,7 @@ describe('BrowserStore — Dependencies', () => {
     const blockerId = store.current.tasks[0].id
 
     await act(async () => {
-      await store.current.addTask({ title: 'Blocked', status: 'inbox', dependsOn: blockerId })
+      await store.current.addTask({ title: 'Blocked', status: 'inbox', dependsOn: [blockerId] })
     })
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'))
 
@@ -355,7 +355,7 @@ describe('BrowserStore — Dependencies', () => {
     const blockerId = store.current.tasks[0].id
 
     await act(async () => {
-      await store.current.addTask({ title: 'Blocked', status: 'inbox', dependsOn: blockerId })
+      await store.current.addTask({ title: 'Blocked', status: 'inbox', dependsOn: [blockerId] })
     })
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'))
 

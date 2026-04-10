@@ -385,7 +385,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
           <main className="flex-1 overflow-y-auto p-6 space-y-4"
                 onMouseDown={(e) => {
                   if (e.button !== 0) return;
-                  if (e.target.closest("[data-task-id]") || e.target.closest("button") || e.target.closest("input") || e.target.closest("textarea")) return;
+                  if (e.target.closest("[data-task-id]") || e.target.closest("button") || e.target.closest("input") || e.target.closest("textarea") || e.target.closest(".flow-view-root")) return;
                   e.preventDefault(); // prevent text selection during drag
                   const bounds = e.currentTarget.getBoundingClientRect();
                   dragStartRef.current = { x: e.clientX, y: e.clientY, bounds };
@@ -555,8 +555,15 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               onEditTask={(id) => setEditTaskId(id)}
               onDeleteTask={(id) => { store.bulkDelete(new Set([id]), tasks); }}
               onRemoveFromFlow={(id) => handleUpdate(id, { flowId: null })}
-              onRemoveDependency={(id) => handleUpdate(id, { dependsOn: null })}
-              onSetDependency={(id, depId) => handleUpdate(id, { dependsOn: depId })}
+              onRemoveDependency={(taskId, depId) => {
+                const task = tasks.find(t => t.id === taskId);
+                handleUpdate(taskId, { dependsOn: (task?.dependsOn ?? []).filter(d => d !== depId) });
+              }}
+              onSetDependency={(taskId, newDepId) => {
+                const task = tasks.find(t => t.id === taskId);
+                const existing = task?.dependsOn ?? [];
+                if (!existing.includes(newDepId)) handleUpdate(taskId, { dependsOn: [...existing, newDepId] });
+              }}
             />}
           </main>
 

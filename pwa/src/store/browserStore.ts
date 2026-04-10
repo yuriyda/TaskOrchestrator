@@ -87,7 +87,7 @@ function buildIdbOps(db) {
 
     findInboxDependents: async (taskId) => {
       const all = await db.getAll('tasks')
-      return all.filter(t => t.dependsOn === taskId && t.status === 'inbox' && !t.deletedAt)
+      return all.filter(t => Array.isArray(t.dependsOn) && t.dependsOn.includes(taskId) && t.status === 'inbox' && !t.deletedAt)
     },
 
     isBlockerActive: async (taskId) => {
@@ -194,7 +194,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       due: data.due || null,
       recurrence: data.recurrence || null,
       flowId: data.flowId || null,
-      dependsOn: data.dependsOn || null,
+      dependsOn: data.dependsOn?.length ? data.dependsOn : null,
       tags: data.tags || [],
       personas: data.personas || [],
       url: data.url || null,

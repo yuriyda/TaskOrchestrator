@@ -39,7 +39,7 @@ export function rowToTask(row: any, notesMap: Record<string, Note[]> = {}): Task
     due:          row.due,
     recurrence:   row.recurrence,
     flowId:       row.flow_id,
-    dependsOn:    row.depends_on,
+    dependsOn:    row.depends_on ? JSON.parse(row.depends_on) : null,
     tags:         JSON.parse(row.tags     || '[]'),
     personas:     JSON.parse(row.personas || '[]'),
     createdAt:    row.created_at,
@@ -69,7 +69,7 @@ export function taskToRow(task: Partial<Task> & { id: string }): any[] {
     safeIsoDate(task.due),
     task.recurrence  || null,
     task.flowId      || null,
-    task.dependsOn   || null,
+    task.dependsOn?.length ? JSON.stringify(task.dependsOn) : null,
     JSON.stringify(task.tags     || []),
     task.createdAt   || now,
     task.url         || null,
@@ -155,16 +155,18 @@ export function buildSqlOps(db: DB, logChangeFn?: typeof logChange) {
   return {
     getTask: async (id: string) => {
       const [row] = await db.select('SELECT * FROM tasks WHERE id=?', [id])
-      return row || null
+      if (!row) return null
+      return { ...row, dependsOn: row.depends_on ? JSON.parse(row.depends_on) : null }
     },
     insertTask: async (task: any) => {
       await db.execute(TASK_INSERT, taskToRow(task))
     },
     findInboxDependents: async (taskId: string) => {
-      return db.select(
-        "SELECT id, title, depends_on as dependsOn FROM tasks WHERE depends_on = ? AND status = 'inbox' AND deleted_at IS NULL",
+      const rows: any[] = await db.select(
+        `SELECT DISTINCT t.id, t.title, t.depends_on as dependsOnRaw FROM tasks t, json_each(t.depends_on) WHERE json_each.value = ? AND t.status = 'inbox' AND t.deleted_at IS NULL AND t.depends_on IS NOT NULL`,
         [taskId]
       )
+      return rows.map(r => ({ id: r.id, title: r.title, dependsOn: r.dependsOnRaw ? JSON.parse(r.dependsOnRaw) : [] }))
     },
     isBlockerActive: async (taskId: string) => {
       const [dep] = await db.select(

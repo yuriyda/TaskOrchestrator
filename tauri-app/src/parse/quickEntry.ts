@@ -28,7 +28,7 @@ export function parseShorthand(input, { extractUrls = true } = {}) {
     else if (p.startsWith("#"))       { result.tags.push(p.slice(1));         result.tokens.push({ type: "tag",        value: p }); }
     else if (/^![1-4]$/.test(p))     { result.priority = parseInt(p[1]);     result.tokens.push({ type: "priority",   value: p }); }
     else if (p.startsWith("^"))       { const pd = parseDateInput(p.slice(1)); if (pd) { result.due = pd; result.tokens.push({ type: "due", value: p }); } else { titleParts.push(p); result.tokens.push({ type: "text", value: p }); } }
-    else if (p.startsWith("~"))       { result.dependsOn = p.slice(1);        result.tokens.push({ type: "depends",    value: p }); }
+    else if (p.startsWith("~"))       { result.dependsOn = [p.slice(1)];      result.tokens.push({ type: "depends",    value: p }); }
     else if (p.startsWith("*"))       { result.recurrence = p.slice(1);       result.tokens.push({ type: "recurrence", value: p }); }
     else if (p.startsWith("/")  && p.length > 1) { result.personas.push(p.slice(1)); result.tokens.push({ type: "persona", value: p }); }
     else if (extractUrls && !result.url && URL_RE.test(p)) { result.url = p; result.tokens.push({ type: "url", value: p }); }
@@ -90,7 +90,7 @@ export function buildFromChips(chips) {
       case "due":        r.due        = parseDateInput(c.raw.slice(1)) || null;  break;
       case "recurrence": r.recurrence = c.raw.slice(1);  break;
       case "flow":       r.flowId     = c.raw.slice(2);  break;
-      case "depends":    r.dependsOn  = c.raw.slice(1);  break;
+      case "depends":    r.dependsOn  = [c.raw.slice(1)]; break;
       case "url":        r.url        = c.raw;           break;
     }
   }
