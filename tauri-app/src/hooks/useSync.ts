@@ -25,6 +25,7 @@ export function useSync(
   const [autoSyncing, setAutoSyncing] = useState(false);
   const autoSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncInProgressRef = useRef(false);
+  const syncCooldownRef = useRef(false);
 
   useEffect(() => {
     store.gdriveCheckConnection?.().then((ok: boolean) => setGdriveConnected(!!ok));
@@ -37,23 +38,35 @@ export function useSync(
 
   const handleSyncNow = store.gdriveSyncNow ? async (): Promise<SyncResult | undefined> => {
     addGdriveLog(t("sync.gdriveSyncing"));
-    const result: SyncResult | undefined = await store.gdriveSyncNow();
-    if (result) {
-      addGdriveLog(
-        t("sync.gdriveSynced")
-          .replace("{applied}", String(result.applied))
-          .replace("{outdated}", String(result.outdated))
-          .replace("{uploaded}", String(result.uploaded))
-      );
+    try {
+      const result: SyncResult | undefined = await store.gdriveSyncNow();
+      if (result) {
+        addGdriveLog(
+          t("sync.gdriveSynced")
+            .replace("{applied}", String(result.applied))
+            .replace("{outdated}", String(result.outdated))
+            .replace("{uploaded}", String(result.uploaded))
+        );
+      }
+      return result;
+    } catch (err: any) {
+      const msg = err?.message || err?.toString?.() || String(err);
+      addGdriveLog(`${t("sync.gdriveError")}: ${msg}`);
+      console.error("[sync] Error:", err);
+      throw err; // re-throw so StatusBar shows red icon
     }
-    return result;
   } : undefined;
 
   const wrappedSyncNow = useCallback(async () => {
     if (!handleSyncNow) return;
     syncInProgressRef.current = true;
     try { return await handleSyncNow(); }
-    finally { syncInProgressRef.current = false; }
+    finally {
+      syncInProgressRef.current = false;
+      // Suppress auto-sync triggered by task state update after manual sync
+      syncCooldownRef.current = true;
+      setTimeout(() => { syncCooldownRef.current = false; }, 5000);
+    }
   }, [handleSyncNow]);
 
   const triggerAutoSync = useCallback(() => {
@@ -65,7 +78,7 @@ export function useSync(
       if (syncInProgressRef.current) return;
       syncInProgressRef.current = true;
       setAutoSyncing(true);
-      try { await handleSyncNow(); } catch {}
+      try { await handleSyncNow(); } catch { /* error already logged in handleSyncNow */ }
       syncInProgressRef.current = false;
       setAutoSyncing(false);
     }, 3000);
@@ -73,7 +86,7 @@ export function useSync(
 
   const prevTasksRef = useRef(tasks);
   useEffect(() => {
-    if (prevTasksRef.current !== tasks && prevTasksRef.current.length > 0 && !syncInProgressRef.current) {
+    if (prevTasksRef.current !== tasks && prevTasksRef.current.length > 0 && !syncInProgressRef.current && !syncCooldownRef.current) {
       triggerAutoSync();
     }
     prevTasksRef.current = tasks;

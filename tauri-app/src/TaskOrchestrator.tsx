@@ -110,6 +110,23 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [showCalendar, setShowCalendar]     = useState(true);
   const [showPlanner, setShowPlanner]       = useState(false);
   const [plannerDate, setPlannerDate]       = useState(() => new Date().toISOString().slice(0, 10));
+  // Auto-advance to next day at midnight (app may stay open overnight)
+  const [today, setToday] = useState(() => new Date().toISOString().slice(0, 10));
+  useEffect(() => {
+    const scheduleNextMidnight = () => {
+      const now = new Date();
+      const msToMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
+      return setTimeout(() => {
+        const newToday = new Date().toISOString().slice(0, 10);
+        setToday(newToday);
+        setPlannerDate(newToday);
+        timerId = scheduleNextMidnight();
+      }, msToMidnight);
+    };
+    let timerId = scheduleNextMidnight();
+    return () => clearTimeout(timerId);
+  }, []);
+
   const [plannerWidthPct, setPlannerWidthPct] = useState(40);
   const plannerDividerRef = useRef(null);
   const [calendarFilter, setCalendarFilterRaw] = useState(null);

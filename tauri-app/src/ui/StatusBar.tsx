@@ -40,7 +40,8 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
   const { t, TC, locale } = useApp();
   const [now, setNow] = useState(new Date());
   const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState(null); // "ok" | "err"
+  const [syncResult, setSyncResult] = useState<"ok" | null>(null); // "ok" | null
+  const [syncError, setSyncError] = useState<string | null>(null);
   const isSyncing = syncing || autoSyncing;
 
   useEffect(() => {
@@ -138,9 +139,10 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
       {/* Sync now button — крайний правый */}
       {onSyncNow ? (
         <button
-          title={lastSync
-            ? `${t("sync.lastSync")}: ${new Date(lastSync).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}`
-            : t("sync.syncNow")}
+          title={[
+            lastSync ? `${t("sync.lastSync")}: ${new Date(lastSync).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}` : null,
+            syncError ? `${t("sync.gdriveError")}: ${syncError}` : null,
+          ].filter(Boolean).join("\n") || t("sync.syncNow")}
           disabled={isSyncing}
           onClick={async () => {
             setSyncing(true);
@@ -148,16 +150,17 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
             try {
               await onSyncNow();
               setSyncResult("ok");
-            } catch {
-              setSyncResult("err");
+              setSyncError(null);
+              setTimeout(() => setSyncResult(null), 3000);
+            } catch (err: any) {
+              setSyncError(err?.message || String(err));
             } finally {
               setSyncing(false);
-              setTimeout(() => setSyncResult(null), 3000);
             }
           }}
           className={`flex-shrink-0 flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors cursor-pointer
             ${isSyncing ? "opacity-40 cursor-not-allowed" : "hover:opacity-100 opacity-60"}
-            ${syncResult === "ok" ? "text-green-400" : syncResult === "err" ? "text-red-400" : ""}`}
+            ${syncResult === "ok" ? "text-green-400" : syncError ? "text-red-400" : ""}`}
         >
           <RefreshCw size={10} className={isSyncing ? "animate-spin" : ""} />
           <span>{t("sync.syncNow")}</span>

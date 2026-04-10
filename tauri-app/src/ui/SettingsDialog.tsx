@@ -90,6 +90,8 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
   const [gdriveConnected, setGdriveConnected] = useState(false);
   const [gdriveClientId, setGdriveClientId] = useState("");
   const [gdriveClientSecret, setGdriveClientSecret] = useState("");
+  const [gdriveConnectError, setGdriveConnectError] = useState<string | null>(null);
+  const [gdriveConnecting, setGdriveConnecting] = useState(false);
   const [gdriveSyncing, setGdriveSyncing] = useState(false);
   const [syncFileData, setSyncFileData] = useState(null); // null = not loaded, { file, data } | "loading" | "empty"
   const gdriveLogRef = useRef(null);
@@ -631,23 +633,34 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
                 className={`w-full px-3 py-1.5 rounded text-xs font-mono border ${TC.surface} ${TC.borderClass} ${TC.textSec} focus:outline-none focus:ring-1 focus:ring-sky-500`}
               />
               <button
-                disabled={!gdriveClientId.trim() || !gdriveClientSecret.trim()}
+                disabled={!gdriveClientId.trim() || !gdriveClientSecret.trim() || gdriveConnecting}
                 onClick={async () => {
+                  setGdriveConnectError(null);
+                  setGdriveConnecting(true);
                   try {
                     await onGdriveConnect(gdriveClientId.trim(), gdriveClientSecret.trim());
                     setGdriveConnected(true);
                     addGdriveLog(t("sync.gdriveConnected"));
-                  } catch (e) {
-                    addGdriveLog(`${t("sync.gdriveError")}: ${e.message}`);
+                  } catch (e: any) {
+                    const msg = e?.message || String(e);
+                    setGdriveConnectError(msg);
+                    addGdriveLog(`${t("sync.gdriveError")}: ${msg}`);
+                  } finally {
+                    setGdriveConnecting(false);
                   }
                 }}
                 className={`flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                  gdriveClientId.trim() && gdriveClientSecret.trim()
+                  gdriveClientId.trim() && gdriveClientSecret.trim() && !gdriveConnecting
                     ? "bg-sky-600 hover:bg-sky-500 text-white"
                     : `${TC.surface} ${TC.textMuted} cursor-not-allowed`
                 }`}>
-                {t("sync.gdriveConnect")}
+                {gdriveConnecting ? (locale === "ru" ? "Подключение…" : "Connecting…") : t("sync.gdriveConnect")}
               </button>
+              {gdriveConnectError && (
+                <div className="text-xs text-red-400 mt-1 break-all">
+                  {t("sync.gdriveError")}: {gdriveConnectError}
+                </div>
+              )}
             </div>
           ) : (
             <div>
