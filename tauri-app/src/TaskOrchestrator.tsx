@@ -556,6 +556,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               onDeleteTask={(id) => { store.bulkDelete(new Set([id]), tasks); }}
               onRemoveFromFlow={(id) => handleUpdate(id, { flowId: null })}
               onRemoveDependency={(id) => handleUpdate(id, { dependsOn: null })}
+              onSetDependency={(id, depId) => handleUpdate(id, { dependsOn: depId })}
             />}
           </main>
 

@@ -192,6 +192,9 @@ export function useTaskActions({
     if (filters.persona && (!data.personas || !data.personas.includes(filters.persona))) {
       data.personas = [...(data.personas || []), filters.persona];
     }
+    if (!data.flowId && filters.flow) {
+      data.flowId = filters.flow;
+    }
 
     const task = await store.addTask(data, tasks);
 

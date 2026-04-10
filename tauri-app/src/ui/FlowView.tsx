@@ -47,15 +47,64 @@ interface FlowViewProps {
   onDeleteTask?: (taskId: TaskId) => void;
   onRemoveFromFlow?: (taskId: TaskId) => void;
   onRemoveDependency?: (taskId: TaskId) => void;
+  onSetDependency?: (taskId: TaskId, dependsOnId: TaskId) => void;
 }
 
-export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDeleteFlow, onCompleteTask, onReopenTask, onEditTask, onDeleteTask, onRemoveFromFlow, onRemoveDependency }: FlowViewProps) {
+export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDeleteFlow, onCompleteTask, onReopenTask, onEditTask, onDeleteTask, onRemoveFromFlow, onRemoveDependency, onSetDependency }: FlowViewProps) {
   const { t, TC, flowMeta } = useApp();
   const meta = flowMeta[activeFlow] || {};
   const flowTasks = tasks.filter(t => t.flowId === activeFlow);
   if (!flowTasks.length && !meta.description) return null;
 
   const doneSet = new Set(tasks.filter(t => t.status === "done").map(t => t.id));
+
+  // Mouse-based DnD (fully imperative — avoids React async render race with rubber-band)
+  const dragTaskIdRef = useRef<TaskId | null>(null);
+  const isDraggingRef = useRef(false);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<TaskId | null>(null);
+  const [ghost, setGhost] = useState<{ x: number; y: number; taskId: TaskId; ox: number; oy: number } | null>(null);
+
+  const stopDrag = useCallback(() => {
+    isDraggingRef.current = false;
+    dragTaskIdRef.current = null;
+    setDropTargetId(null);
+    setGhost(null);
+    document.body.style.userSelect = "";
+    overlayRef.current?.remove();
+    overlayRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!onSetDependency) return;
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRef.current || !overlayRef.current) return;
+      setGhost(g => g ? { ...g, x: e.clientX - g.ox, y: e.clientY - g.oy } : null);
+      // Detect drop target via elementFromPoint (temporarily hide overlay)
+      overlayRef.current.style.pointerEvents = "none";
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      overlayRef.current.style.pointerEvents = "auto";
+      const taskEl = (el as HTMLElement)?.closest("[data-flow-task-id]") as HTMLElement | null;
+      const tgtId = taskEl?.dataset.flowTaskId as TaskId | undefined;
+      setDropTargetId(tgtId && tgtId !== dragTaskIdRef.current ? tgtId : null);
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const srcId = dragTaskIdRef.current;
+      if (overlayRef.current && srcId) {
+        overlayRef.current.style.pointerEvents = "none";
+        const el = document.elementFromPoint(e.clientX, e.clientY);
+        overlayRef.current.style.pointerEvents = "auto";
+        const taskEl = (el as HTMLElement)?.closest("[data-flow-task-id]") as HTMLElement | null;
+        const tgtId = taskEl?.dataset.flowTaskId as TaskId | undefined;
+        if (tgtId && tgtId !== srcId) onSetDependency(tgtId, srcId);
+      }
+      stopDrag();
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => { document.removeEventListener("mousemove", onMouseMove); document.removeEventListener("mouseup", onMouseUp); };
+  }, [onSetDependency, stopDrag]);
 
   // Context menu state
   const [ctxMenu, setCtxMenu] = useState(null); // { x, y, task }
@@ -121,7 +170,23 @@ export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDelet
     return (
       <div key={task.id} className="flex items-start gap-2">
         {depth > 0 && <div className="flex items-center text-gray-600 pt-3"><ArrowRight size={14} /></div>}
-        <div className={`border rounded-lg px-3 py-2 min-w-[10rem] cursor-context-menu ${sc}`}
+        <div className={`border rounded-lg px-3 py-2 min-w-[10rem] select-none outline-none transition-colors ${onSetDependency ? "cursor-grab" : "cursor-context-menu"} ${sc}`}
+          data-flow-task-id={String(task.id)}
+          style={dropTargetId === task.id ? { borderColor: "#38bdf8", borderWidth: "2px", backgroundColor: "rgba(56,189,248,0.08)" } : undefined}
+          onMouseDown={(e) => {
+            if (e.button !== 0 || !onSetDependency) return;
+            e.preventDefault();
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            dragTaskIdRef.current = task.id;
+            isDraggingRef.current = true;
+            // Create overlay synchronously — before React re-render — to block rubber-band
+            const ov = document.createElement("div");
+            ov.style.cssText = "position:fixed;inset:0;z-index:9997;cursor:grabbing;";
+            document.body.appendChild(ov);
+            overlayRef.current = ov;
+            document.body.style.userSelect = "none";
+            setGhost({ x: rect.left, y: rect.top, taskId: task.id, ox: e.clientX - rect.left, oy: e.clientY - rect.top });
+          }}
           onContextMenu={(e) => handleNodeContext(e, task)}
           onDoubleClick={() => onEditTask?.(task.id)}>
           <div className="flex items-center gap-2">
@@ -140,7 +205,9 @@ export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDelet
   };
 
   return (
-    <div className="mt-4 p-4 bg-gray-800/30 border border-gray-700/50 rounded-xl flow-view-root relative">
+    <div className="mt-4 p-4 bg-gray-800/30 border border-gray-700/50 rounded-xl flow-view-root relative select-none"
+      onSelectStart={(e) => e.preventDefault()}
+      onMouseDown={(e) => { if (!(e.target as HTMLElement).closest("input, textarea, button")) e.preventDefault(); }}>
       {/* Header */}
       <div className="flex items-center gap-2 mb-2">
         <Zap size={14} style={meta.color ? { color: meta.color } : {}} className={meta.color ? "" : "text-pink-400"} />
@@ -224,7 +291,7 @@ export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDelet
 
       {/* Dependency tree */}
       {flowTasks.length > 0 && (
-        <div className="flex items-start gap-2 overflow-x-auto pb-2">{roots.map(r => renderNode(r))}</div>
+        <div className="flex items-start gap-2 overflow-x-auto pb-2 pt-1">{roots.map(r => renderNode(r))}</div>
       )}
 
       {/* Context menu */}
@@ -271,6 +338,30 @@ export function FlowView({ tasks, activeFlow, onStartNext, onUpdateFlow, onDelet
           </button>
         </div>
       )}
+
+      {/* Drag ghost — looks like the actual node */}
+      {ghost && (() => {
+        const gt = flowTasks.find(t => t.id === ghost.taskId);
+        if (!gt) return null;
+        const gBlocked = isBlocked(gt);
+        const gReady = isReady(gt);
+        const gSc = gReady
+          ? "border-amber-400 bg-amber-900/20"
+          : gBlocked && gt.status !== "done"
+          ? "border-gray-600 bg-gray-800/50"
+          : { inbox: "border-gray-500 bg-gray-800", active: "border-sky-500 bg-sky-900/30", done: "border-emerald-500 bg-emerald-900/30", cancelled: "border-red-500 bg-red-900/20" }[gt.status];
+        return (
+          <div className={`fixed z-[9999] pointer-events-none border rounded-lg px-3 py-2 min-w-[10rem] shadow-2xl opacity-80 ${gSc}`}
+            style={{ left: ghost.x + 14, top: ghost.y + 8 }}>
+            <div className="flex items-center gap-2">
+              {gBlocked && gt.status !== "done" && <Lock size={11} className="text-yellow-500/70" />}
+              <PriorityBadge priority={gt.priority} />
+              <span className={`text-sm ${gt.status === "done" ? "line-through text-gray-500" : "text-gray-100"}`}>{gt.title}</span>
+            </div>
+            <div className="text-xs text-gray-500 mt-1">{t("status." + gt.status)}</div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
