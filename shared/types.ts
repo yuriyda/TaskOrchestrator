@@ -37,7 +37,7 @@ export interface Task {
   dateStart: ISODate | null
   recurrence: string | null
   flowId: string | null
-  dependsOn: TaskId | null
+  dependsOn: TaskId[] | null
   tags: string[]
   personas: string[]
   url: string | null

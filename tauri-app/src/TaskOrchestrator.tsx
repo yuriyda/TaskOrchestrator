@@ -555,8 +555,15 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               onEditTask={(id) => setEditTaskId(id)}
               onDeleteTask={(id) => { store.bulkDelete(new Set([id]), tasks); }}
               onRemoveFromFlow={(id) => handleUpdate(id, { flowId: null })}
-              onRemoveDependency={(id) => handleUpdate(id, { dependsOn: null })}
-              onSetDependency={(id, depId) => handleUpdate(id, { dependsOn: depId })}
+              onRemoveDependency={(taskId, depId) => {
+                const task = tasks.find(t => t.id === taskId);
+                handleUpdate(taskId, { dependsOn: (task?.dependsOn ?? []).filter(d => d !== depId) });
+              }}
+              onSetDependency={(taskId, newDepId) => {
+                const task = tasks.find(t => t.id === taskId);
+                const existing = task?.dependsOn ?? [];
+                if (!existing.includes(newDepId)) handleUpdate(taskId, { dependsOn: [...existing, newDepId] });
+              }}
             />}
           </main>
 

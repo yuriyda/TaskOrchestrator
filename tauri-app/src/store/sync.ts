@@ -276,7 +276,7 @@ async function fullUpdateTask(db: any, task: Partial<Task>): Promise<void> {
   const vals: any[] = [
     task.title || '', task.status || 'inbox', task.priority || 4,
     task.list || null, task.due || null,
-    task.recurrence || null, task.flowId || null, task.dependsOn || null,
+    task.recurrence || null, task.flowId || null, task.dependsOn?.length ? JSON.stringify(task.dependsOn) : null,
     JSON.stringify(task.tags || []), JSON.stringify(task.personas || []),
     task.url || null, task.dateStart || null, task.estimate || null, task.postponed || 0,
     task.completedAt || null, task.updatedAt || new Date().toISOString(),

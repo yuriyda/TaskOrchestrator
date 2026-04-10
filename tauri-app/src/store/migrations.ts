@@ -143,4 +143,9 @@ export const MIGRATIONS_V9: readonly string[] = [
   `ALTER TABLE day_plan_slots ADD COLUMN recurrence TEXT`,
 ]
 
-export const LATEST_SCHEMA_VERSION: number = 9
+export const MIGRATIONS_V10: readonly string[] = [
+  // Convert existing single-value depends_on TEXT to JSON array format
+  `UPDATE tasks SET depends_on = json_array(depends_on) WHERE depends_on IS NOT NULL AND depends_on NOT LIKE '[%'`,
+]
+
+export const LATEST_SCHEMA_VERSION: number = 10

@@ -63,27 +63,22 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
     url:        task.url        || "",
     estimate:   task.estimate   || "",
     flowId:     task.flowId     || "",
-    dependsOn:  task.dependsOn  || "",
     notes:      [...(task.notes || [])],
   });
-  // dependsOnText: displayed in input (title), form.dependsOn: stored (ID)
-  const [dependsOnText, setDependsOnText] = useState(() =>
-    task.dependsOn ? (allTasks.find(x => x.id === task.dependsOn)?.title || task.dependsOn) : ""
-  );
+  // dependsOn: multi-dep array, stored separately from form
+  const [dependsOn, setDependsOn] = useState<string[]>(() => {
+    const d = task.dependsOn;
+    return Array.isArray(d) ? d.map(String) : d ? [String(d)] : [];
+  });
+  const [depInput, setDepInput] = useState("");
   const taskOptions = allTasks
     .filter(x => x.id !== task.id)
     .map(x => ({ value: x.id, label: x.title }));
-  const handleDependsOnChange = (v) => {
-    const matched = allTasks.find(x => x.id === v);
-    if (matched) {
-      setDependsOnText(matched.title);
-      setForm(f => ({ ...f, dependsOn: matched.id }));
-    } else {
-      setDependsOnText(v);
-      const byTitle = allTasks.find(x => x.title.toLowerCase() === v.toLowerCase() && x.id !== task.id);
-      setForm(f => ({ ...f, dependsOn: byTitle ? byTitle.id : "" }));
-    }
+  const addDep = (id: string) => {
+    if (id && !dependsOn.includes(id)) setDependsOn(prev => [...prev, id]);
+    setDepInput("");
   };
+  const removeDep = (id: string) => setDependsOn(prev => prev.filter(d => d !== id));
   const [tagInput,     setTagInput]     = useState("");
   const [personaInput, setPersonaInput] = useState("");
   const [editingNoteId, setEditingNoteId] = useState(null); // null = none, "new" = new note form
@@ -144,7 +139,7 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
       url:        normalizeUrl(form.url) || null,
       estimate:   normalizeEstimate(form.estimate) || null,
       flowId:     form.flowId.trim()     || null,
-      dependsOn:  form.dependsOn.trim()  || null,
+      dependsOn:  dependsOn.length ? dependsOn : null,
       notes:      finalNotes,
     };
     onSave(changes);
@@ -307,25 +302,47 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
             </div>
           </div>
 
-          {/* Flow + Depends on */}
-          <div className={`${sectionCls} grid-cols-2`}>
-            <div>
-              <label className={labelCls}>{t("edit.field.flow")}</label>
+          {/* Flow */}
+          <div>
+            <label className={labelCls}>{t("edit.field.flow")}</label>
+            <Combobox
+              className={inputCls}
+              value={form.flowId}
+              onChange={v => set("flowId", v)}
+              options={flows}
+            />
+          </div>
+
+          {/* Depends on — multi-dep chips */}
+          <div>
+            <label className={labelCls}>{t("edit.field.dependsOn")}</label>
+            <div className={`flex flex-wrap gap-1.5 p-2 rounded-md border min-h-[36px] ${TC.elevated} ${TC.borderClass}`}>
+              {dependsOn.map(depId => {
+                const depTask = allTasks.find(x => x.id === depId);
+                return (
+                  <span key={depId} className="flex items-center gap-1 text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/30 px-2 py-0.5 rounded-full">
+                    {depTask?.title?.slice(0, 28) || depId}
+                    <button onClick={() => removeDep(depId)} type="button" className="hover:text-red-400 transition-colors"><X size={10} /></button>
+                  </span>
+                );
+              })}
               <Combobox
-                className={inputCls}
-                value={form.flowId}
-                onChange={v => set("flowId", v)}
-                options={flows}
-              />
-            </div>
-            <div>
-              <label className={labelCls}>{t("edit.field.dependsOn")}</label>
-              <Combobox
-                value={dependsOnText}
-                onChange={handleDependsOnChange}
-                options={taskOptions}
+                className={`text-xs bg-transparent outline-none min-w-[120px] flex-1 ${TC.text}`}
+                value={depInput}
+                onChange={v => {
+                  setDepInput(v);
+                  const matched = allTasks.find(x => x.id === v);
+                  if (matched) addDep(matched.id);
+                }}
+                onCommit={v => {
+                  const matched = allTasks.find(x => x.id === v || x.title.toLowerCase() === v.toLowerCase());
+                  if (matched) addDep(matched.id);
+                }}
+                options={taskOptions.filter(o => !dependsOn.includes(o.value))}
                 placeholder={t("edit.field.dependsOn") + "..."}
-                className={inputCls}
+                onKeyDown={e => {
+                  if (e.key === "Backspace" && !depInput && dependsOn.length) removeDep(dependsOn[dependsOn.length - 1]);
+                }}
               />
             </div>
           </div>

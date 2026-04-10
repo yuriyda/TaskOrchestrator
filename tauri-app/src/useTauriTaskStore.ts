@@ -13,7 +13,7 @@ import { ulid } from './ulid.js'
 import { safeIsoDate, localDateStr } from './core/date.js'
 import { VALID_STATUSES, VALID_PRIORITIES } from './core/constants.js'
 import { handleTaskDone, isTaskBlocked, computeNextCycleStatus } from './core/taskActions.js'
-import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_V5, MIGRATIONS_V6, MIGRATIONS_V7, MIGRATIONS_V8, MIGRATIONS_V9, LATEST_SCHEMA_VERSION } from './store/migrations.js'
+import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_V5, MIGRATIONS_V6, MIGRATIONS_V7, MIGRATIONS_V8, MIGRATIONS_V9, MIGRATIONS_V10, LATEST_SCHEMA_VERSION } from './store/migrations.js'
 import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, withTransaction, fetchAll, buildSqlOps, logChange, nextLamport } from './store/helpers.js'
 import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
@@ -109,6 +109,12 @@ async function openDb() {
       try { await _db.execute(sql) } catch (_) { /* column already exists */ }
     }
     await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','9')")
+  }
+  if (version < 10) {
+    for (const sql of MIGRATIONS_V10) {
+      try { await _db.execute(sql) } catch (_) { /* safe to ignore */ }
+    }
+    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','10')")
   }
 
   return _db
@@ -424,12 +430,16 @@ export function useTauriTaskStore() {
     const setClauses = []
     const values = []
     const JSON_COLS = new Set(['tags', 'personas'])
+    const NULLABLE_JSON_COLS = new Set(['dependsOn'])
     const DATE_COLS = new Set(['due', 'dateStart'])
     for (const [key, val] of Object.entries(changes)) {
       const col = COL[key]
       if (!col) continue
       setClauses.push(`${col} = ?`)
-      const v = DATE_COLS.has(key) ? safeIsoDate(val) : (JSON_COLS.has(key) ? JSON.stringify(val ?? []) : (val ?? null))
+      const v = DATE_COLS.has(key) ? safeIsoDate(val) :
+        JSON_COLS.has(key) ? JSON.stringify(val ?? []) :
+        NULLABLE_JSON_COLS.has(key) ? (Array.isArray(val) && val.length ? JSON.stringify(val) : null) :
+        (val ?? null)
       values.push(v)
     }
     // Always update updated_at and lamport_ts on any change
@@ -791,7 +801,7 @@ export function useTauriTaskStore() {
             const vals = [
               task.title, task.status || 'inbox', task.priority || 4,
               task.list || null, task.due || null,
-              task.recurrence || null, task.flowId || null, task.dependsOn || null,
+              task.recurrence || null, task.flowId || null, task.dependsOn?.length ? JSON.stringify(task.dependsOn) : null,
               JSON.stringify(task.tags || []), JSON.stringify(task.personas || []),
               task.url || null, task.dateStart || null, task.estimate || null, task.postponed || 0,
               task.completedAt || null, task.updatedAt || null,

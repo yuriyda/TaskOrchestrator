@@ -101,10 +101,16 @@ export async function handleTaskDone(
 
   const dependents = await ops.findInboxDependents(taskId)
   for (const dep of dependents) {
-    const depOn = dep.dependsOn ?? dep.depends_on
-    if (!depOn) continue
-    const stillBlocked = await ops.isBlockerActive(depOn)
-    if (!stillBlocked) {
+    const depIds: string[] = Array.isArray(dep.dependsOn) ? dep.dependsOn :
+      dep.dependsOn ? [dep.dependsOn] :
+      dep.depends_on ? [dep.depends_on] : []
+    if (!depIds.length) continue
+    // Activate only when ALL blockers are done
+    let allDone = true
+    for (const dId of depIds) {
+      if (await ops.isBlockerActive(dId)) { allDone = false; break }
+    }
+    if (allDone) {
       await ops.activateTask(dep.id, lamportTs, deviceId)
       result.activated.push({ id: dep.id, title: dep.title })
     }
@@ -115,7 +121,12 @@ export async function handleTaskDone(
 
 export async function isTaskBlocked(ops: StorageOps, taskId: string): Promise<boolean> {
   const task = await ops.getTask(taskId)
-  const dependsOn = task?.dependsOn ?? task?.depends_on
-  if (!dependsOn) return false
-  return ops.isBlockerActive(dependsOn)
+  const rawDeps = task?.dependsOn ?? task?.depends_on
+  const deps: string[] = Array.isArray(rawDeps) ? rawDeps :
+    typeof rawDeps === 'string' && rawDeps ? JSON.parse(rawDeps) : []
+  if (!deps.length) return false
+  for (const depId of deps) {
+    if (await ops.isBlockerActive(depId)) return true
+  }
+  return false
 }
