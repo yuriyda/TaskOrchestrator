@@ -356,14 +356,16 @@ describe('FlowView context menu', () => {
 
     const flowRoot = document.querySelector('.flow-view-root')
     if (!flowRoot) return
-    const taskNode = flowRoot.querySelector('[class*="cursor-context-menu"]')
+    // Pick the unblocked task node ("Check shopping list" has no dependencies)
+    const allNodes = [...flowRoot.querySelectorAll('[class*="cursor-context-menu"]')]
+    const taskNode = allNodes.find(n => n.textContent.includes('Check shopping list')) || allNodes[0]
     if (!taskNode) return
 
     await act(async () => { fireEvent.contextMenu(taskNode) })
     await waitFor(() => {
       const menu = document.querySelector('.fixed.z-50')
       expect(menu).toBeTruthy()
-      // Should contain Complete/Edit/Delete actions
+      // Should contain Edit/Delete actions; Complete shown only for unblocked tasks
       const buttons = menu.querySelectorAll('button')
       const texts = [...buttons].map(b => b.textContent.trim())
       expect(texts.some(t => t.match(/Complete|Завершить|Reopen|Возобновить/))).toBe(true)

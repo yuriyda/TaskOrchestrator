@@ -122,8 +122,13 @@ export async function handleTaskDone(
 export async function isTaskBlocked(ops: StorageOps, taskId: string): Promise<boolean> {
   const task = await ops.getTask(taskId)
   const rawDeps = task?.dependsOn ?? task?.depends_on
-  const deps: string[] = Array.isArray(rawDeps) ? rawDeps :
-    typeof rawDeps === 'string' && rawDeps ? JSON.parse(rawDeps) : []
+  let deps: string[] = []
+  if (Array.isArray(rawDeps)) {
+    deps = rawDeps
+  } else if (typeof rawDeps === 'string' && rawDeps) {
+    try { const p = JSON.parse(rawDeps); deps = Array.isArray(p) ? p : [p] }
+    catch { deps = [rawDeps] }
+  }
   if (!deps.length) return false
   for (const depId of deps) {
     if (await ops.isBlockerActive(depId)) return true

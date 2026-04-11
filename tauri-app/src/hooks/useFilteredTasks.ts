@@ -110,7 +110,8 @@ export function useFilteredTasks({
     const doneSet = new Set(tasks.filter(t => t.status === "done").map(t => t.id));
     const blocked = new Set<TaskId>();
     for (const t of tasks) {
-      if (t.dependsOn?.some(id => !doneSet.has(id))) blocked.add(t.id);
+      const deps = Array.isArray(t.dependsOn) ? t.dependsOn : []
+      if (deps.some(id => !doneSet.has(id))) blocked.add(t.id);
     }
     return blocked;
   }, [tasks]);

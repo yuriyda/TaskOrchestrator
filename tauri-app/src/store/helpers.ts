@@ -8,6 +8,21 @@ import { ulid } from '../ulid'
 import { VALID_STATUSES, VALID_PRIORITIES } from '../core/constants'
 import type { Task, TaskId, TaskStatus, TaskPriority, Note } from '../types'
 
+/** Parse depends_on from DB: always returns string[] or null.
+ *  Handles legacy string values, JSON arrays, and malformed data. */
+function parseDependsOn(raw: string | null): string[] | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed.length ? parsed : null
+    if (typeof parsed === 'string' && parsed) return [parsed]
+    return null
+  } catch {
+    // Raw non-JSON string (pre-migration v10 data)
+    return [raw]
+  }
+}
+
 // DB adapter type (Tauri SQL plugin)
 interface DB {
   execute(sql: string, params?: any[]): Promise<any>
@@ -39,7 +54,7 @@ export function rowToTask(row: any, notesMap: Record<string, Note[]> = {}): Task
     due:          row.due,
     recurrence:   row.recurrence,
     flowId:       row.flow_id,
-    dependsOn:    row.depends_on ? JSON.parse(row.depends_on) : null,
+    dependsOn:    parseDependsOn(row.depends_on),
     tags:         JSON.parse(row.tags     || '[]'),
     personas:     JSON.parse(row.personas || '[]'),
     createdAt:    row.created_at,
@@ -130,9 +145,12 @@ export function shiftDue(due: string | null): string | null {
   return d.toISOString().slice(0, 10)
 }
 
-export async function withTransaction(db: DB, fn: () => Promise<any>): Promise<any> {
-  return fn()
-}
+// NOTE: @tauri-apps/plugin-sql does not expose BEGIN/COMMIT/ROLLBACK,
+// so real SQLite transactions are unavailable.  Each individual statement
+// is atomic, but a crash mid-sequence may leave partial state.
+// All call-sites that previously used withTransaction() now run their
+// statements sequentially and include sync-log writes (logChange) in the
+// same block to minimise the window for inconsistency.
 
 export async function fetchAll(db: DB): Promise<Task[]> {
   const [taskRows, noteRows] = await Promise.all([
