@@ -1,25 +1,23 @@
 /**
  * SQLite-backed task store (React hook) — the primary persistence layer for Tauri desktop app.
- * Manages DB lifecycle, task CRUD, bulk operations, undo, import/export, flow metadata, and backups.
+ * Orchestrates domain sub-hooks: planner, sync/gdrive, DB maintenance/backup.
+ * Task CRUD, bulk ops, undo, flow meta, and import stay inline (core domain).
  * Conforms to the StoreApi contract defined in store/storeApi.js and types.ts.
  */
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Database from '@tauri-apps/plugin-sql'
 import { appDataDir, join } from '@tauri-apps/api/path'
-import { open as openFileDialog, save as saveFileDialog } from '@tauri-apps/plugin-dialog'
-import { copyFile, remove, exists, readDir } from '@tauri-apps/plugin-fs'
-import { revealItemInDir, openUrl } from '@tauri-apps/plugin-opener'
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { ulid } from './ulid.js'
 import { safeIsoDate, localDateStr } from './core/date.js'
-import { VALID_STATUSES, VALID_PRIORITIES } from './core/constants.js'
 import { handleTaskDone, isTaskBlocked, computeNextCycleStatus } from './core/taskActions.js'
 import { MIGRATIONS_V1, VERSIONED_MIGRATIONS, LATEST_SCHEMA_VERSION } from './store/migrations.js'
-import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, fetchAll, buildSqlOps, logChange, nextLamport } from './store/helpers.js'
-import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
+import { TASK_INSERT, TASK_INSERT_IGN, taskToRow, touchUpdatedAt, shiftDue, fetchAll, buildSqlOps, logChange, nextLamport } from './store/helpers.js'
+import { DB_PATH_KEY, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
-import { exportDeltas, clearSyncLog, getVectorClock, buildSyncRequest, computeSyncPackage, importSyncPackage } from './store/sync.js'
-import { isConnected as gdriveIsConnected, connect as gdriveConnect, disconnect as gdriveDisconnect, syncWithDrive, hasSyncFile as gdriveHasSyncFile, deleteSyncFile as gdriveDeleteSyncFile, readSyncFile as gdriveReadSyncFile, loadTokens as gdriveLoadTokens } from './store/googleDrive.js'
-import { getOrCreatePlan, getPlanByDate, getSlotsByPlan, getEffectiveSlots, getSlotsByDate, addTaskSlot, addBlockedSlot, moveSlot, resizeSlot, removeSlot, updateSlotTitle, updateSlotRecurrence, updatePlanHours, getPlannedTaskIds } from './store/dayPlanner.js'
+import { usePlannerOps } from './store/usePlannerOps.js'
+import { useSyncOps } from './store/useSyncOps.js'
+import { useDbOps } from './store/useDbOps.js'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -133,7 +131,7 @@ export function useTauriTaskStore() {
       const fm = {}
       for (const r of flowMetaRows) fm[r.name] = { description: r.description || '', color: r.color || '', deadline: r.deadline || null }
       setFlowMeta(fm)
-      getPlannedTaskIds(db).then(setPlannedTaskIds)
+      planner.refreshPlannedTaskIds()
 
       // Load persisted app settings from meta table
       const metaRows = await db.select(
@@ -176,6 +174,14 @@ export function useTauriTaskStore() {
     for (const r of flowMetaRows) fm[r.name] = { description: r.description || '', color: r.color || '', deadline: r.deadline || null }
     setFlowMeta(fm)
   }, [])
+
+  // ── Sub-hooks (must be before inline code that uses their state/setters) ──
+  const pushHistory = useCallback((currentTasks) => {
+    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
+  }, [])
+
+  const planner = usePlannerOps({ dbRef, deviceIdRef, pushHistory })
+  const syncOps = useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refreshRef })
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const addTask = useCallback((data, cur) => mutate(cur, async db => {
@@ -311,7 +317,7 @@ export function useTauriTaskStore() {
     })
     await refreshRef()
     // Remove deleted tasks' slots from React state immediately
-    setDayPlanSlots(s => s.filter(slot => !slot.taskId || !deletedIds.has(slot.taskId)))
+    planner.setDayPlanSlots(s => s.filter(slot => !slot.taskId || !deletedIds.has(slot.taskId)))
   }, [mutate, refreshRef])
 
   const bulkPriority = useCallback((ids, priority, cur) => mutate(cur, async db => {
@@ -657,75 +663,13 @@ export function useTauriTaskStore() {
     setHistory([])
   }, [refreshRef])
 
-  // ── DB maintenance ─────────────────────────────────────────────────────────
-
-  const _closeDb = useCallback(async () => {
-    if (dbRef.current) {
-      try { await dbRef.current.execute('PRAGMA wal_checkpoint(TRUNCATE)') } catch {}
-      try { await dbRef.current.close() } catch {}
-      _db = null
-      dbRef.current = null
-    }
-  }, [])
-
-  const _reinit = useCallback((newPath) => {
-    if (newPath !== undefined) {
-      if (newPath) localStorage.setItem(DB_PATH_KEY, newPath)
-      else localStorage.removeItem(DB_PATH_KEY)
-    }
-    setTasks([]); setLists([]); setTags([]); setFlows([]); setFlowMeta({}); setPersonas([]); setHistory([])
-    setDbKey(k => k + 1)
-  }, [])
-
-  const revealDb = useCallback(async () => {
-    if (!dbPath) return
-    try { await revealItemInDir(dbPath) } catch (e) { console.error(e) }
-  }, [dbPath])
-
-  const openNewDb = useCallback(async () => {
-    const selected = await openFileDialog({
-      filters: [{ name: 'SQLite Database', extensions: ['db'] }],
-      multiple: false,
-    })
-    if (!selected) return false
-    await _closeDb()
-    _reinit(typeof selected === 'string' ? selected : selected[0])
-    return true
-  }, [_closeDb, _reinit])
-
-  const createNewDb = useCallback(async () => {
-    const selected = await saveFileDialog({
-      filters: [{ name: 'SQLite Database', extensions: ['db'] }],
-      defaultPath: 'tasks.db',
-    })
-    if (!selected) return false
-    await _closeDb()
-    _reinit(selected)
-    return true
-  }, [_closeDb, _reinit])
-
-  const moveCurrentDb = useCallback(async () => {
-    const dir = await openFileDialog({ directory: true, multiple: false })
-    if (!dir) return
-    const targetDir = typeof dir === 'string' ? dir : dir[0]
-    const currentPath = localStorage.getItem(DB_PATH_KEY)
-      || await join(await appDataDir(), 'tasks.db').catch(() => 'tasks.db')
-    const targetPath = await join(targetDir, 'tasks.db')
-
-    await _closeDb()  // flush WAL into main file before copying
-
-    try {
-      await copyFile(currentPath, targetPath)
-      // Remove old files after successful copy
-      try { await remove(currentPath) } catch {}
-      try { if (await exists(currentPath + '-wal')) await remove(currentPath + '-wal') } catch {}
-      try { if (await exists(currentPath + '-shm')) await remove(currentPath + '-shm') } catch {}
-      _reinit(targetPath)
-    } catch (e) {
-      console.error('Failed to move DB:', e)
-      _reinit()  // reopen at current path
-    }
-  }, [_closeDb, _reinit])
+  // ── DB maintenance + backup (delegated to useDbOps) ────────────────────────
+  const { revealDb, openNewDb, createNewDb, moveCurrentDb, createBackup, listBackups, restoreBackup } = useDbOps({
+    dbRef, dbPath,
+    resetDbSingleton: () => { _db = null },
+    resetAllState: () => { setTasks([]); setLists([]); setTags([]); setFlows([]); setFlowMeta({}); setPersonas([]); setHistory([]) },
+    setDbKey,
+  })
 
   // ── Undo ───────────────────────────────────────────────────────────────────
   const undo = useCallback((onDone) => {
@@ -770,392 +714,12 @@ export function useTauriTaskStore() {
         }
         setTasks(prev)
         // Remove planner slots for deleted tasks from React state
-        setDayPlanSlots(s => s.filter(slot => !slot.taskId || prevIds.has(slot.taskId)))
+        planner.setDayPlanSlots(s => s.filter(slot => !slot.taskId || prevIds.has(slot.taskId)))
         if (onDone) onDone()
       })()
       return h.slice(0, -1)
     })
   }, [])
-
-  // ── Backup management ────────────────────────────────────────────────────
-  const createBackup = useCallback(async () => {
-    if (!dbPath) return false
-    try {
-      if (dbRef.current) await dbRef.current.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-      const [vRow] = await dbRef.current.select("SELECT value FROM meta WHERE key='schema_version'")
-      const version = parseInt(vRow?.value || '1')
-      await backupBeforeMigration(dbPath, version)
-      return true
-    } catch (e) { console.error('Manual backup failed:', e); return false }
-  }, [dbPath])
-
-  const listBackups = useCallback(async () => {
-    if (!dbPath) return []
-    try {
-      const dir = dbPath.replace(/[/\\][^/\\]*$/, '')
-      const entries = await readDir(dir)
-      return entries
-        .filter(e => e.name && e.name.startsWith('tasks.backup-v') && e.name.endsWith('.db'))
-        .map(e => {
-          // Parse: tasks.backup-v{N}-{YYYY-MM-DD}.db
-          const m = e.name.match(/^tasks\.backup-v(\d+)-(\d{4}-\d{2}-\d{2})\.db$/)
-          return {
-            name: e.name,
-            schemaVersion: m ? parseInt(m[1]) : null,
-            date: m ? m[2] : null,
-            path: null, // will be resolved below
-          }
-        })
-        .filter(b => b.schemaVersion !== null)
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .map(b => ({ ...b, path: dir + (dir.includes('/') ? '/' : '\\') + b.name }))
-    } catch { return [] }
-  }, [dbPath])
-
-  const restoreBackup = useCallback(async (backupPath) => {
-    if (!dbPath || !backupPath) return
-    await _closeDb()
-    try {
-      await copyFile(backupPath, dbPath)
-      // Remove WAL/SHM files to avoid conflicts
-      try { if (await exists(dbPath + '-wal')) await remove(dbPath + '-wal') } catch {}
-      try { if (await exists(dbPath + '-shm')) await remove(dbPath + '-shm') } catch {}
-    } catch (e) {
-      console.error('Failed to restore backup:', e)
-    }
-    _reinit()
-  }, [dbPath, _closeDb, _reinit])
-
-  // ── Sync: export/import deltas to/from file ────────────────────────────────
-
-  const getSyncLog = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return []
-    const rows = await db.select('SELECT * FROM sync_log ORDER BY lamport_ts DESC')
-    return rows.map(r => ({
-      id: r.id, entity: r.entity, entityId: r.entity_id,
-      action: r.action, lamportTs: r.lamport_ts,
-      deviceId: r.device_id, data: r.data ? JSON.parse(r.data) : null,
-    }))
-  }, [])
-
-  const getSyncStats = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return null
-    const [countRow] = await db.select('SELECT COUNT(*) as count FROM sync_log')
-    const [lastRow] = await db.select("SELECT value FROM meta WHERE key='last_sync_lamport'")
-    const vc = await getVectorClock(db)
-    const did = deviceIdRef.current
-    const pendingCount = lastRow?.value
-      ? (await db.select('SELECT COUNT(*) as count FROM sync_log WHERE lamport_ts > ?', [parseInt(lastRow.value)]))[0].count
-      : countRow.count
-    const [lastSyncRow] = await db.select("SELECT value FROM meta WHERE key='last_sync'")
-    return {
-      totalEntries: countRow.count,
-      pendingCount,
-      lastSyncTs: lastRow?.value ? parseInt(lastRow.value) : null,
-      lastSync: lastSyncRow?.value || null,
-      vectorClock: vc,
-      deviceId: did,
-    }
-  }, [])
-
-  const clearSyncData = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return
-    await db.execute('DELETE FROM sync_log')
-    await db.execute("DELETE FROM meta WHERE key='last_sync_lamport'")
-  }, [])
-
-  const exportSync = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return null
-
-    // Read last sync timestamp
-    const [lastRow] = await db.select("SELECT value FROM meta WHERE key='last_sync_lamport'")
-    const sinceTs = parseInt(lastRow?.value || '0')
-
-    const pkg = await exportDeltas(db, sinceTs)
-    if (pkg.deltas.length === 0) return { count: 0 }
-
-    const json = JSON.stringify(pkg, null, 2)
-
-    // Save via File System Access API
-    if (typeof window.showSaveFilePicker === 'function') {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: `sync-${pkg.deviceId || 'export'}.json`,
-          types: [{ description: 'Sync Package', accept: { 'application/json': ['.json'] } }],
-        })
-        const writable = await handle.createWritable()
-        await writable.write(json)
-        await writable.close()
-
-        // Remember last exported lamport_ts
-        const maxTs = Math.max(...pkg.deltas.map(d => d.lamportTs))
-        await db.execute("INSERT OR REPLACE INTO meta VALUES ('last_sync_lamport', ?)", [String(maxTs)])
-
-        return { count: pkg.deltas.length }
-      } catch (e) {
-        if (e.name === 'AbortError') return null // user cancelled
-        throw e
-      }
-    }
-
-    // Fallback: anchor download
-    const blob = new Blob([json], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `sync-${pkg.deviceId || 'export'}.json`
-    a.click()
-    URL.revokeObjectURL(url)
-
-    const maxTs = Math.max(...pkg.deltas.map(d => d.lamportTs))
-    await db.execute("INSERT OR REPLACE INTO meta VALUES ('last_sync_lamport', ?)", [String(maxTs)])
-
-    return { count: pkg.deltas.length }
-  }, [])
-
-  // Phase 1: copy sync request (our VC) to clipboard
-  const exportSyncRequest = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return null
-    const req = await buildSyncRequest(db)
-    await navigator.clipboard.writeText(JSON.stringify(req))
-    return req
-  }, [])
-
-  // Phase 2: responder received a sync_request → compute package for requester
-  const handleSyncRequest = useCallback(async (req) => {
-    const db = dbRef.current
-    if (!db || !req || req.type !== 'sync_request') return null
-    const pkg = await computeSyncPackage(db, req.vectorClock || {})
-    await navigator.clipboard.writeText(JSON.stringify(pkg))
-    return { count: pkg.tasks.length, notesCount: pkg.notes.length }
-  }, [])
-
-  // Phase 3-4: apply a sync_package and auto-copy response
-  const importSyncClipboard = useCallback(async (pkg) => {
-    const db = dbRef.current
-    if (!db || !pkg || pkg.type !== 'sync_package') return null
-
-    const { stats, response } = await importSyncPackage(db, pkg)
-
-    // Auto-copy response to clipboard (what sender needs from us)
-    if (response.tasks.length > 0 || response.notes.length > 0) {
-      await navigator.clipboard.writeText(JSON.stringify(response))
-    }
-
-    await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ['last_sync', new Date().toISOString()])
-    setTasks(await fetchAll(db))
-    await refreshRef()
-
-    return { ...stats, responseCount: response.tasks.length }
-  }, [refreshRef])
-
-  // ── Google Drive sync ───────────────────────────────────────────────────────
-
-  const gdriveCheckConnection = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return false
-    return gdriveIsConnected(db)
-  }, [])
-
-  const gdriveConnectAccount = useCallback(async (clientId, clientSecret) => {
-    const db = dbRef.current
-    if (!db) return false
-    return gdriveConnect(db, clientId, clientSecret)
-  }, [])
-
-  const gdriveDisconnectAccount = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return
-    await gdriveDisconnect(db)
-  }, [])
-
-  const gdriveSyncNow = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return null
-    const result = await syncWithDrive(db, computeSyncPackage, importSyncPackage)
-    const isoNow = new Date().toISOString()
-    await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ['last_sync', isoNow])
-    setMetaSettings(prev => ({ ...prev, last_sync: isoNow }))
-    setTasks(await fetchAll(db))
-    await refreshRef()
-    return result
-  }, [refreshRef])
-
-  const gdriveGetConfig = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return null
-    const tokens = await gdriveLoadTokens(db)
-    return { clientId: tokens.client_id, hasToken: !!tokens.access_token }
-  }, [])
-
-  const gdriveCheckSyncFile = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return false
-    return gdriveHasSyncFile(db)
-  }, [])
-
-  const gdrivePurgeSyncFile = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return false
-    return gdriveDeleteSyncFile(db)
-  }, [])
-
-  const gdriveReadSyncFileCb = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return null
-    return gdriveReadSyncFile(db)
-  }, [])
-
-  const importSync = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return null
-
-    // Open file picker
-    const selected = await openFileDialog({
-      filters: [{ name: 'Sync Package', extensions: ['json'] }],
-      multiple: false,
-    })
-    if (!selected) return null
-
-    const filePath = typeof selected === 'string' ? selected : selected[0]
-
-    // Read file via fetch (works for Tauri asset protocol paths)
-    let pkg
-    try {
-      const { readTextFile } = await import('@tauri-apps/plugin-fs')
-      const text = await readTextFile(filePath)
-      pkg = JSON.parse(text)
-    } catch (e) {
-      console.error('Failed to read sync file:', e)
-      return null
-    }
-
-    const { stats: result } = await importSyncPackage(db, pkg)
-
-    // Refresh state
-    setTasks(await fetchAll(db))
-    await refreshRef()
-
-    return result
-  }, [refreshRef])
-
-  // ── Day Planner ─────────────────────────────────────────────────────────────
-
-  const [dayPlanSlots, setDayPlanSlots] = useState([])
-  const [currentPlan,  setCurrentPlan]  = useState(null)
-  const [plannedTaskIds, setPlannedTaskIds] = useState(new Set())
-
-  const refreshPlannedTaskIds = useCallback(async () => {
-    const db = dbRef.current
-    if (!db) return
-    setPlannedTaskIds(await getPlannedTaskIds(db))
-  }, [])
-
-  const plannerLoadDay = useCallback(async (date, defaults) => {
-    const db = dbRef.current
-    if (!db) return
-    const did = deviceIdRef.current
-    const plan = await getOrCreatePlan(db, date, did, defaults)
-    // Sync plan hours with current settings if they differ
-    const wantStart = defaults?.dayStartHour ?? 9
-    const wantEnd = defaults?.dayEndHour ?? 17
-    if (plan.dayStartHour !== wantStart || plan.dayEndHour !== wantEnd) {
-      await updatePlanHours(db, plan.id, wantStart, wantEnd, did)
-      plan.dayStartHour = wantStart
-      plan.dayEndHour = wantEnd
-    }
-    // Get own slots + recurring blocked slots from other days (virtual, not copied)
-    const slots = await getEffectiveSlots(db, date, plan.id)
-    // Always create a new object to ensure React detects state change
-    setCurrentPlan({ ...plan })
-    setDayPlanSlots(slots)
-    return plan
-  }, [])
-
-  const plannerRefreshSlots = useCallback(async () => {
-    const db = dbRef.current
-    if (!db || !currentPlan) return
-    const slots = await getEffectiveSlots(db, currentPlan.date, currentPlan.id)
-    setDayPlanSlots(slots)
-  }, [currentPlan])
-
-  const plannerAddTaskSlot = useCallback(async (taskId, startTime, endTime, currentTasks) => {
-    const db = dbRef.current
-    if (!db || !currentPlan) return null
-    const did = deviceIdRef.current
-    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
-    const slot = await addTaskSlot(db, currentPlan.id, taskId, startTime, endTime, did)
-    setDayPlanSlots(prev => [...prev, slot].sort((a, b) => a.startTime.localeCompare(b.startTime)))
-    refreshPlannedTaskIds()
-    return slot
-  }, [currentPlan, refreshPlannedTaskIds])
-
-  const plannerAddBlockedSlot = useCallback(async (title, startTime, endTime) => {
-    const db = dbRef.current
-    if (!db || !currentPlan) return null
-    const did = deviceIdRef.current
-    const slot = await addBlockedSlot(db, currentPlan.id, title, startTime, endTime, did)
-    setDayPlanSlots(prev => [...prev, slot].sort((a, b) => a.startTime.localeCompare(b.startTime)))
-    return slot
-  }, [currentPlan])
-
-  const plannerMoveSlot = useCallback(async (slotId, startTime, endTime, currentTasks) => {
-    const db = dbRef.current
-    if (!db) return
-    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
-    const did = deviceIdRef.current
-    await moveSlot(db, slotId, startTime, endTime, did)
-    setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, startTime, endTime } : s)
-      .sort((a, b) => a.startTime.localeCompare(b.startTime)))
-  }, [])
-
-  const plannerResizeSlot = useCallback(async (slotId, endTime, currentTasks) => {
-    const db = dbRef.current
-    if (!db) return
-    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
-    const did = deviceIdRef.current
-    await resizeSlot(db, slotId, endTime, did)
-    setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, endTime } : s))
-  }, [])
-
-  const plannerRemoveSlot = useCallback(async (slotId, currentTasks) => {
-    const db = dbRef.current
-    if (!db) return
-    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
-    const did = deviceIdRef.current
-    await removeSlot(db, slotId, did)
-    setDayPlanSlots(prev => prev.filter(s => s.id !== slotId))
-    refreshPlannedTaskIds()
-  }, [refreshPlannedTaskIds])
-
-  const plannerUpdateSlotTitle = useCallback(async (slotId, title) => {
-    const db = dbRef.current
-    if (!db) return
-    const did = deviceIdRef.current
-    await updateSlotTitle(db, slotId, title, did)
-    setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, title } : s))
-  }, [])
-
-  const plannerUpdateSlotRecurrence = useCallback(async (slotId, recurrence) => {
-    const db = dbRef.current
-    if (!db) return
-    const did = deviceIdRef.current
-    await updateSlotRecurrence(db, slotId, recurrence, did)
-    setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, recurrence } : s))
-  }, [])
-
-  const plannerUpdateHours = useCallback(async (dayStartHour, dayEndHour) => {
-    const db = dbRef.current
-    if (!db || !currentPlan) return
-    const did = deviceIdRef.current
-    await updatePlanHours(db, currentPlan.id, dayStartHour, dayEndHour, did)
-    setCurrentPlan(prev => ({ ...prev, dayStartHour, dayEndHour }))
-  }, [currentPlan])
 
   return {
     tasks, lists, tags, flows, flowMeta, personas,
@@ -1166,14 +730,13 @@ export function useTauriTaskStore() {
     metaSettings, saveMeta,
     dbPath, revealDb, openNewDb, createNewDb, moveCurrentDb,
     createBackup, listBackups, restoreBackup,
-    exportSync, importSync, exportSyncRequest, handleSyncRequest, importSyncClipboard, getSyncLog, getSyncStats, clearSyncData,
-    gdriveCheckConnection, gdriveConnectAccount, gdriveDisconnectAccount, gdriveSyncNow, gdriveGetConfig, gdriveCheckSyncFile, gdrivePurgeSyncFile, gdriveReadSyncFile: gdriveReadSyncFileCb,
+    ...syncOps,
     openUrl: createSafeOpenUrl(openUrl),
     // Day Planner
-    dayPlanSlots, currentPlan, plannedTaskIds,
-    plannerLoadDay, plannerRefreshSlots,
-    plannerAddTaskSlot, plannerAddBlockedSlot,
-    plannerMoveSlot, plannerResizeSlot, plannerRemoveSlot,
-    plannerUpdateSlotTitle, plannerUpdateSlotRecurrence, plannerUpdateHours,
+    dayPlanSlots: planner.dayPlanSlots, currentPlan: planner.currentPlan, plannedTaskIds: planner.plannedTaskIds,
+    plannerLoadDay: planner.plannerLoadDay, plannerRefreshSlots: planner.plannerRefreshSlots,
+    plannerAddTaskSlot: planner.plannerAddTaskSlot, plannerAddBlockedSlot: planner.plannerAddBlockedSlot,
+    plannerMoveSlot: planner.plannerMoveSlot, plannerResizeSlot: planner.plannerResizeSlot, plannerRemoveSlot: planner.plannerRemoveSlot,
+    plannerUpdateSlotTitle: planner.plannerUpdateSlotTitle, plannerUpdateSlotRecurrence: planner.plannerUpdateSlotRecurrence, plannerUpdateHours: planner.plannerUpdateHours,
   }
 }
