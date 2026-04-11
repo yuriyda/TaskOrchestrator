@@ -12,6 +12,7 @@ import fs from 'fs'
 import path from 'path'
 import { safeIsoDate } from './core/date.js'
 import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow } from './store/helpers.js'
+import { VERSIONED_MIGRATIONS, LATEST_SCHEMA_VERSION } from './store/migrations.js'
 
 // Read source files for schema consistency checks
 const HELPERS_SRC = fs.readFileSync(path.resolve(__dirname, 'store/helpers.ts'), 'utf8')
@@ -151,5 +152,30 @@ describe('Schema consistency', () => {
     const mapped = extractRowToTaskColumns()
     const missing = TASK_COLUMNS.filter(col => !mapped.includes(col))
     expect(missing).toEqual([])
+  })
+})
+
+describe('Migration loop coverage', () => {
+  it('VERSIONED_MIGRATIONS has entries for every version from 2 to LATEST_SCHEMA_VERSION', () => {
+    for (let v = 2; v <= LATEST_SCHEMA_VERSION; v++) {
+      expect(VERSIONED_MIGRATIONS[v], `Missing migration for v${v}`).toBeDefined()
+      expect(Array.isArray(VERSIONED_MIGRATIONS[v]), `v${v} should be an array`).toBe(true)
+      expect(VERSIONED_MIGRATIONS[v].length, `v${v} should have at least one statement`).toBeGreaterThan(0)
+    }
+  })
+
+  it('VERSIONED_MIGRATIONS has no entries beyond LATEST_SCHEMA_VERSION', () => {
+    const keys = Object.keys(VERSIONED_MIGRATIONS).map(Number)
+    const outOfRange = keys.filter(k => k > LATEST_SCHEMA_VERSION || k < 2)
+    expect(outOfRange).toEqual([])
+  })
+
+  it('openDb migration loop in source matches VERSIONED_MIGRATIONS pattern', () => {
+    // Verify the loop-based approach is present (not the old if-block pattern)
+    expect(STORE_SRC).toContain('for (let v = 2; v <= LATEST_SCHEMA_VERSION; v++)')
+    expect(STORE_SRC).toContain('VERSIONED_MIGRATIONS[v]')
+    // Old pattern should NOT be present
+    expect(STORE_SRC).not.toContain('MIGRATIONS_V2')
+    expect(STORE_SRC).not.toContain('MIGRATIONS_V3')
   })
 })

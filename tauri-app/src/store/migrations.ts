@@ -149,3 +149,17 @@ export const MIGRATIONS_V10: readonly string[] = [
 ]
 
 export const LATEST_SCHEMA_VERSION: number = 10
+
+/** Ordered migration map: version → SQL statements.
+ *  Used by openDb() to run migrations in a loop instead of repeating the same pattern. */
+export const VERSIONED_MIGRATIONS: Record<number, readonly string[]> = {
+  2:  MIGRATIONS_V2,
+  3:  MIGRATIONS_V3,
+  4:  MIGRATIONS_V4,
+  5:  MIGRATIONS_V5,
+  6:  MIGRATIONS_V6,
+  7:  MIGRATIONS_V7,
+  8:  MIGRATIONS_V8,
+  9:  MIGRATIONS_V9,
+  10: MIGRATIONS_V10,
+}

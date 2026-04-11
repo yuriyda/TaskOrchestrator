@@ -13,7 +13,7 @@ import { ulid } from './ulid.js'
 import { safeIsoDate, localDateStr } from './core/date.js'
 import { VALID_STATUSES, VALID_PRIORITIES } from './core/constants.js'
 import { handleTaskDone, isTaskBlocked, computeNextCycleStatus } from './core/taskActions.js'
-import { MIGRATIONS_V1, MIGRATIONS_V2, MIGRATIONS_V3, MIGRATIONS_V4, MIGRATIONS_V5, MIGRATIONS_V6, MIGRATIONS_V7, MIGRATIONS_V8, MIGRATIONS_V9, MIGRATIONS_V10, LATEST_SCHEMA_VERSION } from './store/migrations.js'
+import { MIGRATIONS_V1, VERSIONED_MIGRATIONS, LATEST_SCHEMA_VERSION } from './store/migrations.js'
 import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, touchUpdatedAt, shiftDue, fetchAll, buildSqlOps, logChange, nextLamport } from './store/helpers.js'
 import { DB_PATH_KEY, MAX_BACKUPS, resolveDbPath, backupBeforeMigration } from './store/backup.js'
 import { createSafeOpenUrl } from './store/storeApi.js'
@@ -22,6 +22,8 @@ import { isConnected as gdriveIsConnected, connect as gdriveConnect, disconnect 
 import { getOrCreatePlan, getPlanByDate, getSlotsByPlan, getEffectiveSlots, getSlotsByDate, addTaskSlot, addBlockedSlot, moveSlot, resizeSlot, removeSlot, updateSlotTitle, updateSlotRecurrence, updatePlanHours, getPlannedTaskIds } from './store/dayPlanner.js'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
+
+const HISTORY_LIMIT = 5
 
 let _db = null
 
@@ -47,74 +49,33 @@ async function openDb() {
     await backupBeforeMigration(await resolveDbPath(), version)
   }
 
-  if (version < 2) {
-    for (const sql of MIGRATIONS_V2) {
-      try { await _db.execute(sql) } catch (_) { /* column already exists */ }
-    }
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','2')")
+  // Post-migration hooks for versions that need extra data backfill
+  const postMigrate: Record<number, () => Promise<void>> = {
+    6: async () => {
+      try { await _db.execute("UPDATE tasks SET updated_at = created_at WHERE updated_at IS NULL") } catch {}
+      const [devRow] = await _db.select("SELECT value FROM meta WHERE key='device_id'")
+      if (!devRow) await _db.execute("INSERT OR REPLACE INTO meta VALUES ('device_id', ?)", [ulid()])
+    },
+    7: async () => {
+      const [devRow] = await _db.select("SELECT value FROM meta WHERE key='device_id'")
+      if (devRow) await _db.execute('INSERT OR IGNORE INTO vector_clock (device_id, counter) VALUES (?, 0)', [devRow.value])
+      try { await _db.execute("UPDATE tasks SET lamport_ts = rowid WHERE lamport_ts = 0") } catch {}
+    },
   }
-  if (version < 3) {
-    for (const sql of MIGRATIONS_V3) {
-      try { await _db.execute(sql) } catch (_) { /* column already exists */ }
+
+  for (let v = 2; v <= LATEST_SCHEMA_VERSION; v++) {
+    if (version >= v) continue
+    const stmts = VERSIONED_MIGRATIONS[v]
+    if (!stmts) continue
+    for (const sql of stmts) {
+      try { await _db.execute(sql) } catch (err: any) {
+        // Expected: ALTER TABLE ADD COLUMN on already-migrated DB, CREATE IF NOT EXISTS, etc.
+        if (!err?.message?.includes('already exists') && !err?.message?.includes('duplicate'))
+          console.warn(`Migration v${v} warning:`, err?.message || err)
+      }
     }
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','3')")
-  }
-  if (version < 4) {
-    for (const sql of MIGRATIONS_V4) {
-      try { await _db.execute(sql) } catch (_) { /* table already exists */ }
-    }
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','4')")
-  }
-  if (version < 5) {
-    for (const sql of MIGRATIONS_V5) {
-      try { await _db.execute(sql) } catch (_) { /* column already exists */ }
-    }
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','5')")
-  }
-  if (version < 6) {
-    for (const sql of MIGRATIONS_V6) {
-      try { await _db.execute(sql) } catch (_) { /* column/table already exists */ }
-    }
-    // Backfill updated_at for existing tasks
-    try { await _db.execute("UPDATE tasks SET updated_at = created_at WHERE updated_at IS NULL") } catch (_) {}
-    // Generate device_id if not yet stored
-    const [devRow] = await _db.select("SELECT value FROM meta WHERE key='device_id'")
-    if (!devRow) {
-      const genId = ulid
-      await _db.execute("INSERT OR REPLACE INTO meta VALUES ('device_id', ?)", [genId()])
-    }
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','6')")
-  }
-  if (version < 7) {
-    for (const sql of MIGRATIONS_V7) {
-      try { await _db.execute(sql) } catch (_) { /* column/table already exists */ }
-    }
-    // Initialize vector_clock for this device
-    const [devRow] = await _db.select("SELECT value FROM meta WHERE key='device_id'")
-    if (devRow) {
-      await _db.execute('INSERT OR IGNORE INTO vector_clock (device_id, counter) VALUES (?, 0)', [devRow.value])
-    }
-    // Backfill lamport_ts from rowid order for existing tasks
-    try { await _db.execute("UPDATE tasks SET lamport_ts = rowid WHERE lamport_ts = 0") } catch (_) {}
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','7')")
-  }
-  if (version < 8) {
-    for (const sql of MIGRATIONS_V8) {
-      try { await _db.execute(sql) } catch (_) { /* table/index already exists */ }
-    }
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','8')")
-  }
-  if (version < 9) {
-    for (const sql of MIGRATIONS_V9) {
-      try { await _db.execute(sql) } catch (_) { /* column already exists */ }
-    }
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','9')")
-  }
-  if (version < 10) {
-    for (const sql of MIGRATIONS_V10) {
-      try { await _db.execute(sql) } catch (_) { /* safe to ignore */ }
-    }
-    await _db.execute("INSERT OR REPLACE INTO meta VALUES ('schema_version','10')")
+    if (postMigrate[v]) await postMigrate[v]()
+    await _db.execute(`INSERT OR REPLACE INTO meta VALUES ('schema_version','${v}')`)
   }
 
   return _db
@@ -191,7 +152,7 @@ export function useTauriTaskStore() {
   const mutate = useCallback(async (currentTasks, fn) => {
     const db = dbRef.current
     if (!db) return
-    setHistory(h => [...h.slice(-5), currentTasks])
+    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
     const result = await fn(db)
     setTasks(await fetchAll(db))
     return result
@@ -777,30 +738,31 @@ export function useTauriTaskStore() {
         // Build diff: avoid DELETE FROM tasks which triggers FK cascade
         // and destroys day_plan_slots.task_id references
         const prevIds = new Set(prev.map(t => t.id))
-        const currentRows = await db.select('SELECT id FROM tasks WHERE deleted_at IS NULL')
+        // Include ALL tasks (even soft-deleted) so undo can restore them via UPDATE
+        const currentRows = await db.select('SELECT id FROM tasks')
         const currentIds = new Set(currentRows.map(r => r.id))
 
-        // 1. Delete tasks added after snapshot + their planner slots
+        // 1. Hard-delete tasks added after snapshot + their planner slots
         for (const row of currentRows) {
           if (!prevIds.has(row.id)) {
             await db.execute("DELETE FROM day_plan_slots WHERE task_id = ?", [row.id])
             await db.execute('DELETE FROM tasks WHERE id = ?', [row.id])
           }
         }
-        // 2. Upsert snapshot tasks (UPDATE existing, INSERT missing)
+        // 2. Upsert snapshot tasks: UPDATE existing (including soft-deleted), INSERT truly missing
+        const sets = 'title=?, status=?, priority=?, list_name=?, due=?, recurrence=?, flow_id=?, depends_on=?, tags=?, personas=?, url=?, date_start=?, estimate=?, postponed=?, completed_at=?, updated_at=?, deleted_at=?, lamport_ts=?, device_id=?'
         for (const task of prev) {
+          const vals = [
+            task.title, task.status || 'inbox', task.priority || 4,
+            task.list || null, task.due || null,
+            task.recurrence || null, task.flowId || null, task.dependsOn?.length ? JSON.stringify(task.dependsOn) : null,
+            JSON.stringify(task.tags || []), JSON.stringify(task.personas || []),
+            task.url || null, task.dateStart || null, task.estimate || null, task.postponed || 0,
+            task.completedAt || null, task.updatedAt || null,
+            null /* deleted_at — always restore as non-deleted */, task.lamportTs || 0, task.deviceId || null,
+            task.id,
+          ]
           if (currentIds.has(task.id)) {
-            const sets = 'title=?, status=?, priority=?, list_name=?, due=?, recurrence=?, flow_id=?, depends_on=?, tags=?, personas=?, url=?, date_start=?, estimate=?, postponed=?, completed_at=?, updated_at=?, deleted_at=?, lamport_ts=?, device_id=?'
-            const vals = [
-              task.title, task.status || 'inbox', task.priority || 4,
-              task.list || null, task.due || null,
-              task.recurrence || null, task.flowId || null, task.dependsOn?.length ? JSON.stringify(task.dependsOn) : null,
-              JSON.stringify(task.tags || []), JSON.stringify(task.personas || []),
-              task.url || null, task.dateStart || null, task.estimate || null, task.postponed || 0,
-              task.completedAt || null, task.updatedAt || null,
-              task.deletedAt || null, task.lamportTs || 0, task.deviceId || null,
-              task.id,
-            ]
             await db.execute(`UPDATE tasks SET ${sets} WHERE id = ?`, vals)
           } else {
             await db.execute(TASK_INSERT, taskToRow(task))
@@ -1126,7 +1088,7 @@ export function useTauriTaskStore() {
     const db = dbRef.current
     if (!db || !currentPlan) return null
     const did = deviceIdRef.current
-    setHistory(h => [...h.slice(-5), currentTasks])
+    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
     const slot = await addTaskSlot(db, currentPlan.id, taskId, startTime, endTime, did)
     setDayPlanSlots(prev => [...prev, slot].sort((a, b) => a.startTime.localeCompare(b.startTime)))
     refreshPlannedTaskIds()
@@ -1145,7 +1107,7 @@ export function useTauriTaskStore() {
   const plannerMoveSlot = useCallback(async (slotId, startTime, endTime, currentTasks) => {
     const db = dbRef.current
     if (!db) return
-    setHistory(h => [...h.slice(-5), currentTasks])
+    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
     const did = deviceIdRef.current
     await moveSlot(db, slotId, startTime, endTime, did)
     setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, startTime, endTime } : s)
@@ -1155,7 +1117,7 @@ export function useTauriTaskStore() {
   const plannerResizeSlot = useCallback(async (slotId, endTime, currentTasks) => {
     const db = dbRef.current
     if (!db) return
-    setHistory(h => [...h.slice(-5), currentTasks])
+    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
     const did = deviceIdRef.current
     await resizeSlot(db, slotId, endTime, did)
     setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, endTime } : s))
@@ -1164,7 +1126,7 @@ export function useTauriTaskStore() {
   const plannerRemoveSlot = useCallback(async (slotId, currentTasks) => {
     const db = dbRef.current
     if (!db) return
-    setHistory(h => [...h.slice(-5), currentTasks])
+    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
     const did = deviceIdRef.current
     await removeSlot(db, slotId, did)
     setDayPlanSlots(prev => prev.filter(s => s.id !== slotId))

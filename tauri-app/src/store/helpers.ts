@@ -8,6 +8,12 @@ import { ulid } from '../ulid'
 import { VALID_STATUSES, VALID_PRIORITIES } from '../core/constants'
 import type { Task, TaskId, TaskStatus, TaskPriority, Note } from '../types'
 
+/** Safe JSON.parse with fallback — protects against corrupted DB values. */
+function safeJsonParse<T>(raw: string | null, fallback: T): T {
+  if (!raw) return fallback
+  try { return JSON.parse(raw) } catch { console.warn('JSON parse error for:', raw.slice(0, 50)); return fallback }
+}
+
 /** Parse depends_on from DB: always returns string[] or null.
  *  Handles legacy string values, JSON arrays, and malformed data. */
 function parseDependsOn(raw: string | null): string[] | null {
@@ -55,8 +61,8 @@ export function rowToTask(row: any, notesMap: Record<string, Note[]> = {}): Task
     recurrence:   row.recurrence,
     flowId:       row.flow_id,
     dependsOn:    parseDependsOn(row.depends_on),
-    tags:         JSON.parse(row.tags     || '[]'),
-    personas:     JSON.parse(row.personas || '[]'),
+    tags:         safeJsonParse(row.tags, []),
+    personas:     safeJsonParse(row.personas, []),
     createdAt:    row.created_at,
     subtasks:     [],
     url:          row.url          || null,
