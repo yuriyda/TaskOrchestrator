@@ -5,6 +5,7 @@
  *   checkbox confirm. Extracted from task-orchestrator.jsx.
  */
 import { localIsoDate } from "../core/date.js";
+import { PLANNER_DAY_END_DEFAULT, DEFAULT_TASK_ESTIMATE_MIN } from "../core/constants.js";
 import { timeToMinutes, minutesToTime } from "../store/dayPlanner.js";
 
 export function useTaskActions({
@@ -202,7 +203,7 @@ export function useTaskActions({
       const time = pendingSlotTimeRef.current;
       pendingSlotTimeRef.current = null;
       const startMin = timeToMinutes(time);
-      const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
+      const dayEnd = (settings.plannerDayEnd ?? PLANNER_DAY_END_DEFAULT) * 60;
       const slots = store.dayPlanSlots || [];
       let maxAvailable = dayEnd - startMin;
       for (const s of slots) {
@@ -213,7 +214,7 @@ export function useTaskActions({
           maxAvailable = sStart - startMin;
         }
       }
-      const duration = Math.min(60, maxAvailable);
+      const duration = Math.min(DEFAULT_TASK_ESTIMATE_MIN, maxAvailable);
       if (duration > 0) {
         const endTime = minutesToTime(startMin + duration);
         store.plannerAddTaskSlot(task.id, time, endTime, tasks);
@@ -224,11 +225,12 @@ export function useTaskActions({
   // ── Edit / save ──────────────────────────────────────────────────────────
   const handleEditFull = (taskId) => setEditTaskId(taskId);
 
-  const handleEditSave = (changes) => {
+  const handleEditSave = async (changes) => {
     if (!editTaskId) return;
     const normalized = { ...changes };
     if ("__title__" in normalized) { normalized.title = normalized.__title__; delete normalized.__title__; }
-    store.updateTask(editTaskId, normalized, tasks).then(showFlowToasts);
+    const result = await store.updateTask(editTaskId, normalized, tasks);
+    showFlowToasts(result);
     setEditTaskId(null);
   };
 

@@ -5,15 +5,16 @@
  */
 import { useEffect, useCallback, useRef } from "react";
 import { timeToMinutes, minutesToTime } from "../store/dayPlanner.js";
+import { PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, PLANNER_SLOT_STEP_DEFAULT, DEFAULT_TASK_ESTIMATE_MIN } from "../core/constants";
 import type { Task, TaskId } from "../types";
 import type { AppSettings } from "./useSettings";
 
 function parseEstimateMinutes(estimate: string | null | undefined): number {
-  if (!estimate) return 60;
+  if (!estimate) return DEFAULT_TASK_ESTIMATE_MIN;
   const est = estimate.toLowerCase();
   const hMatch = est.match(/([\d.]+)\s*h/);
   const mMatch = est.match(/([\d.]+)\s*m/);
-  let min = 60;
+  let min = DEFAULT_TASK_ESTIMATE_MIN;
   if (hMatch) min = Math.round(parseFloat(hMatch[1]) * 60);
   else if (mMatch) min = Math.round(parseFloat(mMatch[1]));
   return Math.max(15, min);
@@ -41,17 +42,17 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
   useEffect(() => {
     if (showPlanner && store.plannerLoadDay) {
       store.plannerLoadDay(plannerDate, {
-        dayStartHour: settings.plannerDayStart ?? 9,
-        dayEndHour: settings.plannerDayEnd ?? 17,
+        dayStartHour: settings.plannerDayStart ?? PLANNER_DAY_START_DEFAULT,
+        dayEndHour: settings.plannerDayEnd ?? PLANNER_DAY_END_DEFAULT,
       });
     }
   }, [showPlanner, plannerDate, store.plannerLoadDay, settings.plannerDayStart, settings.plannerDayEnd]);
 
   const handlePlannerDropTask = (taskIds: TaskId[], startTime: string, currentSlots: Slot[]) => {
     if (!store.plannerAddTaskSlot) return;
-    const dayStart = (settings.plannerDayStart ?? 9) * 60;
-    const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
-    const step = settings.plannerSlotStep ?? 30;
+    const dayStart = (settings.plannerDayStart ?? PLANNER_DAY_START_DEFAULT) * 60;
+    const dayEnd = (settings.plannerDayEnd ?? PLANNER_DAY_END_DEFAULT) * 60;
+    const step = settings.plannerSlotStep ?? PLANNER_SLOT_STEP_DEFAULT;
 
     const occupied = (currentSlots || [])
       .map(s => {
@@ -134,7 +135,7 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
   const handlePlannerBlockSlot = useCallback((time: string) => {
     if (!store.plannerAddBlockedSlot) return;
     const startMin = timeToMinutes(time);
-    const dayEnd = (settings.plannerDayEnd ?? 17) * 60;
+    const dayEnd = (settings.plannerDayEnd ?? PLANNER_DAY_END_DEFAULT) * 60;
     const slots: Slot[] = store.dayPlanSlots || [];
     let maxAvailable = dayEnd - startMin;
     for (const s of slots) {
@@ -145,7 +146,7 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
         maxAvailable = sStart - startMin;
       }
     }
-    const duration = Math.min(60, maxAvailable);
+    const duration = Math.min(DEFAULT_TASK_ESTIMATE_MIN, maxAvailable);
     if (duration <= 0) return;
     const endTime = minutesToTime(startMin + duration);
     store.plannerAddBlockedSlot(t("planner.blocked"), time, endTime);

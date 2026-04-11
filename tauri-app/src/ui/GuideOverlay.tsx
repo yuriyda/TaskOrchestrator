@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "./AppContext";
+import { Z } from "../core/constants";
 
 export const GUIDE_STEPS = [
   { target: "sidebar",      titleKey: "guide.step.sidebar.title",      descKey: "guide.step.sidebar.desc" },
@@ -83,7 +84,7 @@ export function GuideOverlay({ step, total, target, titleKey, descKey, onNext, o
   const isLast = step === total - 1;
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 10000 }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: Z.GUIDE }}>
       {/* SVG overlay with cutout mask */}
       <svg width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
         <defs>

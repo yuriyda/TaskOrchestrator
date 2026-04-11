@@ -44,3 +44,25 @@ export const CSV_FIELDS = [
 
 export const VALID_STATUSES: TaskStatus[] = ['inbox', 'active', 'done', 'cancelled'];
 export const VALID_PRIORITIES: TaskPriority[] = [1, 2, 3, 4];
+
+// ─── Timing defaults ──────────────────────────────────────────────────────
+export const TOAST_DURATION_MS = 3000;
+export const SYNC_COOLDOWN_MS = 5000;
+export const AUTO_SYNC_DELAY_MS = 3000;
+
+// ─── Day Planner defaults ─────────────────────────────────────────────────
+export const PLANNER_DAY_START_DEFAULT = 9;
+export const PLANNER_DAY_END_DEFAULT = 17;
+export const PLANNER_SLOT_STEP_DEFAULT = 30;
+export const DEFAULT_TASK_ESTIMATE_MIN = 60;
+
+// ─── Z-index layers (ordered low → high) ──────────────────────────────────
+export const Z = {
+  DIALOG: 50,          // modal dialogs (Settings, TaskEdit, RtmImport)
+  DATE_PICKER: 200,    // date picker dropdown
+  CONTEXT_MENU: 999,   // right-click context menu
+  PLANNER_EDITOR: 9998, // planner inline editor overlay
+  OVERLAY: 9999,       // drag selection, planner context menu
+  GUIDE: 10000,        // onboarding guide
+  DRAG_GHOST: 99999,   // drag ghost element (always on top)
+} as const;

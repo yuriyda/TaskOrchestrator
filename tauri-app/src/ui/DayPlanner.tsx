@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Clock, ChevronLeft, ChevronRight, Plus, Lock, Check, Play, Repeat, GripVertical, Trash2, Edit3, X } from "lucide-react";
 import { useApp } from "./AppContext.jsx";
-import { PRIORITY_COLORS } from "../core/constants.js";
+import { PRIORITY_COLORS, PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, Z } from "../core/constants.js";
 import { getWeekDates, timeToMinutes, minutesToTime, snapToGrid } from "../store/dayPlanner.js";
 import type { Task, TaskId } from "../types";
 
@@ -77,8 +77,8 @@ export function DayPlanner({
   const [draggingSlot, setDraggingSlot] = useState(null); // { slotId, startY, originalStartMinutes, duration }
 
   // Settings props override plan values for immediate reactivity
-  const dayStartHour = settingsDayStart ?? currentPlan?.dayStartHour ?? 9;
-  const dayEndHour = settingsDayEnd ?? currentPlan?.dayEndHour ?? 17;
+  const dayStartHour = settingsDayStart ?? currentPlan?.dayStartHour ?? PLANNER_DAY_START_DEFAULT;
+  const dayEndHour = settingsDayEnd ?? currentPlan?.dayEndHour ?? PLANNER_DAY_END_DEFAULT;
   const totalMinutes = (dayEndHour - dayStartHour) * 60;
   const totalHeight = (dayEndHour - dayStartHour) * HOUR_HEIGHT;
 
@@ -223,7 +223,7 @@ export function DayPlanner({
         const task = slot?.taskId ? tasks.find(t => t.id === slot.taskId) : null;
         ghost.textContent = task?.title || slot?.title || "—";
         Object.assign(ghost.style, {
-          position: "fixed", zIndex: "99999", pointerEvents: "none",
+          position: "fixed", zIndex: Z.DRAG_GHOST, pointerEvents: "none",
           width: "180px", padding: "8px 12px", borderRadius: "6px",
           fontSize: "12px", fontWeight: "500", fontFamily: "monospace",
           background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.5)",
@@ -596,8 +596,8 @@ export function DayPlanner({
       {/* Context menu */}
       {contextMenu && (
         <div
-          className={`fixed z-[9999] rounded-lg shadow-xl border py-1 min-w-[160px] ${TC.surface} ${TC.borderClass}`}
-          style={{ left: contextMenu.x, top: contextMenu.y }}
+          className={`fixed rounded-lg shadow-xl border py-1 min-w-[160px] ${TC.surface} ${TC.borderClass}`}
+          style={{ left: contextMenu.x, top: contextMenu.y, zIndex: Z.OVERLAY }}
           onClick={() => setContextMenu(null)}
         >
           {contextMenu.slot ? (
@@ -659,7 +659,8 @@ export function DayPlanner({
 
       {/* Inline editor for blocked slots (title + recurrence) */}
       {editingTitle && (
-        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30"
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30"
+             style={{ zIndex: Z.PLANNER_EDITOR }}
              onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
              onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; setEditingTitle(null); } }}>
           <div className={`rounded-lg p-4 shadow-xl ${TC.surface} border ${TC.borderClass}`} onClick={e => e.stopPropagation()}>

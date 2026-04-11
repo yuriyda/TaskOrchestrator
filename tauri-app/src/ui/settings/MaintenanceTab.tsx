@@ -27,16 +27,15 @@ export function MaintenanceTab({ dbPath, onRevealDb, onOpenDb, onCreateNewDb, on
 
   useEffect(() => {
     if (backups === null && onListBackups) {
-      onListBackups().then(setBackups);
+      (async () => { setBackups(await onListBackups()); })();
     }
   }, [backups, onListBackups]);
 
-  const copyPath = () => {
+  const copyPath = async () => {
     if (!dbPath) return;
-    navigator.clipboard.writeText(dbPath).then(() => {
-      setPathCopied(true);
-      setTimeout(() => setPathCopied(false), 1500);
-    });
+    await navigator.clipboard.writeText(dbPath);
+    setPathCopied(true);
+    setTimeout(() => setPathCopied(false), 1500);
   };
 
   return (

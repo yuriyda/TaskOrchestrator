@@ -11,7 +11,7 @@ import {
   Info, HardDrive, X, Zap, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { Combobox } from "./Combobox";
-import { FONTS, DATE_FORMATS } from "../core/constants";
+import { FONTS, DATE_FORMATS, PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, PLANNER_SLOT_STEP_DEFAULT } from "../core/constants";
 import { COLOR_THEMES } from "../core/themes";
 import { LOCALE_NAMES } from "../i18n/locales";
 import { themeOptions, AutoThemeIcon } from "./icons";
@@ -148,7 +148,7 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
           label={t("planner.dayStart")}
           description={locale === "ru" ? "Час начала сетки планера" : "Planner grid start hour"}>
           <select
-            value={settings.plannerDayStart ?? 9}
+            value={settings.plannerDayStart ?? PLANNER_DAY_START_DEFAULT}
             onChange={e => updateSetting("plannerDayStart", parseInt(e.target.value))}
             className={`px-2 py-1 rounded text-sm ${TC.input} ${TC.borderClass} border`}
           >
@@ -161,7 +161,7 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
           label={t("planner.dayEnd")}
           description={locale === "ru" ? "Час окончания сетки планера" : "Planner grid end hour"}>
           <select
-            value={settings.plannerDayEnd ?? 17}
+            value={settings.plannerDayEnd ?? PLANNER_DAY_END_DEFAULT}
             onChange={e => updateSetting("plannerDayEnd", parseInt(e.target.value))}
             className={`px-2 py-1 rounded text-sm ${TC.input} ${TC.borderClass} border`}
           >
@@ -174,7 +174,7 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
           label={t("planner.slotStep")}
           description={locale === "ru" ? "Минимальный шаг сетки планера" : "Planner grid snap step"}>
           <select
-            value={settings.plannerSlotStep ?? 30}
+            value={settings.plannerSlotStep ?? PLANNER_SLOT_STEP_DEFAULT}
             onChange={e => updateSetting("plannerSlotStep", parseInt(e.target.value))}
             className={`px-2 py-1 rounded text-sm ${TC.input} ${TC.borderClass} border`}
           >
@@ -328,11 +328,10 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
 
   // Load Google Drive config on mount (shared state for SyncTab + DangerTab)
   useEffect(() => {
-    onGdriveGetConfig?.().then(cfg => {
-      if (cfg) {
-        setGdriveConnected(cfg.hasToken);
-      }
-    });
+    (async () => {
+      const cfg = await onGdriveGetConfig?.();
+      if (cfg) setGdriveConnected(cfg.hasToken);
+    })();
   }, []);
 
   const renderContent = () => {

@@ -6,7 +6,7 @@
 import { useState } from "react";
 import { Download, FolderOpen } from "lucide-react";
 import { useApp } from "../AppContext";
-import { CSV_FIELDS } from "../../core/constants";
+import { CSV_FIELDS, TOAST_DURATION_MS } from "../../core/constants";
 import type { Task } from "../../types";
 
 interface ExportTabProps {
@@ -104,7 +104,7 @@ export function ExportTab({ tasks, filteredTasks, hasActiveFilter }: ExportTabPr
         await writable.close();
       }
       setObsExportMsg(`${t("settings.export.done")}: ${exportTasks.length}`);
-      setTimeout(() => setObsExportMsg(null), 3000);
+      setTimeout(() => setObsExportMsg(null), TOAST_DURATION_MS);
     } catch (e: any) {
       if (e.name === "AbortError") return;
       console.error("Obsidian files export error:", e);
@@ -144,7 +144,7 @@ export function ExportTab({ tasks, filteredTasks, hasActiveFilter }: ExportTabPr
       await writable.write(lines.join("\n"));
       await writable.close();
       setObsExportMsg(`${t("settings.export.done")}: ${exportTasks.length}`);
-      setTimeout(() => setObsExportMsg(null), 3000);
+      setTimeout(() => setObsExportMsg(null), TOAST_DURATION_MS);
     } catch (e: any) {
       if (e.name === "AbortError") return;
       console.error("Obsidian list export error:", e);

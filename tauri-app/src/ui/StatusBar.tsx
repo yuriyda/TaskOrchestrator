@@ -6,6 +6,7 @@
 import { useState, useEffect } from "react";
 import { HardDrive, RefreshCw, Clock } from "lucide-react";
 import { useApp } from "./AppContext";
+import { PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, TOAST_DURATION_MS } from "../core/constants";
 import { fmtDate, localIsoDate } from "../core/date";
 import type { Task } from "../types";
 
@@ -66,8 +67,8 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
     const blockedSlots = plannerSlots.filter(s => s.slotType === "blocked");
     const plannedMin = taskSlots.reduce((sum, s) => sum + timeToMinutes(s.endTime) - timeToMinutes(s.startTime), 0);
     const blockedMin = blockedSlots.reduce((sum, s) => sum + timeToMinutes(s.endTime) - timeToMinutes(s.startTime), 0);
-    const dayStart = (plannerDayStart ?? 8) * 60;
-    const dayEnd = (plannerDayEnd ?? 20) * 60;
+    const dayStart = (plannerDayStart ?? PLANNER_DAY_START_DEFAULT) * 60;
+    const dayEnd = (plannerDayEnd ?? PLANNER_DAY_END_DEFAULT) * 60;
     const totalAvail = (dayEnd - dayStart) - blockedMin;
     return { planned: (plannedMin / 60).toFixed(1), total: (totalAvail / 60).toFixed(1) };
   })() : null;
@@ -151,7 +152,7 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
               await onSyncNow();
               setSyncResult("ok");
               setSyncError(null);
-              setTimeout(() => setSyncResult(null), 3000);
+              setTimeout(() => setSyncResult(null), TOAST_DURATION_MS);
             } catch (err: any) {
               setSyncError(err?.message || String(err));
             } finally {

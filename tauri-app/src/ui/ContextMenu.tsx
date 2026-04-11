@@ -8,7 +8,7 @@
 import { useRef, useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { useApp } from "./AppContext";
-import { STATUS_ICONS, STATUSES } from "../core/constants";
+import { STATUS_ICONS, STATUSES, Z } from "../core/constants";
 
 import type { Task, TaskId, TaskStatus } from "../types";
 
@@ -75,6 +75,10 @@ export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onSnooze
 
   const [subOpen, setSubOpen] = useState(null);
   const subTimer = useRef(null);
+
+  // Clear pending submenu timer on unmount to prevent state update on unmounted component
+  useEffect(() => () => { clearTimeout(subTimer.current); }, []);
+
   const SubMenu = ({ id, label, children }) => {
     const itemRef = useRef(null);
     const open = subOpen === id;
@@ -100,7 +104,7 @@ export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onSnooze
     <div
       ref={ref}
       className={`${TC.surface} border ${TC.borderClass} rounded-lg shadow-2xl py-1 px-1`}
-      style={{ position: "fixed", left: pos.left, top: pos.top, zIndex: 999, minWidth: 200, maxWidth: 280, width: "fit-content", display: "inline-block" }}
+      style={{ position: "fixed", left: pos.left, top: pos.top, zIndex: Z.CONTEXT_MENU, minWidth: 200, maxWidth: 280, width: "fit-content", display: "inline-block" }}
       onContextMenu={(e) => e.preventDefault()}
     >
       {isMulti && (

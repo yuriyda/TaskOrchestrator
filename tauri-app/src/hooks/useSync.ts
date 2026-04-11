@@ -4,6 +4,7 @@
  *   manual/auto sync triggers with debounce.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
+import { SYNC_COOLDOWN_MS, AUTO_SYNC_DELAY_MS } from "../core/constants";
 import type { Task } from "../types";
 import type { AppSettings } from "./useSettings";
 
@@ -28,7 +29,10 @@ export function useSync(
   const syncCooldownRef = useRef(false);
 
   useEffect(() => {
-    store.gdriveCheckConnection?.().then((ok: boolean) => setGdriveConnected(!!ok));
+    (async () => {
+      const ok = await store.gdriveCheckConnection?.();
+      setGdriveConnected(!!ok);
+    })();
   }, [store, store.metaSettings]);
 
   const addGdriveLog = (msg: string) => {
@@ -65,7 +69,7 @@ export function useSync(
       syncInProgressRef.current = false;
       // Suppress auto-sync triggered by task state update after manual sync
       syncCooldownRef.current = true;
-      setTimeout(() => { syncCooldownRef.current = false; }, 5000);
+      setTimeout(() => { syncCooldownRef.current = false; }, SYNC_COOLDOWN_MS);
     }
   }, [handleSyncNow]);
 
@@ -81,7 +85,7 @@ export function useSync(
       try { await handleSyncNow(); } catch { /* error already logged in handleSyncNow */ }
       syncInProgressRef.current = false;
       setAutoSyncing(false);
-    }, 3000);
+    }, AUTO_SYNC_DELAY_MS);
   }, [handleSyncNow, settings.autoSync, gdriveConnected]);
 
   const prevTasksRef = useRef(tasks);

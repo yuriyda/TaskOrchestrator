@@ -5,7 +5,7 @@
  */
 import { useState, useReducer, useRef, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
-import { PRIORITY_COLORS } from "./core/constants.js";
+import { PRIORITY_COLORS, TOAST_DURATION_MS, Z } from "./core/constants.js";
 import { parseDateInput, fmtDate } from "./core/date.js";
 import { buildDemoTasks } from "./core/demo.js";
 import { useTaskStore } from "./store/memoryStore.js";
@@ -158,7 +158,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     const id = Date.now() + Math.random();
     setToasts(ts => [...ts, { id, msg }]);
     setLastAction(msg);
-    setTimeout(() => setToasts(ts => ts.filter(x => x.id !== id)), 3000);
+    setTimeout(() => setToasts(ts => ts.filter(x => x.id !== id)), TOAST_DURATION_MS);
   };
 
   // Show toasts for flow auto-activation / blocked-skip results
@@ -175,10 +175,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     cursor, setCursor, setSelected,
   });
 
-  const handleUpdate = (id, rawChanges) => {
+  const handleUpdate = async (id, rawChanges) => {
     const { __title__, ...rest } = rawChanges;
     const changes = __title__ !== undefined ? { ...rest, title: __title__ } : rawChanges;
-    store.updateTask(id, changes, tasks).then(showFlowToasts);
+    const result = await store.updateTask(id, changes, tasks);
+    showFlowToasts(result);
   };
 
   // ── Day Planner integration ────────────────────────────────────────────
@@ -677,7 +678,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               background: "rgba(14,165,233,.06)",
               borderRadius: 3,
               pointerEvents: "none",
-              zIndex: 9999,
+              zIndex: Z.OVERLAY,
             }} />
           );
         })()}

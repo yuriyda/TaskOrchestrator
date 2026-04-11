@@ -152,7 +152,7 @@ export function useKeyboard(params: UseKeyboardParams) {
           KeyZ: () => { if (store.canUndo) { clearTimeout(autoSyncTimerRef.current!); store.undo(() => addToast(t("toast.undone"))); } },
           KeyN: () => document.getElementById("quick-entry")?.focus(),
           KeyE: () => { setSearchExpanded(true); setTimeout(() => searchInputRef.current?.focus(), 50); },
-          KeyO: () => store.openNewDb?.().then((ok: boolean) => { if (ok) setShowDbSwitched(true); }),
+          KeyO: async () => { const ok = await store.openNewDb?.(); if (ok) setShowDbSwitched(true); },
           KeyD: () => setShowPlanner(v => !v),
         };
         if (e.code === "KeyA" && e.shiftKey) { e.preventDefault(); setSelected(new Set(displayFiltered.map(t => t.id))); return; }

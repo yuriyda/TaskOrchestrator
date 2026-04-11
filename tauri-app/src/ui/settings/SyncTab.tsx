@@ -66,17 +66,21 @@ export function SyncTab({
   const gdriveLogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    onGdriveGetConfig?.().then(cfg => {
+    (async () => {
+      const cfg = await onGdriveGetConfig?.();
       if (cfg) {
         setGdriveConnected(cfg.hasToken);
         if (cfg.clientId) setGdriveClientId(cfg.clientId);
       }
-    });
+    })();
   }, []);
 
   useEffect(() => {
-    onGetSyncStats?.().then(setSyncStats);
-    onGetSyncLog?.().then(setSyncLog);
+    (async () => {
+      const [stats, log] = await Promise.all([onGetSyncStats?.(), onGetSyncLog?.()]);
+      if (stats) setSyncStats(stats);
+      if (log) setSyncLog(log);
+    })();
   }, []);
 
   useEffect(() => {

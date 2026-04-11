@@ -6,6 +6,7 @@
 
 import { ulid } from '../ulid.js'
 import { logChange, nextLamport } from './helpers.js'
+import { PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, PLANNER_SLOT_STEP_DEFAULT, DEFAULT_TASK_ESTIMATE_MIN } from '../core/constants.js'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -84,8 +85,8 @@ export async function getOrCreatePlan(db: any, date: string, deviceId: string, d
   const plan: Plan = {
     id:           ulid(),
     date,
-    dayStartHour: defaults.dayStartHour ?? 9,
-    dayEndHour:   defaults.dayEndHour ?? 17,
+    dayStartHour: defaults.dayStartHour ?? PLANNER_DAY_START_DEFAULT,
+    dayEndHour:   defaults.dayEndHour ?? PLANNER_DAY_END_DEFAULT,
     createdAt:    now,
     updatedAt:    now,
     deviceId,
@@ -302,12 +303,12 @@ export function minutesToTime(minutes: number): string {
 }
 
 /** Snap minutes to nearest grid step. */
-export function snapToGrid(minutes: number, step: number = 30): number {
+export function snapToGrid(minutes: number, step: number = PLANNER_SLOT_STEP_DEFAULT): number {
   return Math.round(minutes / step) * step
 }
 
 /** Calculate default end time given start time and default duration (60 min). */
-export function defaultEndTime(startTime: string, durationMin: number = 60): string {
+export function defaultEndTime(startTime: string, durationMin: number = DEFAULT_TASK_ESTIMATE_MIN): string {
   const startMin = timeToMinutes(startTime)
   return minutesToTime(startMin + durationMin)
 }
