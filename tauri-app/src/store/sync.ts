@@ -170,8 +170,8 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
   if (remoteVC) {
     for (const [devId, counter] of Object.entries(remoteVC)) {
       await db.execute(
-        'INSERT INTO vector_clock (device_id, counter) VALUES (?, ?) ON CONFLICT(device_id) DO UPDATE SET counter = MAX(counter, ?)',
-        [devId, counter, counter]
+        'INSERT INTO vector_clock (device_id, counter) VALUES (?, ?) ON CONFLICT(device_id) DO UPDATE SET counter = MAX(counter, excluded.counter)',
+        [devId, counter]
       )
     }
   }

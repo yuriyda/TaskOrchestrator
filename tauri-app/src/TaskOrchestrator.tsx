@@ -5,12 +5,9 @@
  */
 import { useState, useReducer, useRef, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
-import { STATUSES, STATUS_ICONS, PRIORITY_COLORS, SORT_FIELDS, FONTS, DATE_FORMATS, CSV_FIELDS } from "./core/constants.js";
+import { PRIORITY_COLORS } from "./core/constants.js";
 import { parseDateInput, fmtDate } from "./core/date.js";
-import { OVERDUE_DATE_CLS, OVERDUE_STRIPE, OVERDUE_BG } from "./core/overdue.js";
-import { ruPlural, humanRecurrence } from "./core/recurrence.js";
-import { CHIP_STYLE, parseShorthand, getSuggestions, getTokenType, tryCommitToken, buildFromChips } from "./parse/quickEntry.js";
-import { MOCK_LISTS, MOCK_TAGS, MOCK_FLOWS, MOCK_PERSONAS, INITIAL_TASKS, buildDemoTasks } from "./core/demo.js";
+import { buildDemoTasks } from "./core/demo.js";
 import { useTaskStore } from "./store/memoryStore.js";
 export { useTaskStore };
 

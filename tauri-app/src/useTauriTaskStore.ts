@@ -250,7 +250,7 @@ export function useTauriTaskStore() {
       await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [task.flowId])
       await logChange(db, 'flows', task.flowId, 'insert', { name: task.flowId }, lts, did)
     }
-    refreshRef()
+    await refreshRef()
     return task
   }), [mutate, refreshRef])
 
@@ -323,6 +323,7 @@ export function useTauriTaskStore() {
 
   const bulkDelete = useCallback(async (ids, cur) => {
     const idArr = [...ids]
+    const deletedIds = new Set(idArr)
     const ph    = idArr.map(() => '?').join(',')
     await mutate(cur, async db => {
       const did = deviceIdRef.current
@@ -349,7 +350,6 @@ export function useTauriTaskStore() {
     })
     await refreshRef()
     // Remove deleted tasks' slots from React state immediately
-    const deletedIds = new Set(idArr)
     setDayPlanSlots(s => s.filter(slot => !slot.taskId || !deletedIds.has(slot.taskId)))
   }, [mutate, refreshRef])
 
@@ -485,7 +485,7 @@ export function useTauriTaskStore() {
         await logChange(db, 'notes', note.id, 'insert', { content: note.content, createdAt: note.createdAt }, lts, did)
       }
     }
-    refreshRef()
+    await refreshRef()
   })
     return promise.then(() => activatedNames)
   }, [mutate, refreshRef])
