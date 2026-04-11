@@ -95,118 +95,96 @@ export function useKeyboard(params: UseKeyboardParams) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Helpers ────────────────────────────────────────────────────────────────
+
+  /** Resolve target task IDs: explicit selection or current cursor task */
+  const getTargetIds = (): Set<TaskId> =>
+    selected.size > 0
+      ? selected
+      : displayFiltered[cursor] ? new Set([displayFiltered[cursor].id]) : new Set();
+
+  /** Localized count message (e.g. "Done: 3 tasks") */
+  const countMsg = (action: string, n: number) =>
+    locale === "ru" ? `${action}: ${n} ${n === 1 ? "задача" : "задач"}` : `${action}: ${n} ${n === 1 ? "task" : "tasks"}`;
+
+  /** Move cursor and optionally extend shift-selection */
+  const moveCursor = (next: number, shift: boolean) => {
+    setCursor(next);
+    if (shift) {
+      const anchor = lastIdx ?? cursor;
+      const lo = Math.min(anchor, next), hi = Math.max(anchor, next);
+      setSelected(new Set(displayFiltered.slice(lo, hi + 1).map(t => t.id)));
+    } else {
+      const task = displayFiltered[next];
+      setSelected(task ? new Set([task.id]) : new Set());
+      setLastIdx(next);
+    }
+  };
+
   // ── Keyboard handler ──────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (showSettings) return;
-      const tag = e.target.tagName;
+      const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
+      // ── Navigation ──────────────────────────────────────────────────────
       if (e.key === "Tab") {
         e.preventDefault();
         document.getElementById(e.shiftKey ? "task-list" : "search-input")?.focus();
         return;
       }
-
-      if (e.ctrlKey || e.metaKey) {
-        if (e.code === "KeyZ") {
-          e.preventDefault();
-          if (store.canUndo) {
-            clearTimeout(autoSyncTimerRef.current);
-            store.undo(() => addToast(t("toast.undone")));
-          }
-          return;
-        }
-        if (e.code === "KeyA" && e.shiftKey) {
-          e.preventDefault();
-          setSelected(new Set(displayFiltered.map(t => t.id)));
-          return;
-        }
-        if (e.code === "KeyN" && !e.shiftKey) {
-          e.preventDefault();
-          document.getElementById("quick-entry")?.focus();
-          return;
-        }
-        if (e.code === "KeyE" && !e.shiftKey) {
-          e.preventDefault();
-          setSearchExpanded(true);
-          setTimeout(() => searchInputRef.current?.focus(), 50);
-          return;
-        }
-        if (e.code === "KeyO" && !e.shiftKey) {
-          e.preventDefault();
-          store.openNewDb?.().then(ok => { if (ok) setShowDbSwitched(true); });
-          return;
-        }
-        if (e.code === "KeyD" && !e.shiftKey) {
-          e.preventDefault();
-          setShowPlanner(v => !v);
-          return;
-        }
-        return;
-      }
-
-      if (e.shiftKey && e.code === "KeyP") {
-        e.preventDefault();
-        const ids = selected.size > 0 ? selected : (displayFiltered[cursor] ? new Set([displayFiltered[cursor].id]) : new Set());
-        if (!ids.size) return;
-        const shiftable = [...ids].filter(id => { const t = tasks.find(x => x.id === id); return t && t.due && /^\d{4}-\d{2}-\d{2}$/.test(t.due); });
-        if (!shiftable.length) { addToast(t("toast.noNumericDue")); return; }
-        store.bulkDueShift(new Set(shiftable), tasks);
-        const n = shiftable.length;
-        addToast(locale === "ru"
-          ? `Отложено: ${n} ${n === 1 ? "задача" : "задач"}`
-          : `Postponed: ${n} ${n === 1 ? "task" : "tasks"}`);
-        return;
-      }
-
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
         e.preventDefault();
         const dir  = e.key === "ArrowDown" ? 1 : -1;
-        const next = Math.max(0, Math.min(cursor + dir, displayFiltered.length - 1));
-        setCursor(next);
-        if (e.shiftKey) {
-          const anchor = lastIdx ?? cursor;
-          const lo = Math.min(anchor, next), hi = Math.max(anchor, next);
-          setSelected(new Set(displayFiltered.slice(lo, hi + 1).map(t => t.id)));
-        } else {
-          const task = displayFiltered[next];
-          setSelected(task ? new Set([task.id]) : new Set());
-          setLastIdx(next);
-        }
+        moveCursor(Math.max(0, Math.min(cursor + dir, displayFiltered.length - 1)), e.shiftKey);
         return;
       }
-
       if (e.key === "Home" || e.key === "End") {
         e.preventDefault();
-        const next = e.key === "Home" ? 0 : displayFiltered.length - 1;
-        setCursor(next);
-        if (e.shiftKey) {
-          const anchor = lastIdx ?? cursor;
-          const lo = Math.min(anchor, next), hi = Math.max(anchor, next);
-          setSelected(new Set(displayFiltered.slice(lo, hi + 1).map(t => t.id)));
-        } else {
-          const task = displayFiltered[next];
-          setSelected(task ? new Set([task.id]) : new Set());
-          setLastIdx(next);
-        }
+        moveCursor(e.key === "Home" ? 0 : displayFiltered.length - 1, e.shiftKey);
         return;
       }
 
+      // ── Ctrl/Cmd shortcuts ──────────────────────────────────────────────
+      if (e.ctrlKey || e.metaKey) {
+        const handlers: Record<string, () => void> = {
+          KeyZ: () => { if (store.canUndo) { clearTimeout(autoSyncTimerRef.current!); store.undo(() => addToast(t("toast.undone"))); } },
+          KeyN: () => document.getElementById("quick-entry")?.focus(),
+          KeyE: () => { setSearchExpanded(true); setTimeout(() => searchInputRef.current?.focus(), 50); },
+          KeyO: () => store.openNewDb?.().then((ok: boolean) => { if (ok) setShowDbSwitched(true); }),
+          KeyD: () => setShowPlanner(v => !v),
+        };
+        if (e.code === "KeyA" && e.shiftKey) { e.preventDefault(); setSelected(new Set(displayFiltered.map(t => t.id))); return; }
+        const handler = handlers[e.code];
+        if (handler && !e.shiftKey) { e.preventDefault(); handler(); }
+        return;
+      }
+
+      // ── Shift+P: postpone ──────────────────────────────────────────────
+      if (e.shiftKey && e.code === "KeyP") {
+        e.preventDefault();
+        const ids = getTargetIds();
+        if (!ids.size) return;
+        const shiftable = [...ids].filter(id => { const tk = tasks.find(x => x.id === id); return tk && tk.due && /^\d{4}-\d{2}-\d{2}$/.test(tk.due); });
+        if (!shiftable.length) { addToast(t("toast.noNumericDue")); return; }
+        store.bulkDueShift(new Set(shiftable), tasks);
+        addToast(countMsg(locale === "ru" ? "Отложено" : "Postponed", shiftable.length));
+        return;
+      }
+
+      // ── Bulk actions ────────────────────────────────────────────────────
       const code = e.code;
       if (e.key === "Delete") {
         e.preventDefault();
-        const ids = selected.size > 0 ? selected : (displayFiltered[cursor] ? new Set([displayFiltered[cursor].id]) : new Set());
+        const ids = getTargetIds();
         if (ids.size) {
-          const n = ids.size;
           store.bulkDelete(ids, tasks); setSelected(new Set());
-          addToast(locale === "ru"
-            ? `${t("toast.deleted")}: ${n} ${n === 1 ? "задача" : "задач"}`
-            : `${t("toast.deleted")}: ${n} ${n === 1 ? "task" : "tasks"}`);
+          addToast(countMsg(t("toast.deleted"), ids.size));
         }
       } else if (code === "Space") {
         e.preventDefault();
-        const ids = selected.size > 0 ? selected : (displayFiltered[cursor] ? new Set([displayFiltered[cursor].id]) : new Set());
+        const ids = getTargetIds();
         if (ids.size) {
           const pivot = displayFiltered[cursor] ?? tasks.find(t => ids.has(t.id));
           const allDone = pivot && [...ids].every(id => tasks.find(t => t.id === id)?.status === "done");
@@ -214,41 +192,32 @@ export function useKeyboard(params: UseKeyboardParams) {
           else {
             const newStatus = allDone ? "active" : "done";
             const result = await store.bulkStatus(ids, newStatus, tasks);
-            const n = ids.size;
-            if (newStatus === "done") {
-              addToast(locale === "ru"
-                ? `Выполнено: ${n} ${n === 1 ? "задача" : "задач"}`
-                : `Done: ${n} ${n === 1 ? "task" : "tasks"}`);
-            } else {
-              addToast(locale === "ru"
-                ? `Возвращено: ${n} ${n === 1 ? "задача" : "задач"}`
-                : `Reopened: ${n} ${n === 1 ? "task" : "tasks"}`);
-            }
+            addToast(countMsg(locale === "ru" ? (newStatus === "done" ? "Выполнено" : "Возвращено") : (newStatus === "done" ? "Done" : "Reopened"), ids.size));
             showFlowToasts(result);
           }
         }
       } else if (code === "KeyS" && !e.shiftKey) {
         e.preventDefault();
-        const ids = selected.size > 0 ? selected : (displayFiltered[cursor] ? new Set([displayFiltered[cursor].id]) : new Set());
+        const ids = getTargetIds();
         if (ids.size) {
-          const n = ids.size;
           const result = await store.bulkCycle(ids, tasks);
-          addToast(locale === "ru"
-            ? `Статус: ${n} ${n === 1 ? "задача" : "задач"}`
-            : `Cycled: ${n} ${n === 1 ? "task" : "tasks"}`);
+          addToast(countMsg(locale === "ru" ? "Статус" : "Cycled", ids.size));
           showFlowToasts(result);
         }
       } else if (["Digit1","Digit2","Digit3","Digit4"].includes(code)) {
         if (!e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
           e.preventDefault();
-          const priority = parseInt(code.slice(-1));
-          const ids = selected.size > 0 ? selected : (displayFiltered[cursor] ? new Set([displayFiltered[cursor].id]) : new Set());
-          if (ids.size) store.bulkPriority(ids, priority, tasks);
+          const ids = getTargetIds();
+          if (ids.size) store.bulkPriority(ids, parseInt(code.slice(-1)), tasks);
         }
+
+      // ── Edit ────────────────────────────────────────────────────────────
       } else if (e.code === "KeyE" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
         const target = displayFiltered[cursor] ?? (selected.size === 1 ? tasks.find(x => selected.has(x.id)) : null);
         if (target) setEditTaskId(target.id);
+
+      // ── Escape: cascading dismiss ───────────────────────────────────────
       } else if (e.key === "Escape") {
         if (confirmPending)    { setConfirmPending(null); return; }
         if (showSettings)      { setShowSettings(false); return; }
