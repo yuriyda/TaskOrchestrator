@@ -192,6 +192,14 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
             {settings.autoExtractUrl !== false ? "ON" : "OFF"}
           </button>
         </SettingRow>
+        <SettingRow
+          label={locale === "ru" ? "Панель команд" : "Bulk action bar"}
+          description={locale === "ru" ? "Показывать панель массовых действий при выделении задач" : "Show bulk action bar when tasks are selected"}>
+          <button onClick={() => updateSetting("showBulkBar", settings.showBulkBar === false ? true : false)}
+            className={`px-3 py-1.5 rounded text-sm transition-colors font-medium ${settings.showBulkBar !== false ? "bg-sky-600 text-white" : `${TC.elevated} ${TC.textSec} ${TC.hoverBg} hover:text-gray-200`}`}>
+            {settings.showBulkBar !== false ? "ON" : "OFF"}
+          </button>
+        </SettingRow>
         <SettingRow label={t("guide.restart")}>
           <button onClick={() => { onRestartGuide?.(); onClose(); }}
             className={`px-3 py-1.5 rounded text-sm transition-colors font-medium ${TC.elevated} ${TC.textSec} ${TC.hoverBg} hover:text-gray-200`}>

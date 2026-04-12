@@ -603,7 +603,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
             />}
           </main>
 
-          {selected.size > 0 && (
+          {selected.size > 0 && settings.showBulkBar !== false && (
             <div className="px-6 py-3 flex-shrink-0">
               <BulkBar count={selected.size} onDone={bulkDone} onCycle={bulkCycle} onToday={bulkToday} onShift={bulkShift} onDelete={bulkDelete} onClear={() => setSelected(new Set())} />
             </div>
