@@ -49,8 +49,8 @@ export default function MobileApp({ store }: MobileAppProps) {
   const t = useTranslation(locale)
   const [syncLog, setSyncLog] = useState([])
 
-  const [filter, setFilter] = useState(null)
-  const [dateRange, setDateRange] = useState(null)
+  const [filter, setFilter] = useState('active')
+  const [dateRange, setDateRange] = useState('today')
   const [listFilter, setListFilter] = useState(null)
   const [tagFilter, setTagFilter] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
@@ -466,20 +466,20 @@ export default function MobileApp({ store }: MobileAppProps) {
             {/* Overdue section */}
             {overdueTasks.length > 0 && (
               <>
-                <div className="px-4 pt-1 pb-1">
+                <div className="px-2 pt-1 pb-1">
                   <span className="text-[10px] font-semibold uppercase tracking-wider text-red-400">
                     {t('agenda.overdue')} ({overdueTasks.length})
                   </span>
                 </div>
                 {overdueTasks.map(task => (
-                  <TaskItem key={task.id} task={task} onTap={setDetailId} onCycle={handleCycle} onComplete={handleComplete} onDelete={handleDelete} />
+                  <TaskItem key={task.id} task={task} locale={locale} onTap={setDetailId} onCycle={handleCycle} onComplete={handleComplete} onDelete={handleDelete} />
                 ))}
                 <div className="h-2" />
               </>
             )}
             {/* Regular tasks */}
             {regularTasks.map(task => (
-              <TaskItem key={task.id} task={task} onTap={setDetailId} onCycle={handleCycle} onComplete={handleComplete} onDelete={handleDelete} />
+              <TaskItem key={task.id} task={task} locale={locale} onTap={setDetailId} onCycle={handleCycle} onComplete={handleComplete} onDelete={handleDelete} />
             ))}
           </div>
         )}
