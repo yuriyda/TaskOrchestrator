@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { HardDrive, RefreshCw, Clock } from "lucide-react";
+import { HardDrive, RefreshCw, Clock, ScrollText } from "lucide-react";
 import { useApp } from "./AppContext";
 import { PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, TOAST_DURATION_MS } from "../core/constants";
 import { fmtDate, localIsoDate } from "../core/date";
@@ -30,6 +30,8 @@ interface StatusBarProps {
   plannerSlots?: Slot[];
   plannerDayStart?: number;
   plannerDayEnd?: number;
+  syncActivityVisible?: boolean;
+  onToggleSyncActivity?: () => void;
 }
 
 function timeToMinutes(t: string): number {
@@ -37,7 +39,7 @@ function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
-export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings, plannerSlots = [], plannerDayStart, plannerDayEnd }: StatusBarProps) {
+export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings, plannerSlots = [], plannerDayStart, plannerDayEnd, syncActivityVisible, onToggleSyncActivity }: StatusBarProps) {
   const { t, TC, locale } = useApp();
   const [now, setNow] = useState(new Date());
   const [syncing, setSyncing] = useState(false);
@@ -135,6 +137,17 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
       )}
       {canUndo && (
         <span className="opacity-50 text-sky-400 flex-shrink-0">Ctrl+Z — Undo</span>
+      )}
+
+      {/* Sync activity log toggle */}
+      {onToggleSyncActivity && (
+        <button
+          title={locale === "ru" ? "Журнал синхронизации" : "Sync activity log"}
+          onClick={onToggleSyncActivity}
+          className={`flex-shrink-0 px-1 py-0.5 rounded transition-colors cursor-pointer ${syncActivityVisible ? "opacity-100 text-sky-400" : "hover:opacity-100 opacity-40"}`}
+        >
+          <ScrollText size={10} />
+        </button>
       )}
 
       {/* Sync now button — крайний правый */}

@@ -148,7 +148,23 @@ export const MIGRATIONS_V10: readonly string[] = [
   `UPDATE tasks SET depends_on = json_array(depends_on) WHERE depends_on IS NOT NULL AND depends_on NOT LIKE '[%'`,
 ]
 
-export const LATEST_SCHEMA_VERSION: number = 10
+// v11: sync activity log for diagnostics
+export const MIGRATIONS_V11: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS sync_activity_log (
+     id TEXT PRIMARY KEY,
+     timestamp TEXT NOT NULL,
+     task_id TEXT,
+     task_title TEXT,
+     action TEXT NOT NULL,
+     changed_fields TEXT,
+     device_id TEXT,
+     is_duplicate INTEGER DEFAULT 0,
+     incoming_data TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_sync_activity_ts ON sync_activity_log(timestamp)`,
+]
+
+export const LATEST_SCHEMA_VERSION: number = 11
 
 /** Ordered migration map: version → SQL statements.
  *  Used by openDb() to run migrations in a loop instead of repeating the same pattern. */
@@ -162,4 +178,5 @@ export const VERSIONED_MIGRATIONS: Record<number, readonly string[]> = {
   8:  MIGRATIONS_V8,
   9:  MIGRATIONS_V9,
   10: MIGRATIONS_V10,
+  11: MIGRATIONS_V11,
 }

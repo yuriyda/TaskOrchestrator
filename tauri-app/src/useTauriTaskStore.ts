@@ -651,6 +651,7 @@ export function useTauriTaskStore() {
     await db.execute('DELETE FROM flows')
     await db.execute('DELETE FROM flow_meta')
     await db.execute('DELETE FROM personas')
+    await db.execute('DELETE FROM sync_activity_log')
     // sync_log and vector_clock are NOT cleared — clearAll is a local operation.
     // Sync data survives so that next sync can restore tasks from cloud.
     try { await db.execute('PRAGMA wal_checkpoint(TRUNCATE)') } catch {}

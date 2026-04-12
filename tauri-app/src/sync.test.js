@@ -43,6 +43,7 @@ function createDeviceDb(deviceId) {
   raw.exec(`CREATE TABLE meta     (key TEXT PRIMARY KEY, value TEXT)`)
   raw.exec(`CREATE TABLE vector_clock (device_id TEXT PRIMARY KEY, counter INTEGER NOT NULL DEFAULT 0)`)
   raw.exec(`CREATE TABLE sync_log (id TEXT PRIMARY KEY, entity TEXT NOT NULL, entity_id TEXT NOT NULL, action TEXT NOT NULL, lamport_ts INTEGER NOT NULL, device_id TEXT NOT NULL, data TEXT)`)
+  raw.exec(`CREATE TABLE sync_activity_log (id TEXT PRIMARY KEY, timestamp TEXT NOT NULL, task_id TEXT, task_title TEXT, action TEXT NOT NULL, changed_fields TEXT, device_id TEXT, is_duplicate INTEGER DEFAULT 0, incoming_data TEXT)`)
   raw.exec(`INSERT INTO meta VALUES ('device_id', '${deviceId}')`)
   raw.exec(`INSERT INTO vector_clock VALUES ('${deviceId}', 0)`)
   return { raw, db: wrapDb(raw) }

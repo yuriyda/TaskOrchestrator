@@ -12,6 +12,7 @@ import type { MutableRefObject } from 'react'
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { exportDeltas, getVectorClock, buildSyncRequest, computeSyncPackage, importSyncPackage } from './sync.js'
 import { fetchAll } from './helpers.js'
+import { getSyncActivityLog } from './syncActivityLog.js'
 import {
   isConnected as gdriveIsConnected, connect as gdriveConnect,
   disconnect as gdriveDisconnect, syncWithDrive,
@@ -223,10 +224,16 @@ export function useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refr
     return gdriveReadSyncFile(db)
   }, [])
 
+  const fetchSyncActivityLog = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return []
+    return getSyncActivityLog(db)
+  }, [])
+
   return {
     // Sync
     exportSync, importSync, exportSyncRequest, handleSyncRequest, importSyncClipboard,
-    getSyncLog, getSyncStats, clearSyncData,
+    getSyncLog, getSyncStats, clearSyncData, fetchSyncActivityLog,
     // Google Drive
     gdriveCheckConnection, gdriveConnectAccount, gdriveDisconnectAccount,
     gdriveSyncNow, gdriveGetConfig, gdriveCheckSyncFile, gdrivePurgeSyncFile,

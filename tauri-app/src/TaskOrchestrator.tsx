@@ -31,6 +31,7 @@ import { SortBar } from "./ui/SortBar.jsx";
 import { StatusBar } from "./ui/StatusBar.jsx";
 import { GUIDE_STEPS, GuideOverlay } from "./ui/GuideOverlay.jsx";
 import { DayPlanner } from "./ui/DayPlanner.jsx";
+import { SyncActivityPanel } from "./ui/SyncActivityPanel.jsx";
 import { useSettings } from "./hooks/useSettings";
 import { useSync } from "./hooks/useSync";
 import { useDayPlanner } from "./hooks/useDayPlanner";
@@ -140,6 +141,43 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [showDbSwitched,   setShowDbSwitched]   = useState(false);
   const rtmFileRef = useRef(null);
   const [sort, setSort] = useState(null);
+  // ── Sync Activity Panel ──────────────────────────────────────────────────
+  const [syncActivityVisible, setSyncActivityVisible] = useState(false);
+  const [syncActivityEntries, setSyncActivityEntries] = useState([]);
+  const [syncActivityHeight, setSyncActivityHeight] = useState(150);
+  const syncActivityAutoHideRef = useRef(null);
+
+  // Refresh sync activity log after any sync completes
+  const refreshSyncActivity = useCallback(async () => {
+    if (store.fetchSyncActivityLog) {
+      const entries = await store.fetchSyncActivityLog();
+      setSyncActivityEntries(entries);
+    }
+  }, [store.fetchSyncActivityLog]);
+
+  // Wrap manual sync: auto-show panel + auto-hide after 3s
+  const syncWithActivityPanel = useCallback(async () => {
+    if (!wrappedSyncNow) return;
+    clearTimeout(syncActivityAutoHideRef.current);
+    setSyncActivityVisible(true);
+    try {
+      const result = await wrappedSyncNow();
+      await refreshSyncActivity();
+      return result;
+    } finally {
+      syncActivityAutoHideRef.current = setTimeout(() => setSyncActivityVisible(false), TOAST_DURATION_MS);
+    }
+  }, [wrappedSyncNow, refreshSyncActivity]);
+
+  // Auto-sync: silently refresh log data without showing panel
+  const autoSyncRef = useRef(refreshSyncActivity);
+  autoSyncRef.current = refreshSyncActivity;
+  useEffect(() => {
+    if (!autoSyncing) return;
+    // When auto-sync finishes, refresh log data (panel stays hidden)
+    return () => { autoSyncRef.current(); };
+  }, [autoSyncing]);
+
   // ── Rubber-band selection ─────────────────────────────────────────────────
   const [dragRect, setDragRect] = useState(null); // {x1,y1,x2,y2} in clientX/Y
   const dragStartRef = useRef(null);              // {x,y} at mousedown
@@ -570,6 +608,22 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               <BulkBar count={selected.size} onDone={bulkDone} onCycle={bulkCycle} onToday={bulkToday} onShift={bulkShift} onDelete={bulkDelete} onClear={() => setSelected(new Set())} />
             </div>
           )}
+
+          {/* Sync Activity Panel */}
+          <SyncActivityPanel
+            entries={syncActivityEntries}
+            visible={syncActivityVisible}
+            height={syncActivityHeight}
+            onResizeStart={(e) => {
+              e.preventDefault();
+              const startY = e.clientY;
+              const startH = syncActivityHeight;
+              const onMove = (ev) => setSyncActivityHeight(Math.max(80, Math.min(400, startH - (ev.clientY - startY))));
+              const onUp = () => { document.removeEventListener("mousemove", onMove); document.removeEventListener("mouseup", onUp); };
+              document.addEventListener("mousemove", onMove);
+              document.addEventListener("mouseup", onUp);
+            }}
+          />
           </div>
 
           {showPlanner && (<>
@@ -643,7 +697,8 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
           )}
         </div>
 
-        <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? wrappedSyncNow : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} plannerSlots={showPlanner ? (store.dayPlanSlots || []) : []} plannerDayStart={settings.plannerDayStart} plannerDayEnd={settings.plannerDayEnd} />
+        <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? syncWithActivityPanel : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} plannerSlots={showPlanner ? (store.dayPlanSlots || []) : []} plannerDayStart={settings.plannerDayStart} plannerDayEnd={settings.plannerDayEnd}
+          syncActivityVisible={syncActivityVisible} onToggleSyncActivity={() => { setSyncActivityVisible(v => !v); if (!syncActivityVisible) refreshSyncActivity(); }} />
 
         <ToastContainer toasts={toasts} />
 
@@ -758,7 +813,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
             onGdriveCheckConnection={store.gdriveCheckConnection}
             onGdriveConnect={store.gdriveConnectAccount}
             onGdriveDisconnect={store.gdriveDisconnectAccount}
-            onGdriveSyncNow={wrappedSyncNow}
+            onGdriveSyncNow={syncWithActivityPanel}
             onGdriveGetConfig={store.gdriveGetConfig}
             onGdriveCheckSyncFile={store.gdriveCheckSyncFile}
             onGdrivePurgeSyncFile={store.gdrivePurgeSyncFile}
