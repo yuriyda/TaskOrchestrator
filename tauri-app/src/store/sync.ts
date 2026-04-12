@@ -267,22 +267,27 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
   }
 }
 
+/** Field mapping: [label, taskKey, dbColumn, default] */
+const DIFF_FIELDS: [string, string, string, any][] = [
+  ['title',        'title',       'title',        ''],
+  ['status',       'status',      'status',       'inbox'],
+  ['priority',     'priority',    'priority',     4],
+  ['list',         'list',        'list_name',    null],
+  ['due',          'due',         'due',          null],
+  ['deleted_at',   'deletedAt',   'deleted_at',   null],
+  ['completed_at', 'completedAt', 'completed_at', null],
+  ['recurrence',   'recurrence',  'recurrence',   null],
+  ['estimate',     'estimate',    'estimate',     null],
+  ['flowId',       'flowId',      'flow_id',      null],
+]
+
 /** Detect which user-facing fields differ between incoming task and local DB row. */
 async function detectChangedFields(db: any, task: Partial<Task>): Promise<string[]> {
   const [row] = await db.select('SELECT * FROM tasks WHERE id = ?', [task.id])
   if (!row) return []
-  const fields: string[] = []
-  if ((task.title || '') !== (row.title || '')) fields.push('title')
-  if ((task.status || 'inbox') !== (row.status || 'inbox')) fields.push('status')
-  if ((task.priority || 4) !== (row.priority || 4)) fields.push('priority')
-  if ((task.list || null) !== (row.list_name || null)) fields.push('list')
-  if ((task.due || null) !== (row.due || null)) fields.push('due')
-  if ((task.deletedAt || null) !== (row.deleted_at || null)) fields.push('deleted_at')
-  if ((task.completedAt || null) !== (row.completed_at || null)) fields.push('completed_at')
-  if ((task.recurrence || null) !== (row.recurrence || null)) fields.push('recurrence')
-  if ((task.estimate || null) !== (row.estimate || null)) fields.push('estimate')
-  if ((task.flowId || null) !== (row.flow_id || null)) fields.push('flowId')
-  return fields
+  return DIFF_FIELDS
+    .filter(([, taskKey, dbCol, def]) => (task[taskKey] ?? def) !== (row[dbCol] ?? def))
+    .map(([label]) => label)
 }
 
 /**
