@@ -4,8 +4,9 @@
   "version": "2.4.1",
   "type": "module",
   "scripts": {
+    "version:sync": "node ../scripts/sync-version.mjs",
     "dev": "vite",
-    "build": "vite build",
+    "build": "node ../scripts/sync-version.mjs && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run"
