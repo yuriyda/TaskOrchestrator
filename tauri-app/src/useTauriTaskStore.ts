@@ -9,7 +9,7 @@ import Database from '@tauri-apps/plugin-sql'
 import { appDataDir, join } from '@tauri-apps/api/path'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ulid } from './ulid.js'
-import { safeIsoDate, localDateStr } from './core/date.js'
+import { safeIsoDate, localDateStr, localIsoDate } from './core/date.js'
 import { handleTaskDone, isTaskBlocked, computeNextCycleStatus } from './core/taskActions.js'
 import { MIGRATIONS_V1, VERSIONED_MIGRATIONS, LATEST_SCHEMA_VERSION } from './store/migrations.js'
 import { TASK_INSERT, TASK_INSERT_IGN, taskToRow, touchUpdatedAt, shiftDue, fetchAll, buildSqlOps, logChange, nextLamport } from './store/helpers.js'
@@ -349,7 +349,7 @@ export function useTauriTaskStore() {
   const bulkSnooze = useCallback((ids, days, months, cur) => mutate(cur, async db => {
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localIsoDate(new Date())
     for (const id of ids) {
       const [row] = await db.select('SELECT due FROM tasks WHERE id=?', [id])
       if (!row) continue
@@ -358,7 +358,7 @@ export function useTauriTaskStore() {
         : new Date(today + 'T12:00:00')
       if (months) base.setMonth(base.getMonth() + months)
       if (days)   base.setDate(base.getDate() + days)
-      const newDue = base.toISOString().slice(0, 10)
+      const newDue = localIsoDate(base)
       await db.execute('UPDATE tasks SET due=?, postponed=COALESCE(postponed,0)+1, lamport_ts=?, device_id=? WHERE id=?', [newDue, lts, did, id])
       await logChange(db, 'tasks', id, 'update', { due: newDue }, lts, did)
     }
@@ -368,7 +368,7 @@ export function useTauriTaskStore() {
   const bulkAssignToday = useCallback((ids, cur) => mutate(cur, async db => {
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localIsoDate(new Date())
     for (const id of ids) {
       await db.execute("UPDATE tasks SET status='active', due=?, lamport_ts=?, device_id=? WHERE id=?", [today, lts, did, id])
       await logChange(db, 'tasks', id, 'update', { status: 'active', due: today }, lts, did)

@@ -5,7 +5,7 @@
  * flow badge, dependency indicators, and note count. Supports selection highlighting,
  * cursor outline, overdue stripe colouring, and blocked-task dimming.
  */
-import { useState, type MouseEvent } from "react";
+import { useState, useRef, useEffect, type MouseEvent } from "react";
 import { Check, Lock, User, Calendar, Repeat, Zap, AlertTriangle, FileText, Clock } from "lucide-react";
 import { useApp } from "./AppContext";
 import { StatusBadge, PriorityBadge } from "./badges";
@@ -22,6 +22,9 @@ interface TaskRowProps {
   isBlocked?: boolean;
   isPlanned?: boolean;
   hideStatus?: boolean;
+  isRenaming?: boolean;
+  onRename?: (newTitle: string) => void;
+  onRenameCancel?: () => void;
   onStatusCycle: () => void;
   onClick: (e: MouseEvent) => void;
   onCheckboxClick: () => void;
@@ -31,10 +34,18 @@ interface TaskRowProps {
   dataGuide?: string;
 }
 
-export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlanned = false, hideStatus = false, onStatusCycle, onClick, onCheckboxClick, onDoubleClick, onContextMenu, compact = false, dataGuide }: TaskRowProps) {
+export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlanned = false, hideStatus = false, isRenaming = false, onRename, onRenameCancel, onStatusCycle, onClick, onCheckboxClick, onDoubleClick, onContextMenu, compact = false, dataGuide }: TaskRowProps) {
   const { t, TC, locale, settings } = useApp();
   const isDone = task.status === "done";
   const [hovered, setHovered] = useState(false);
+  const renameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isRenaming && renameRef.current) {
+      renameRef.current.focus();
+      renameRef.current.select();
+    }
+  }, [isRenaming]);
   const level = overdueLevel(task);
 
   // Left stripe: blue when selected, overdue colour otherwise
@@ -87,7 +98,22 @@ export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlann
       {!hideStatus && <StatusBadge status={task.status} onClick={e => { e.stopPropagation(); onStatusCycle(); }} />}
       <PriorityBadge priority={task.priority} />
       <div className="flex-1 min-w-0">
-        <span className={`text-sm ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-500" : TC.text}`}>{task.title}</span>
+        {isRenaming ? (
+          <input
+            ref={renameRef}
+            defaultValue={task.title}
+            className={`text-sm w-full bg-transparent border-b border-sky-400/50 outline-none py-0 px-0 ${TC.text}`}
+            onKeyDown={e => {
+              if (e.key === "Enter") { e.preventDefault(); const v = (e.target as HTMLInputElement).value.trim(); if (v && v !== task.title) onRename?.(v); else onRenameCancel?.(); }
+              if (e.key === "Escape") { e.preventDefault(); onRenameCancel?.(); }
+              e.stopPropagation();
+            }}
+            onBlur={e => { const v = e.target.value.trim(); if (v && v !== task.title) onRename?.(v); else onRenameCancel?.(); }}
+            onClick={e => e.stopPropagation()}
+          />
+        ) : (
+          <span className={`text-sm ${isDone ? "line-through text-gray-500" : isBlocked ? "text-gray-500" : TC.text}`}>{task.title}</span>
+        )}
         {isBlocked && task.status !== "done" && (
           <span className="ml-2 text-xs text-yellow-400/70" title={`${t("task.dependsOn")} ${task.dependsOn}`}>
             <Lock size={10} className="inline" /> {t("flow.blocked")}

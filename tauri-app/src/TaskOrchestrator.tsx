@@ -6,7 +6,7 @@
 import { useState, useReducer, useRef, useEffect, useMemo, useCallback, createContext, useContext } from "react";
 import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDownRight, Repeat, Flag, Calendar, Hash, Filter, Keyboard, ChevronLeft, ChevronRight, ChevronsDown, ChevronsUp, Settings, Sun, Moon, Monitor, FileText, Link, Clock, Upload, User, Download, Trash2, AlertTriangle, Info, Globe, AlignJustify, HardDrive, FolderOpen, Copy, Lock, Play, Palette, Edit3, ExternalLink } from "lucide-react";
 import { PRIORITY_COLORS, TOAST_DURATION_MS, Z } from "./core/constants.js";
-import { parseDateInput, fmtDate } from "./core/date.js";
+import { parseDateInput, fmtDate, localIsoDate } from "./core/date.js";
 import { buildDemoTasks } from "./core/demo.js";
 import { useTaskStore } from "./store/memoryStore.js";
 export { useTaskStore };
@@ -107,15 +107,15 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [showRightPanel, setShowRightPanel] = useState(true);
   const [showCalendar, setShowCalendar]     = useState(true);
   const [showPlanner, setShowPlanner]       = useState(false);
-  const [plannerDate, setPlannerDate]       = useState(() => new Date().toISOString().slice(0, 10));
+  const [plannerDate, setPlannerDate]       = useState(() => localIsoDate(new Date()));
   // Auto-advance to next day at midnight (app may stay open overnight)
-  const [today, setToday] = useState(() => new Date().toISOString().slice(0, 10));
+  const [today, setToday] = useState(() => localIsoDate(new Date()));
   useEffect(() => {
     const scheduleNextMidnight = () => {
       const now = new Date();
       const msToMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
       return setTimeout(() => {
-        const newToday = new Date().toISOString().slice(0, 10);
+        const newToday = localIsoDate(new Date());
         setToday(newToday);
         setPlannerDate(newToday);
         timerId = scheduleNextMidnight();
@@ -136,6 +136,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [rtmImportData,  setRtmImportData]  = useState(null);
   const [importProgress, setImportProgress] = useState(null); // null | { current, total }
   const [editTaskId,       setEditTaskId]       = useState(null);
+  const [renamingTaskId,   setRenamingTaskId]   = useState(null);
   const [contextMenu,      setContextMenu]      = useState(null); // null | { x, y, task }
   const [showDemoConfirm,  setShowDemoConfirm]  = useState(false);
   const [showDbSwitched,   setShowDbSwitched]   = useState(false);
@@ -233,6 +234,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     lastIdx, setLastIdx, blockedIds, addToast, showFlowToasts, t, locale,
     searchQuery, setSearchQuery, searchExpanded, setSearchExpanded, searchInputRef,
     showSettings, setShowSettings, editTaskId, setEditTaskId,
+    renamingTaskId, setRenamingTaskId,
     contextMenu, setContextMenu, confirmPending, setConfirmPending,
     clearAllFilters, autoSyncTimerRef, setShowPlanner, setShowDbSwitched,
     dragStartRef, didDragRef, setDragRect, filtered,
@@ -566,6 +568,9 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                         isBlocked={blockedIds.has(task.id)}
                         isPlanned={store.plannedTaskIds?.has(task.id)}
                         hideStatus={!!filters.status}
+                        isRenaming={renamingTaskId === task.id}
+                        onRename={(newTitle) => { store.updateTask(task.id, { title: newTitle }, tasks); setRenamingTaskId(null); }}
+                        onRenameCancel={() => setRenamingTaskId(null)}
                         compact={showRightPanel}
                         dataGuide={idx === 0 ? "task-row" : undefined}
                         onStatusCycle={async () => {

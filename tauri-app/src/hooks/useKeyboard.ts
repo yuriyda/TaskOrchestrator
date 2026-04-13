@@ -32,6 +32,8 @@ interface UseKeyboardParams {
   setShowSettings: (v: false | string) => void;
   editTaskId: TaskId | null;
   setEditTaskId: (id: TaskId | null) => void;
+  renamingTaskId: TaskId | null;
+  setRenamingTaskId: (id: TaskId | null) => void;
   contextMenu: any;
   setContextMenu: (v: any) => void;
   confirmPending: any;
@@ -51,6 +53,7 @@ export function useKeyboard(params: UseKeyboardParams) {
     lastIdx, setLastIdx, blockedIds, addToast, showFlowToasts, t, locale,
     searchQuery, setSearchQuery, searchExpanded, setSearchExpanded, searchInputRef,
     showSettings, setShowSettings, editTaskId, setEditTaskId,
+    renamingTaskId, setRenamingTaskId,
     contextMenu, setContextMenu, confirmPending, setConfirmPending,
     clearAllFilters, autoSyncTimerRef, setShowPlanner, setShowDbSwitched,
     dragStartRef, didDragRef, setDragRect, filtered,
@@ -217,6 +220,12 @@ export function useKeyboard(params: UseKeyboardParams) {
         const target = displayFiltered[cursor] ?? (selected.size === 1 ? tasks.find(x => selected.has(x.id)) : null);
         if (target) setEditTaskId(target.id);
 
+      // ── Inline rename (F2) ────────────────────────────────────────────
+      } else if (e.key === "F2") {
+        e.preventDefault();
+        const target = displayFiltered[cursor] ?? (selected.size === 1 ? tasks.find(x => selected.has(x.id)) : null);
+        if (target) setRenamingTaskId(target.id);
+
       // ── Escape: cascading dismiss ───────────────────────────────────────
       } else if (e.key === "Escape") {
         if (confirmPending)    { setConfirmPending(null); return; }
@@ -230,7 +239,7 @@ export function useKeyboard(params: UseKeyboardParams) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [filtered, cursor, selected, lastIdx, store.canUndo, tasks, searchQuery, locale, editTaskId, contextMenu, showSettings]);
+  }, [filtered, cursor, selected, lastIdx, store.canUndo, tasks, searchQuery, locale, editTaskId, renamingTaskId, contextMenu, showSettings]);
 
   // ── Suppress browser context menu everywhere ──────────────────────────────
   useEffect(() => {

@@ -8,6 +8,7 @@ import { Clock, ChevronLeft, ChevronRight, Plus, Lock, Check, Play, Repeat, Grip
 import { useApp } from "./AppContext.jsx";
 import { PRIORITY_COLORS, PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, Z } from "../core/constants.js";
 import { getWeekDates, timeToMinutes, minutesToTime, snapToGrid } from "../store/dayPlanner.js";
+import { localIsoDate } from "../core/date.js";
 import type { Task, TaskId } from "../types";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ export function DayPlanner({
 
   // Week dates
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const today = useMemo(() => localIsoDate(new Date()), []);
   const dayNames = locale === "ru" ? DAY_NAMES_RU : DAY_NAMES_EN;
 
   // ─── Position helpers ─────────────────────────────────────────────────────
@@ -521,7 +522,7 @@ export function DayPlanner({
           onClick={() => {
             const prevWeekDate = new Date(weekDates[0] + "T12:00:00");
             prevWeekDate.setDate(prevWeekDate.getDate() - 7);
-            onSelectDate(prevWeekDate.toISOString().slice(0, 10));
+            onSelectDate(localIsoDate(prevWeekDate));
           }}
           className={`p-1 rounded hover:bg-white/5 ${TC.textMuted}`}
         >
@@ -561,7 +562,7 @@ export function DayPlanner({
           onClick={() => {
             const nextWeekDate = new Date(weekDates[6] + "T12:00:00");
             nextWeekDate.setDate(nextWeekDate.getDate() + 7);
-            onSelectDate(nextWeekDate.toISOString().slice(0, 10));
+            onSelectDate(localIsoDate(nextWeekDate));
           }}
           className={`p-1 rounded hover:bg-white/5 ${TC.textMuted}`}
         >

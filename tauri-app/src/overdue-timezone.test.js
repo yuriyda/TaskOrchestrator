@@ -111,4 +111,36 @@ describe('overdue timezone handling', () => {
     mockTimezone('2026-04-03', '2026-04-02')
     expect(overdueLevel({ due: null, status: 'active' })).toBeNull()
   })
+
+  it('midnight timer computes local date, not UTC (regression)', () => {
+    // Simulate: local April 13, UTC April 12
+    // Bug: midnight timer used toISOString().slice(0,10) which returns UTC date.
+    // At local midnight in UTC+ timezones, UTC date is still "yesterday",
+    // so setState(sameValue) was a no-op → no re-render → overdue not shown.
+    mockTimezone('2026-04-13', '2026-04-12')
+
+    // After the fix, the timer uses localIsoDate which reads local getters:
+    const newToday = localIsoDate(new Date())
+    expect(newToday).toBe('2026-04-13')
+
+    // Previous day's state would have been '2026-04-12',
+    // so setState('2026-04-13') triggers a re-render.
+    const previousDay = '2026-04-12'
+    expect(newToday).not.toBe(previousDay)
+  })
+
+  it('bulkSnooze/bulkAssignToday use local date for due (regression)', () => {
+    // Same timezone scenario: local April 13, UTC April 12
+    mockTimezone('2026-04-13', '2026-04-12')
+
+    // "Assign to today" must set due to local date, not UTC
+    const today = localIsoDate(new Date())
+    expect(today).toBe('2026-04-13')
+
+    // Snooze from a known date by 1 day must also produce local date
+    const base = new realDate(2026, 3, 13, 12, 0, 0) // April 13 noon local
+    base.setDate(base.getDate() + 1) // April 14
+    const snoozedDue = localIsoDate(base)
+    expect(snoozedDue).toBe('2026-04-14')
+  })
 })
