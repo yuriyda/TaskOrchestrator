@@ -36,14 +36,25 @@ export async function logSyncActivity(
   deviceId: string | null,
   incomingData: any = null,
 ): Promise<SyncActivityEntry> {
-  // Duplicate detection: find another task with same title but different id
+  // Duplicate detection: find another task with same title but different id.
+  // Exclusions to reduce false positives:
+  // - Incoming task is soft-deleted (deletedAt set) — not a real duplicate
+  // - Incoming task has recurrence AND existing match is done — next occurrence, not a dupe
   let isDuplicate = false
-  if (action === 'insert' || action === 'update') {
-    const [dup] = await db.select(
-      'SELECT id FROM tasks WHERE title = ? AND id != ? AND deleted_at IS NULL LIMIT 1',
+  const incomingDeleted = incomingData?.deletedAt != null
+  if ((action === 'insert' || action === 'update') && !incomingDeleted) {
+    const dups = await db.select(
+      'SELECT id, status FROM tasks WHERE title = ? AND id != ? AND deleted_at IS NULL LIMIT 5',
       [taskTitle, taskId]
     )
-    isDuplicate = !!dup
+    if (dups.length > 0) {
+      const hasRecurrence = incomingData?.recurrence != null
+      if (hasRecurrence && dups.every((d: any) => d.status === 'done')) {
+        isDuplicate = false // recurring task: all matches are completed — next occurrence
+      } else {
+        isDuplicate = true
+      }
+    }
   }
 
   const entry: SyncActivityEntry = {

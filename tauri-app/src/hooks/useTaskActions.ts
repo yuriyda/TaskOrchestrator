@@ -4,7 +4,7 @@
  *   flow operations, row click, bulk actions, add/edit/delete, RTM import,
  *   checkbox confirm. Extracted from task-orchestrator.jsx.
  */
-import { localIsoDate } from "../core/date.js";
+import { localIsoDate, fmtDate } from "../core/date.js";
 import { PLANNER_DAY_END_DEFAULT, DEFAULT_TASK_ESTIMATE_MIN } from "../core/constants.js";
 import { timeToMinutes, minutesToTime } from "../store/dayPlanner.js";
 
@@ -198,6 +198,14 @@ export function useTaskActions({
     }
 
     const task = await store.addTask(data, tasks);
+
+    if (task) {
+      const parts: string[] = [(locale === "ru" ? "Создана: " : "Created: ") + task.title];
+      if (data.due) parts.push(fmtDate(data.due, settings?.dateFormat, locale));
+      if (data.priority && data.priority !== 4) parts.push(`P${data.priority}`);
+      if (data.list) parts.push(`#${data.list}`);
+      addToast(parts.join(" · "));
+    }
 
     if (task && pendingSlotTimeRef.current && store.plannerAddTaskSlot && store.currentPlan) {
       const time = pendingSlotTimeRef.current;

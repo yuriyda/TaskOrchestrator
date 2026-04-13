@@ -12,7 +12,17 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 
-const { version } = JSON.parse(readFileSync(resolve(root, 'shared/version.json'), 'utf-8'))
+const versionFile = resolve(root, 'shared/version.json')
+const argVersion = process.argv[2]
+
+if (argVersion) {
+  const vj = JSON.parse(readFileSync(versionFile, 'utf-8'))
+  vj.version = argVersion
+  writeFileSync(versionFile, JSON.stringify(vj, null, 2) + '\n')
+  console.log(`✓ shared/version.json → ${argVersion}`)
+}
+
+const { version } = JSON.parse(readFileSync(versionFile, 'utf-8'))
 
 const targets = [
   'tauri-app/package.json',

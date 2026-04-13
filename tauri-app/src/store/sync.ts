@@ -194,7 +194,9 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
           applied++
           console.log(`[sync] INSERT ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" lts=${task.lamportTs} did=${task.deviceId?.slice(0,8)}`)
         } catch { skipped++; continue }
-        try { await logSyncActivity(db, task.id, task.title, 'insert', null, task.deviceId, task) } catch (e) { console.warn('[sync] activity log error:', e) }
+        if (!task.deletedAt) {
+          try { await logSyncActivity(db, task.id, task.title, 'insert', null, task.deviceId, task) } catch (e) { console.warn('[sync] activity log error:', e) }
+        }
       } else if (task.deviceId === localDeviceId) {
         // Our own task bounced back — skip update
         skipped++
@@ -204,7 +206,9 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
         await fullUpdateTask(db, task)
         applied++
         console.log(`[sync] UPDATE ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" remote_lts=${task.lamportTs} > local_lts=${existing.lamport_ts} did=${task.deviceId?.slice(0,8)}`)
-        try { await logSyncActivity(db, task.id, task.title, task.deletedAt ? 'delete' : 'update', changedFields, task.deviceId, task) } catch (e) { console.warn('[sync] activity log error:', e) }
+        if (!task.deletedAt) {
+          try { await logSyncActivity(db, task.id, task.title, 'update', changedFields, task.deviceId, task) } catch (e) { console.warn('[sync] activity log error:', e) }
+        }
       } else if ((task.lamportTs || 0) === (existing.lamport_ts || 0)) {
         // Same version — already applied, skip
         skipped++
