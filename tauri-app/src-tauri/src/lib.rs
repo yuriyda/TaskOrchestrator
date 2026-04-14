@@ -5,6 +5,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::Mutex;
+#[cfg(not(debug_assertions))]
 use tauri::Manager;
 use tauri::State;
 
