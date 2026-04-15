@@ -5,6 +5,7 @@
 
 import React from 'react'
 import { createRoot } from 'react-dom/client'
+import './app.css'
 import MobileApp from './MobileApp'
 import { useBrowserTaskStore } from './store/browserStore'
 

@@ -56,7 +56,7 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
   const dateStr = fmtDate(todayISO, dateFormat, locale);
 
   const totalCount = tasks.length;
-  const activeToday = tasks.filter(tk => tk.status === "active" && (!tk.due || tk.due <= todayISO)).length;
+  const activeToday = tasks.filter(tk => tk.status === "active" && tk.due && tk.due <= todayISO).length;
   const doneToday = tasks.filter(tk => tk.status === "done" && tk.completedAt && tk.completedAt.slice(0, 10) === todayISO).length;
   const overdueCount = tasks.filter(tk => tk.due && tk.due < todayISO && tk.status !== "done" && tk.status !== "cancelled").length;
 
