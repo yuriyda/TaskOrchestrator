@@ -6,7 +6,7 @@ No cloud. No account. No telemetry. Just a single SQLite file you fully control.
 
 [Русская версия](README.ru.md)
 
-![Task Orchestrator — main window](img/main_window_1.png)
+![Task Orchestrator — main window](img/main_window.png)
 
 ## Why Task Orchestrator
 
@@ -20,9 +20,7 @@ No cloud. No account. No telemetry. Just a single SQLite file you fully control.
 
 ## Screenshots
 
-| Main window | Settings |
-|:-----------:|:--------:|
-| ![Main window](img/main_window_2.png) | ![Settings](img/settings_1.png) |
+![Settings — Sync](img/settings.png)
 
 ## Features
 
@@ -44,6 +42,7 @@ Supports natural language dates: `^today`, `^tomorrow`, `^+3d`, `^+1w`, `^+2m`
 | `Space` | Mark done / reopen |
 | `S` | Cycle status |
 | `E` | Edit selected task |
+| `F2` | Inline rename |
 | `Del` | Delete |
 | `1`-`4` | Set priority |
 | `Shift+P` | Postpone +1 day |
@@ -62,12 +61,19 @@ Supports natural language dates: `^today`, `^tomorrow`, `^+3d`, `^+1w`, `^+2m`
 - **Task Flows** — dependency chains with progress tracking, auto-activation, and blocking
 - **Recurring tasks** — daily, weekly, monthly, yearly with auto-spawn on completion
 
+### Day Planner
+- Drag tasks into time slots for daily planning
+- Resizable and movable time blocks
+- Block time for non-task activities
+- Weekly navigation with today highlight
+
 ### Views & Filters
 - Sidebar filters by status, list, tags, flow, persona, date range
 - Calendar panel with task-dot indicators and date range highlighting
 - Completion filter toggle (All / Active / Done)
 - Search with automatic keyboard layout detection (EN/RU)
 - Sort by priority, status, due date, or creation date — secondary sort always by title
+- Filters and sort order persist across app restarts
 
 ### Data & Storage
 - Single SQLite file — portable, inspectable, easy to back up
@@ -151,10 +157,10 @@ The desktop installer will be in `tauri-app/src-tauri/target/release/bundle/`.
 ## Tests
 
 ```bash
-# Desktop (140 tests)
+# Desktop
 cd tauri-app && npx vitest run
 
-# PWA (32 tests)
+# PWA
 cd pwa && npx vitest run
 ```
 
