@@ -71,6 +71,7 @@ export function SyncTab({
       if (cfg) {
         setGdriveConnected(cfg.hasToken);
         if (cfg.clientId) setGdriveClientId(cfg.clientId);
+        if (cfg.clientSecret) setGdriveClientSecret(cfg.clientSecret);
       }
     })();
   }, []);
@@ -184,7 +185,6 @@ export function SyncTab({
                   onClick={async () => {
                     await onGdriveDisconnect!();
                     setGdriveConnected(false);
-                    setGdriveClientSecret("");
                     addGdriveLog(t("sync.gdriveDisconnected"));
                   }}
                   className={`px-3 py-1.5 rounded text-xs font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>

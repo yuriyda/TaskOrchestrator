@@ -49,10 +49,34 @@ export default function MobileApp({ store }: MobileAppProps) {
   const t = useTranslation(locale)
   const [syncLog, setSyncLog] = useState([])
 
-  const [filter, setFilter] = useState('active')
-  const [dateRange, setDateRange] = useState('today')
-  const [listFilter, setListFilter] = useState(null)
-  const [tagFilter, setTagFilter] = useState(null)
+  const [filter, setFilterRaw] = useState(() => {
+    try { return localStorage.getItem("pwaFilter") || "active" } catch { return "active" }
+  })
+  const setFilter = (v) => { setFilterRaw(v); try { localStorage.setItem("pwaFilter", v || "") } catch {} }
+  const [dateRange, setDateRangeRaw] = useState(() => {
+    try { return localStorage.getItem("pwaDateRange") || "today" } catch { return "today" }
+  })
+  const setDateRange = (v) => { setDateRangeRaw(v); try { localStorage.setItem("pwaDateRange", v || "") } catch {} }
+  const [listFilter, setListFilterRaw] = useState(() => {
+    try { const v = localStorage.getItem("pwaListFilter"); return v || null } catch { return null }
+  })
+  const setListFilter = (v) => {
+    setListFilterRaw(prev => {
+      const next = typeof v === "function" ? v(prev) : v
+      try { localStorage.setItem("pwaListFilter", next || "") } catch {}
+      return next
+    })
+  }
+  const [tagFilter, setTagFilterRaw] = useState(() => {
+    try { return localStorage.getItem("pwaTagFilter") || null } catch { return null }
+  })
+  const setTagFilter = (v) => {
+    setTagFilterRaw(prev => {
+      const next = typeof v === "function" ? v(prev) : v
+      try { localStorage.setItem("pwaTagFilter", next || "") } catch {}
+      return next
+    })
+  }
   const [searchQuery, setSearchQuery] = useState('')
   const [searchVisible, setSearchVisible] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)

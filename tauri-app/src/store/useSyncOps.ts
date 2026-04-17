@@ -203,7 +203,7 @@ export function useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refr
     const db = dbRef.current
     if (!db) return null
     const tokens = await gdriveLoadTokens(db)
-    return { clientId: tokens.client_id, hasToken: !!tokens.access_token }
+    return { clientId: tokens.client_id, clientSecret: tokens.client_secret, hasToken: !!tokens.access_token }
   }, [])
 
   const gdriveCheckSyncFile = useCallback(async () => {

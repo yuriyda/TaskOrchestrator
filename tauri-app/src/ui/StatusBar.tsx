@@ -47,6 +47,11 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
   const [syncError, setSyncError] = useState<string | null>(null);
   const isSyncing = syncing || autoSyncing;
 
+  // Clear error when a successful sync happens (from any source — auto, settings, or button)
+  useEffect(() => {
+    if (lastSync) setSyncError(null);
+  }, [lastSync]);
+
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
     return () => clearInterval(timer);

@@ -52,13 +52,14 @@ export function ChipPill({ chip, onRemove }: ChipPillProps) {
 interface SectionDividerProps {
   label: string;
   count: number;
+  onClick?: () => void;
 }
 
-export function SectionDivider({ label, count }: SectionDividerProps) {
+export function SectionDivider({ label, count, onClick }: SectionDividerProps) {
   const { TC } = useApp();
   return (
-    <div className="flex items-center gap-2.5 py-0.5">
-      <span className="text-xs font-semibold uppercase tracking-widest text-red-400/80 flex items-center gap-1.5">
+    <div className={`flex items-center gap-2.5 py-0.5${onClick ? " cursor-pointer group" : ""}`} onClick={onClick}>
+      <span className={`text-xs font-semibold uppercase tracking-widest text-red-400/80 flex items-center gap-1.5${onClick ? " group-hover:text-red-300" : ""}`}>
         <AlertTriangle size={11} className="text-red-400/70" />
         {label}
         <span className="text-xs font-normal normal-case tracking-normal bg-red-500/15 text-red-400 px-1.5 py-0.5 rounded-full">{count}</span>

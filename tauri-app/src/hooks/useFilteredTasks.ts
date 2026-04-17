@@ -32,20 +32,21 @@ interface UseFilteredTasksParams {
   calendarFilter: string | null;
   sort: SortState | null;
   locale: string;
+  today: string;
   cursor: number;
   setCursor: (n: number) => void;
   setSelected: Dispatch<SetStateAction<Set<TaskId>>>;
 }
 
 export function useFilteredTasks({
-  tasks, filters, searchQuery, calendarFilter, sort, locale,
+  tasks, filters, searchQuery, calendarFilter, sort, locale, today,
   cursor, setCursor, setSelected,
 }: UseFilteredTasksParams) {
   const filtered = useMemo(() => {
     let r = tasks;
     if (filters.status) r = r.filter(tk => tk.status === filters.status);
     if (filters.dateRange) {
-      const todayStr = localIsoDate(new Date());
+      const todayStr = today;
       const isPastDue = (tt: Task) => tt.due && tt.due < todayStr && tt.status !== "done" && tt.status !== "cancelled";
       const v = filters.dateRange;
       if (v === "overdue") r = r.filter(isPastDue);
@@ -92,7 +93,7 @@ export function useFilteredTasks({
     });
 
     return r;
-  }, [tasks, filters, searchQuery, calendarFilter, sort, locale]);
+  }, [tasks, filters, searchQuery, calendarFilter, sort, locale, today]);
 
   const displayFiltered = useMemo(() => {
     const isOverdue = (t: Task) => overdueLevel(t) !== null;

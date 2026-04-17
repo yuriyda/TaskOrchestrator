@@ -79,24 +79,34 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [cursor, setCursor]   = useState(0);
   const [selected, setSelected] = useState(new Set());
   const [lastIdx, setLastIdx]   = useState(null);
-  const [filters, setFilters] = useState(() => {
-    const saved = localStorage.getItem("statusFilter");
-    const status = saved === "active" ? "active" : saved === "done" ? "done" : null;
+  const [filters, setFiltersRaw] = useState(() => {
+    try {
+      const saved = localStorage.getItem("taskFilters");
+      if (saved) { const parsed = JSON.parse(saved); return { status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, ...parsed }; }
+    } catch {}
+    // Migrate from legacy statusFilter key
+    const legacy = localStorage.getItem("statusFilter");
+    const status = legacy === "active" ? "active" : legacy === "done" ? "done" : null;
     return { status, dateRange: null, list: null, tag: null, flow: null, persona: null };
   });
+  const setFilters = (updater) => {
+    setFiltersRaw(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      localStorage.setItem("taskFilters", JSON.stringify(next));
+      return next;
+    });
+  };
   const setFilter = (key, value) => {
     const newValue = filters[key] === value ? null : value;
     setFilters(f => ({ ...f, [key]: newValue }));
     if (key === "dateRange") setCalendarFilter(null);
-    if (key === "status") localStorage.setItem("statusFilter", newValue || "");
   };
   const setFilterForce = (key, value) => {
     setFilters(f => ({ ...f, [key]: value }));
     if (key === "dateRange") setCalendarFilter(null);
-    if (key === "status") localStorage.setItem("statusFilter", value || "");
   };
-  const clearFilter = (key) => { setFilters(f => ({ ...f, [key]: null })); if (key === "status") localStorage.setItem("statusFilter", ""); };
-  const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null }); localStorage.setItem("statusFilter", ""); };
+  const clearFilter = (key) => { setFilters(f => ({ ...f, [key]: null })); };
+  const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null }); };
   // Backward-compat helpers
   const hasAnyFilter = Object.values(filters).some(v => v !== null);
   const [searchQuery, setSearchQuery]   = useState("");
@@ -141,7 +151,17 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [showDemoConfirm,  setShowDemoConfirm]  = useState(false);
   const [showDbSwitched,   setShowDbSwitched]   = useState(false);
   const rtmFileRef = useRef(null);
-  const [sort, setSort] = useState(null);
+  const [sort, setSortRaw] = useState(() => {
+    try { const s = localStorage.getItem("taskSort"); if (s) return JSON.parse(s); } catch {}
+    return null;
+  });
+  const setSort = (updater) => {
+    setSortRaw(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      localStorage.setItem("taskSort", JSON.stringify(next));
+      return next;
+    });
+  };
   // ── Sync Activity Panel ──────────────────────────────────────────────────
   const [syncActivityVisible, setSyncActivityVisible] = useState(false);
   const [syncActivityEntries, setSyncActivityEntries] = useState([]);
@@ -210,7 +230,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
 
   // ── Filtered + sorted list ────────────────────────────────────────────────
   const { filtered, displayFiltered, overdueCount, blockedIds } = useFilteredTasks({
-    tasks, filters, searchQuery, calendarFilter, sort, locale,
+    tasks, filters, searchQuery, calendarFilter, sort, locale, today,
     cursor, setCursor, setSelected,
   });
 
@@ -520,7 +540,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                   const rows = [];
                   displayFiltered.forEach((task, idx) => {
                     if (idx === 0 && overdueCount > 0) {
-                      rows.push(<SectionDivider key="__overdue_header" label={t("group.overdue")} count={overdueCount} />);
+                      rows.push(<SectionDivider key="__overdue_header" label={t("group.overdue")} count={overdueCount}
+                        onClick={() => {
+                          const overdueIds = displayFiltered.slice(0, overdueCount).map(t => t.id);
+                          setSelected(new Set(overdueIds));
+                        }} />);
                     }
                     if (idx === overdueCount && overdueCount > 0) {
                       rows.push(<div key="__overdue_gap" className="h-3" />);
