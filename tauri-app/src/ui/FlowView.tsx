@@ -471,6 +471,7 @@ export function FlowView({
             zoomOnScroll={false}
             zoomOnPinch={true}
             zoomOnDoubleClick={false}
+            preventScrolling={false}
             minZoom={0.4}
             maxZoom={2}
             connectionLineStyle={{ stroke: "#38bdf8", strokeWidth: 1.5 }}
