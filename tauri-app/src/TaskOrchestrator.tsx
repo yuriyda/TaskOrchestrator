@@ -629,6 +629,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                 const existing = task?.dependsOn ?? [];
                 if (!existing.includes(newDepId)) handleUpdate(taskId, { dependsOn: [...existing, newDepId] });
               }}
+              onSelectTask={(id) => {
+                setSelected(new Set([id]));
+                const idx = displayFiltered.findIndex(t => t.id === id);
+                if (idx >= 0) setCursor(idx);
+              }}
             />}
           </main>
 

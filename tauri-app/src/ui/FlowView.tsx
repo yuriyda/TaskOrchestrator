@@ -51,6 +51,7 @@ interface FlowViewProps {
   onRemoveFromFlow?: (taskId: TaskId) => void;
   onRemoveDependency?: (taskId: TaskId, depId: TaskId) => void;
   onSetDependency?: (taskId: TaskId, newDepId: TaskId) => void;
+  onSelectTask?: (taskId: TaskId) => void;
 }
 
 // ─── Topological layout ────────────────────────────────────────────────────────
@@ -205,6 +206,7 @@ export function FlowView({
   onRemoveFromFlow,
   onRemoveDependency,
   onSetDependency,
+  onSelectTask,
 }: FlowViewProps) {
   const { t, TC, flowMeta } = useApp();
 
@@ -459,6 +461,7 @@ export function FlowView({
             defaultNodes={rfNodes}
             defaultEdges={rfEdges}
             nodeTypes={nodeTypes}
+            onNodeClick={onSelectTask ? (_event, node) => onSelectTask(node.id as TaskId) : undefined}
             onConnect={onSetDependency ? handleConnect : undefined}
             fitView
             fitViewOptions={{ padding: 0.25 }}
