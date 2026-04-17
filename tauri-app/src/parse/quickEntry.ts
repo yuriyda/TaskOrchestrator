@@ -38,7 +38,7 @@ export function parseShorthand(input, { extractUrls = true } = {}) {
   return result;
 }
 
-export function getSuggestions(input, { lists = [], tags = [], flows = [], personas = [], priorityLabels = {}, hasListChip = false } = {}) {
+export function getSuggestions(input, { lists = [], tags = [], flows = [], personas = [], priorityLabels = {}, hasListChip = false, locale = "en" } = {}) {
   const words = input.split(/\s+/);
   const last = words[words.length - 1] || "";
   if (!last) return [];
@@ -47,7 +47,35 @@ export function getSuggestions(input, { lists = [], tags = [], flows = [], perso
   if (last.startsWith("#"))  { const q = last.slice(1).toLowerCase(); return tags.filter(t  => t.toLowerCase().includes(q)).map(t => ({ type: "tag",        label: `#${t}`,  replace: `#${t}` })); }
   if (last.startsWith("/")  && personas.length > 0) { const q = last.slice(1).toLowerCase(); return personas.filter(p => p.toLowerCase().includes(q)).map(p => ({ type: "persona", label: `/${p}`, replace: `/${p}` })); }
   if (last.startsWith("!"))  return ["!1","!2","!3","!4"].filter(s => s.startsWith(last)).map(s => ({ type: "priority", label: s, replace: s, desc: priorityLabels[s[1]] }));
-  if (last.startsWith("^"))  return ["^today","^tomorrow","^mon","^tue","^fri"].filter(s => s.startsWith(last)).map(s => ({ type: "due",        label: s, replace: s }));
+  if (last.startsWith("^")) {
+    const typed = last.slice(1);
+    const loc = locale === "ru" ? "ru-RU" : "en-US";
+    const fmtPreview = (iso: string) => {
+      const dateObj = new Date(iso + "T12:00:00");
+      const dayName = dateObj.toLocaleDateString(loc, { weekday: "short" });
+      const preview = dateObj.toLocaleDateString(loc, { day: "numeric", month: "long" });
+      return `→ ${preview}, ${dayName}`;
+    };
+    // Static hints: locale-appropriate set
+    const hintsRu = ["^сегодня","^завтра","^пн","^вт","^ср","^чт","^пт","^сб","^вс"];
+    const hintsEn = ["^today","^tomorrow","^mon","^tue","^wed","^thu","^fri","^sat","^sun"];
+    const hints = (locale === "ru" ? hintsRu : hintsEn).filter(s => s.startsWith(last) && s !== last);
+    // If user typed something parseable, show resolved date as first suggestion
+    const resolved = typed ? parseDateInput(typed) : null;
+    const results = [];
+    if (resolved && /^\d{4}-\d{2}-\d{2}$/.test(resolved)) {
+      results.push({ type: "due", label: `^${typed}`, replace: `^${typed}`, desc: fmtPreview(resolved) });
+    }
+    for (const s of hints.slice(0, 7)) {
+      const hintResolved = parseDateInput(s.slice(1));
+      if (hintResolved && /^\d{4}-\d{2}-\d{2}$/.test(hintResolved)) {
+        results.push({ type: "due", label: s, replace: s, desc: fmtPreview(hintResolved) });
+      } else {
+        results.push({ type: "due", label: s, replace: s });
+      }
+    }
+    return results;
+  }
   if (last.startsWith("*"))  return ["*daily","*weekly","*monthly"].filter(s => s.startsWith(last)).map(s => ({ type: "recurrence", label: s, replace: s }));
   return [];
 }
@@ -59,7 +87,7 @@ export function getTokenType(word) {
   if (word.startsWith("@")  && word.length > 1) return "list";
   if (word.startsWith("#")  && word.length > 1) return "tag";
   if (/^![1-4]$/.test(word))                   return "priority";
-  if (word.startsWith("^")  && word.length > 1) return "due";
+  if (word.startsWith("^")  && word.length > 1 && parseDateInput(word.slice(1))) return "due";
   if (word.startsWith("~")  && word.length > 1) return "depends";
   if (word.startsWith("*")  && word.length > 1) return "recurrence";
   if (word.startsWith("/")  && word.length > 1) return "persona";

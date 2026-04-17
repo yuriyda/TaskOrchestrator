@@ -29,7 +29,13 @@ Create tasks with shorthand tokens — type everything in one line:
 
 `@list` `#tag` `!1`-`!4` priority `^due` `>>flow` `~depends` `*recur` `/persona`
 
-Supports natural language dates: `^today`, `^tomorrow`, `^+3d`, `^+1w`, `^+2m`
+Smart date parsing with live preview:
+- Keywords: `^today`, `^tomorrow`, `^yesterday`
+- Day of week: `^mon`, `^friday`, `^пн`, `^понедельник`
+- Relative: `^+3d`, `^+2w`, `^+1m`
+- Bare day: `^20` (20th of current/next month)
+- Day.Month: `^20.04`, `^25/12`
+- Month name: `^5jan`, `^15aug`, `^5янв`
 
 ### Keyboard Navigation
 

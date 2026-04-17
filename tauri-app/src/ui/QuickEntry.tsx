@@ -26,7 +26,7 @@ interface QuickEntryProps {
 }
 
 export function QuickEntry({ onAdd }: QuickEntryProps) {
-  const { t, TC, lists, tags, flows, personas, settings } = useApp();
+  const { t, TC, locale, lists, tags, flows, personas, settings } = useApp();
   const skipToken = (commit) => !commit || (commit.tokenType === "list" && hasListChip) || (commit.tokenType === "url" && settings?.autoExtractUrl === false);
   // chips  — committed token pills shown inside the input field
   // inputText — the text currently being typed (title + any uncommitted token)
@@ -40,7 +40,7 @@ export function QuickEntry({ onAdd }: QuickEntryProps) {
 
   useEffect(() => {
     const priorityLabels = { "1": t("priority.1"), "2": t("priority.2"), "3": t("priority.3"), "4": t("priority.4") };
-    setSuggestions(getSuggestions(inputText, { lists, tags, flows, personas, priorityLabels, hasListChip }));
+    setSuggestions(getSuggestions(inputText, { lists, tags, flows, personas, priorityLabels, hasListChip, locale }));
     setSelectedSugg(0);
   }, [inputText, lists, tags, flows, personas, t, hasListChip]);
 
