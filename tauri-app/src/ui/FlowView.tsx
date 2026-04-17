@@ -467,9 +467,10 @@ export function FlowView({
             colorMode="dark"
             nodesDraggable={false}
             nodesConnectable={!!onSetDependency}
-            panOnDrag={true}
+            panOnDrag={false}
+            panOnConnect={false}
             zoomOnScroll={false}
-            zoomOnPinch={true}
+            zoomOnPinch={false}
             zoomOnDoubleClick={false}
             preventScrolling={false}
             minZoom={0.4}
