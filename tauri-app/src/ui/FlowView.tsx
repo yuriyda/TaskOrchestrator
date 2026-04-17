@@ -6,6 +6,8 @@
  */
 
 import { useState, useRef, useEffect, useCallback, memo } from "react";
+import dagre from "@dagrejs/dagre";
+import { wouldCreateCycle } from "../core/taskActions.js";
 import {
   ReactFlow,
   Handle,
@@ -54,12 +56,10 @@ interface FlowViewProps {
   onSelectTask?: (taskId: TaskId) => void;
 }
 
-// ─── Topological layout ────────────────────────────────────────────────────────
+// ─── Dagre-based layout ───────────────────────────────────────────────────────
 
 const NODE_W = 200;
 const NODE_H = 76;
-const COL_GAP = 80;
-const ROW_GAP = 18;
 
 function computeLayout(
   tasks: Task[],
@@ -67,48 +67,36 @@ function computeLayout(
 ): { positions: Record<string, { x: number; y: number }>; height: number } {
   if (tasks.length === 0) return { positions: {}, height: 180 };
 
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({ rankdir: "LR", nodesep: 20, ranksep: 80, marginx: 10, marginy: 10 });
+  g.setDefaultEdgeLabel(() => ({}));
+
   const taskMap = new Map<string, Task>(tasks.map(t => [String(t.id), t]));
-  const ranks = new Map<string, number>();
 
-  const rankOf = (id: string): number => {
-    if (ranks.has(id)) return ranks.get(id)!;
-    const task = taskMap.get(id);
-    if (!task) { ranks.set(id, 0); return 0; }
-    const inFlow = getDeps(task).map(String).filter(d => taskMap.has(d));
-    const r = inFlow.length === 0 ? 0 : Math.max(...inFlow.map(rankOf)) + 1;
-    ranks.set(id, r);
-    return r;
-  };
+  for (const task of tasks) {
+    g.setNode(String(task.id), { width: NODE_W, height: NODE_H });
+  }
 
-  tasks.forEach(t => rankOf(String(t.id)));
+  for (const task of tasks) {
+    for (const dep of getDeps(task).map(String).filter(d => taskMap.has(d))) {
+      g.setEdge(dep, String(task.id));
+    }
+  }
 
-  // Group by rank
-  const byRank: Record<number, string[]> = {};
-  tasks.forEach(t => {
-    const r = ranks.get(String(t.id)) ?? 0;
-    (byRank[r] ??= []).push(String(t.id));
-  });
+  dagre.layout(g);
 
-  const maxInCol = Math.max(...Object.values(byRank).map(ids => ids.length), 1);
-
-  // Assign positions, centering each column vertically
   const positions: Record<string, { x: number; y: number }> = {};
-  Object.entries(byRank).forEach(([rStr, ids]) => {
-    const r = Number(rStr);
-    const colH = ids.length * (NODE_H + ROW_GAP) - ROW_GAP;
-    const maxH = maxInCol * (NODE_H + ROW_GAP) - ROW_GAP;
-    const topPad = (maxH - colH) / 2;
-    ids.forEach((id, i) => {
-      positions[id] = {
-        x: r * (NODE_W + COL_GAP),
-        y: topPad + i * (NODE_H + ROW_GAP),
-      };
-    });
-  });
+  let maxY = 0;
+  for (const task of tasks) {
+    const node = g.node(String(task.id));
+    // dagre returns center coordinates; convert to top-left for ReactFlow
+    positions[String(task.id)] = { x: node.x - NODE_W / 2, y: node.y - NODE_H / 2 };
+    if (node.y + NODE_H / 2 > maxY) maxY = node.y + NODE_H / 2;
+  }
 
   return {
     positions,
-    height: Math.max(180, maxInCol * (NODE_H + ROW_GAP) + 48),
+    height: Math.max(180, maxY + 48),
   };
 }
 
@@ -248,6 +236,16 @@ export function FlowView({
       }
     },
     [onSetDependency]
+  );
+
+  const validateConnection = useCallback(
+    (connection: Connection) => {
+      if (!connection.source || !connection.target) return false;
+      if (connection.source === connection.target) return false;
+      // source = blocker, target = blocked task (target will depend on source)
+      return !wouldCreateCycle(tasks, connection.target, connection.source);
+    },
+    [tasks]
   );
 
   // ── Early return after all hooks ──────────────────────────────────────────
@@ -463,6 +461,7 @@ export function FlowView({
             nodeTypes={nodeTypes}
             onNodeClick={onSelectTask ? (_event, node) => onSelectTask(node.id as TaskId) : undefined}
             onConnect={onSetDependency ? handleConnect : undefined}
+            isValidConnection={onSetDependency ? validateConnection : undefined}
             fitView
             fitViewOptions={{ padding: 0.25 }}
             colorMode="dark"

@@ -119,6 +119,38 @@ export async function handleTaskDone(
   return result
 }
 
+// ─── Cycle detection ────────────────────────────────────────────────────────
+
+/**
+ * Check if adding a dependency (taskId depends on newDepId) would create a cycle.
+ * Uses DFS from newDepId following dependsOn edges to see if taskId is reachable.
+ */
+export function wouldCreateCycle(
+  tasks: Array<{ id: string; dependsOn?: string[] | null }>,
+  taskId: string,
+  newDepId: string,
+): boolean {
+  if (taskId === newDepId) return true
+  const depMap = new Map<string, string[]>()
+  for (const t of tasks) {
+    depMap.set(String(t.id), Array.isArray(t.dependsOn) ? t.dependsOn.map(String) : [])
+  }
+  // DFS: can we reach taskId starting from newDepId by following dependsOn?
+  // If newDepId depends on X which depends on ... which depends on taskId → cycle
+  const visited = new Set<string>()
+  const stack = [newDepId]
+  while (stack.length > 0) {
+    const current = stack.pop()!
+    if (current === taskId) return true
+    if (visited.has(current)) continue
+    visited.add(current)
+    for (const dep of depMap.get(current) ?? []) {
+      stack.push(dep)
+    }
+  }
+  return false
+}
+
 export async function isTaskBlocked(ops: StorageOps, taskId: string): Promise<boolean> {
   const task = await ops.getTask(taskId)
   const rawDeps = task?.dependsOn ?? task?.depends_on

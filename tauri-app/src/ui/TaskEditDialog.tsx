@@ -12,6 +12,7 @@ import { ulid } from "../ulid";
 import { Combobox } from "./Combobox";
 import { DateField } from "./DatePicker";
 import { STATUSES, PRIORITY_COLORS } from "../core/constants";
+import { wouldCreateCycle } from "../core/taskActions.js";
 import type { Task } from "../types";
 
 function normalizeEstimate(raw) {
@@ -75,7 +76,9 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
     .filter(x => x.id !== task.id)
     .map(x => ({ value: x.id, label: x.title }));
   const addDep = (id: string) => {
-    if (id && !dependsOn.includes(id)) setDependsOn(prev => [...prev, id]);
+    if (!id || dependsOn.includes(id)) { setDepInput(""); return; }
+    if (wouldCreateCycle(allTasks, String(task.id), id)) { setDepInput(""); return; }
+    setDependsOn(prev => [...prev, id]);
     setDepInput("");
   };
   const removeDep = (id: string) => setDependsOn(prev => prev.filter(d => d !== id));

@@ -8,6 +8,7 @@ import { Search, Plus, Check, CheckCircle2, X, Inbox, List, ArrowRight, CornerDo
 import { PRIORITY_COLORS, TOAST_DURATION_MS, Z } from "./core/constants.js";
 import { parseDateInput, fmtDate, localIsoDate } from "./core/date.js";
 import { buildDemoTasks } from "./core/demo.js";
+import { wouldCreateCycle } from "./core/taskActions.js";
 import { useTaskStore } from "./store/memoryStore.js";
 export { useTaskStore };
 
@@ -627,7 +628,12 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               onSetDependency={(taskId, newDepId) => {
                 const task = tasks.find(t => t.id === taskId);
                 const existing = task?.dependsOn ?? [];
-                if (!existing.includes(newDepId)) handleUpdate(taskId, { dependsOn: [...existing, newDepId] });
+                if (existing.includes(newDepId)) return;
+                if (wouldCreateCycle(tasks, taskId, newDepId)) {
+                  addToast(locale === "ru" ? "Циклическая зависимость запрещена" : "Circular dependency not allowed");
+                  return;
+                }
+                handleUpdate(taskId, { dependsOn: [...existing, newDepId] });
               }}
               onSelectTask={(id) => {
                 setSelected(new Set([id]));

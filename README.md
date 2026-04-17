@@ -41,7 +41,7 @@ Supports natural language dates: `^today`, `^tomorrow`, `^+3d`, `^+1w`, `^+2m`
 | `Ctrl+Shift+A` | Select all |
 | `Space` | Mark done / reopen |
 | `S` | Cycle status |
-| `E` | Edit selected task |
+| `Enter` | Edit selected task |
 | `F2` | Inline rename |
 | `Del` | Delete |
 | `1`-`4` | Set priority |

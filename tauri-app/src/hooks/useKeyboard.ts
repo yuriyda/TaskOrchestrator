@@ -214,17 +214,17 @@ export function useKeyboard(params: UseKeyboardParams) {
           if (ids.size) store.bulkPriority(ids, parseInt(code.slice(-1)), tasks);
         }
 
-      // ── Edit ────────────────────────────────────────────────────────────
-      } else if (e.code === "KeyE" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        const target = displayFiltered[cursor] ?? (selected.size === 1 ? tasks.find(x => selected.has(x.id)) : null);
-        if (target) setEditTaskId(target.id);
-
       // ── Inline rename (F2) ────────────────────────────────────────────
       } else if (e.key === "F2") {
         e.preventDefault();
         const target = displayFiltered[cursor] ?? (selected.size === 1 ? tasks.find(x => selected.has(x.id)) : null);
         if (target) setRenamingTaskId(target.id);
+
+      // ── Enter: open edit dialog ────────────────────────────────────────
+      } else if (e.key === "Enter" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        const target = displayFiltered[cursor] ?? (selected.size === 1 ? tasks.find(x => selected.has(x.id)) : null);
+        if (target) setEditTaskId(target.id);
 
       // ── Escape: cascading dismiss ───────────────────────────────────────
       } else if (e.key === "Escape") {
