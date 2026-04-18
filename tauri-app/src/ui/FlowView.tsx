@@ -469,6 +469,8 @@ export function FlowView({
             nodesConnectable={!!onSetDependency}
             panOnDrag={false}
             panOnConnect={false}
+            autoPanOnConnect={false}
+            autoPanOnNodeDrag={false}
             zoomOnScroll={false}
             zoomOnPinch={false}
             zoomOnDoubleClick={false}
