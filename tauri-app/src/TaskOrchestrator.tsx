@@ -876,7 +876,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                 </button>
                 <button onClick={async () => {
                     setShowDemoConfirm(false);
-                    try { await store.loadDemoData?.(buildDemoTasks()); } catch (e) { console.error('[loadDemoData]', e); }
+                    try { await store.loadDemoData?.(buildDemoTasks(locale)); } catch (e) { console.error('[loadDemoData]', e); }
                   }}
                   className="px-4 py-1.5 rounded text-sm bg-sky-600 hover:bg-sky-500 text-white transition-colors font-medium">
                   {t("demo.confirm")}
