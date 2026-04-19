@@ -49,8 +49,17 @@ export async function logSyncActivity(
     )
     if (dups.length > 0) {
       const hasRecurrence = incomingData?.recurrence != null
-      if (hasRecurrence && dups.every((d: any) => d.status === 'done')) {
-        isDuplicate = false // recurring task: all matches are completed — next occurrence
+      // Check if any existing match is a recurring task
+      let existingHasRecurrence = false
+      if (!hasRecurrence) {
+        const recRows = await db.select(
+          'SELECT id FROM tasks WHERE title = ? AND id != ? AND deleted_at IS NULL AND recurrence IS NOT NULL LIMIT 1',
+          [taskTitle, taskId]
+        )
+        existingHasRecurrence = recRows.length > 0
+      }
+      if (hasRecurrence || existingHasRecurrence) {
+        isDuplicate = false // recurring task: siblings with same title are expected
       } else {
         isDuplicate = true
       }
