@@ -37,7 +37,11 @@ interface SyncNote {
   id: string
   taskSeriesId: string
   content: string
-  createdAt: string
+  createdAt: string | number
+  deletedAt?: string | null
+  updatedAt?: string | null
+  lamportTs?: number
+  deviceId?: string | null
 }
 
 interface FlowMetaEntry {
@@ -124,11 +128,18 @@ export async function computeSyncPackage(db: any, targetVC: VectorClock = {}): P
     return t.lamport_ts > targetKnows
   })
 
-  // Notes for those tasks
-  const taskIds = new Set(tasksToSend.map((t: any) => t.id))
-  const seriesIds = new Set(tasksToSend.map((t: any) => t.rtm_series_id || t.id))
+  // Notes for those tasks (include soft-deleted so deletions propagate).
+  // Also include notes for task series that the target hasn't seen yet, plus
+  // any notes whose lamport_ts is ahead of what the target knows.
+  const allTasksForSeries = await db.select('SELECT id, rtm_series_id FROM tasks')
+  const allSeriesIds = new Set(allTasksForSeries.map((t: any) => t.rtm_series_id || t.id))
   const allNotes = await db.select('SELECT * FROM notes')
-  const notesToSend = allNotes.filter((n: any) => seriesIds.has(n.task_series_id))
+  const notesToSend = allNotes.filter((n: any) => {
+    if (!allSeriesIds.has(n.task_series_id)) return false // orphan
+    if (!n.device_id) return true // pre-migration note — always send
+    const targetKnows = targetVC[n.device_id] || 0
+    return (n.lamport_ts || 0) > targetKnows
+  })
 
   // Always include all lookup tables (small, idempotent)
   const lists = (await db.select('SELECT name FROM lists')).map((r: any) => r.name)
@@ -145,6 +156,10 @@ export async function computeSyncPackage(db: any, targetVC: VectorClock = {}): P
     notes: notesToSend.map((n: any) => ({
       id: n.id, taskSeriesId: n.task_series_id,
       content: n.content, createdAt: n.created_at,
+      deletedAt: n.deleted_at || null,
+      updatedAt: n.updated_at || null,
+      lamportTs: n.lamport_ts || 0,
+      deviceId: n.device_id || null,
     })),
     lists, tags, flows, personas,
     flowMeta: flowMeta.map((r: any) => ({
@@ -252,13 +267,29 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
     }
   }
 
-  // Apply notes (for received tasks)
+  // Apply notes with lamport-based conflict resolution.
+  // Soft-deleted notes (deletedAt set) propagate deletion to this device.
   if (notes) {
     for (const note of notes) {
-      await db.execute(
-        'INSERT OR REPLACE INTO notes (id, task_series_id, content, created_at) VALUES (?,?,?,?)',
-        [note.id, note.taskSeriesId || '', note.content || '', note.createdAt || Date.now()]
-      )
+      const [existing] = await db.select('SELECT lamport_ts, device_id FROM notes WHERE id=?', [note.id])
+      if (!existing) {
+        // New note — insert with all fields including deletedAt
+        await db.execute(
+          'INSERT INTO notes (id, task_series_id, content, created_at, deleted_at, updated_at, lamport_ts, device_id) VALUES (?,?,?,?,?,?,?,?)',
+          [note.id, note.taskSeriesId || '', note.content || '',
+           typeof note.createdAt === 'number' ? note.createdAt : (note.createdAt ? new Date(note.createdAt).getTime() : Date.now()),
+           note.deletedAt || null, note.updatedAt || null,
+           note.lamportTs || 0, note.deviceId || null]
+        )
+      } else if ((note.lamportTs || 0) > (existing.lamport_ts || 0)) {
+        // Incoming is newer — full update (including deletedAt)
+        await db.execute(
+          'UPDATE notes SET content=?, deleted_at=?, updated_at=?, lamport_ts=?, device_id=? WHERE id=?',
+          [note.content || '', note.deletedAt || null, note.updatedAt || null,
+           note.lamportTs || 0, note.deviceId || null, note.id]
+        )
+      }
+      // Otherwise local is newer or equal — skip
     }
   }
 

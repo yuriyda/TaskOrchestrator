@@ -164,7 +164,15 @@ export const MIGRATIONS_V11: readonly string[] = [
   `CREATE INDEX IF NOT EXISTS idx_sync_activity_ts ON sync_activity_log(timestamp)`,
 ]
 
-export const LATEST_SCHEMA_VERSION: number = 11
+// v12: soft-delete for notes (propagates deletion via sync)
+export const MIGRATIONS_V12: readonly string[] = [
+  `ALTER TABLE notes ADD COLUMN deleted_at TEXT`,
+  `ALTER TABLE notes ADD COLUMN updated_at TEXT`,
+  `ALTER TABLE notes ADD COLUMN device_id TEXT`,
+  `ALTER TABLE notes ADD COLUMN lamport_ts INTEGER NOT NULL DEFAULT 0`,
+]
+
+export const LATEST_SCHEMA_VERSION: number = 12
 
 /** Ordered migration map: version → SQL statements.
  *  Used by openDb() to run migrations in a loop instead of repeating the same pattern. */
@@ -179,4 +187,5 @@ export const VERSIONED_MIGRATIONS: Record<number, readonly string[]> = {
   9:  MIGRATIONS_V9,
   10: MIGRATIONS_V10,
   11: MIGRATIONS_V11,
+  12: MIGRATIONS_V12,
 }

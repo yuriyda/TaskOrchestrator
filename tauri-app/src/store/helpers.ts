@@ -161,7 +161,7 @@ export function shiftDue(due: string | null): string | null {
 export async function fetchAll(db: DB): Promise<Task[]> {
   const [taskRows, noteRows] = await Promise.all([
     db.select('SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY priority, created_at'),
-    db.select('SELECT * FROM notes ORDER BY created_at'),
+    db.select('SELECT * FROM notes WHERE deleted_at IS NULL ORDER BY created_at'),
   ])
   const notesMap: Record<string, Note[]> = {}
   for (const n of noteRows as any[]) {

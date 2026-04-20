@@ -34,7 +34,7 @@ function createDeviceDb(deviceId) {
       lamport_ts INTEGER NOT NULL DEFAULT 0
     )
   `)
-  raw.exec(`CREATE TABLE notes (id TEXT PRIMARY KEY, task_series_id TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)`)
+  raw.exec(`CREATE TABLE notes (id TEXT PRIMARY KEY, task_series_id TEXT NOT NULL, content TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, deleted_at TEXT, updated_at TEXT, device_id TEXT, lamport_ts INTEGER NOT NULL DEFAULT 0)`)
   raw.exec(`CREATE TABLE lists    (name TEXT PRIMARY KEY)`)
   raw.exec(`CREATE TABLE tags     (name TEXT PRIMARY KEY)`)
   raw.exec(`CREATE TABLE flows    (name TEXT PRIMARY KEY)`)
@@ -101,7 +101,7 @@ describe('computeSyncPackage', () => {
 
   it('includes notes for exported tasks', async () => {
     insertTask(devA.raw, 't1', 'Task', DEV_A, 1)
-    devA.raw.exec("INSERT INTO notes VALUES ('n1', 't1', 'Note content', 1000)")
+    devA.raw.exec("INSERT INTO notes (id, task_series_id, content, created_at) VALUES ('n1', 't1', 'Note content', 1000)")
 
     const pkg = await computeSyncPackage(devA.db, {})
     expect(pkg.notes).toHaveLength(1)
@@ -335,5 +335,80 @@ describe('filterNewDeltas', () => {
 
     const filtered = filterNewDeltas(deltas, localVC)
     expect(filtered).toHaveLength(2) // A:3 and B:1
+  })
+})
+
+// ─── Note deletion propagation via sync ─────────────────────────────────────
+
+function insertNote(raw, id, taskSeriesId, content, deviceId, lamportTs, deletedAt = null) {
+  raw.prepare(
+    `INSERT INTO notes (id, task_series_id, content, created_at, deleted_at, updated_at, lamport_ts, device_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, taskSeriesId, content, Date.now(), deletedAt, deletedAt || null, lamportTs, deviceId)
+}
+
+describe('note soft-delete sync', () => {
+  let devA, devB
+
+  beforeEach(() => {
+    devA = createDeviceDb(DEV_A)
+    devB = createDeviceDb(DEV_B)
+  })
+
+  it('outbound sync package includes soft-deleted notes', async () => {
+    insertTask(devA.raw, 't1', 'Task 1', DEV_A, 1)
+    insertNote(devA.raw, 'n1', 't1', 'Live note', DEV_A, 2)
+    insertNote(devA.raw, 'n2', 't1', 'Deleted note', DEV_A, 3, '2026-04-20T10:00:00Z')
+
+    const pkg = await computeSyncPackage(devA.db, {})
+    expect(pkg.notes).toHaveLength(2)
+    const deleted = pkg.notes.find(n => n.id === 'n2')
+    expect(deleted.deletedAt).toBe('2026-04-20T10:00:00Z')
+  })
+
+  it('incoming soft-deleted note propagates deletion locally', async () => {
+    // Device B has a note
+    insertTask(devB.raw, 't1', 'Task 1', DEV_A, 1)
+    insertNote(devB.raw, 'n1', 't1', 'To be deleted', DEV_A, 2)
+
+    // Device A deleted the note (lamport higher)
+    insertTask(devA.raw, 't1', 'Task 1', DEV_A, 1)
+    insertNote(devA.raw, 'n1', 't1', 'To be deleted', DEV_A, 5, '2026-04-20T10:00:00Z')
+
+    const pkg = await computeSyncPackage(devA.db, {})
+    await importSyncPackage(devB.db, pkg)
+
+    const [row] = devB.db.select('SELECT deleted_at FROM notes WHERE id=?', ['n1'])
+    expect(row.deleted_at).toBe('2026-04-20T10:00:00Z')
+  })
+
+  it('older incoming note does not overwrite newer local deletion', async () => {
+    insertTask(devA.raw, 't1', 'Task 1', DEV_A, 1)
+    // Device A has newer deletion (lamport 5)
+    insertNote(devA.raw, 'n1', 't1', 'Deleted', DEV_A, 5, '2026-04-20T10:00:00Z')
+
+    // Device B sends back an older "alive" version (lamport 2)
+    insertTask(devB.raw, 't1', 'Task 1', DEV_A, 1)
+    insertNote(devB.raw, 'n1', 't1', 'Alive (old)', DEV_A, 2)
+
+    const pkg = await computeSyncPackage(devB.db, {})
+    await importSyncPackage(devA.db, pkg)
+
+    const [row] = devA.db.select('SELECT deleted_at, lamport_ts FROM notes WHERE id=?', ['n1'])
+    expect(row.deleted_at).toBe('2026-04-20T10:00:00Z') // local wins
+    expect(row.lamport_ts).toBe(5)
+  })
+
+  it('new note without deletedAt from remote is inserted cleanly', async () => {
+    insertTask(devB.raw, 't1', 'Task 1', DEV_A, 1)
+    insertTask(devA.raw, 't1', 'Task 1', DEV_A, 1)
+    insertNote(devA.raw, 'n1', 't1', 'Fresh note', DEV_A, 3)
+
+    const pkg = await computeSyncPackage(devA.db, {})
+    await importSyncPackage(devB.db, pkg)
+
+    const [row] = devB.db.select('SELECT content, deleted_at FROM notes WHERE id=?', ['n1'])
+    expect(row.content).toBe('Fresh note')
+    expect(row.deleted_at).toBeNull()
   })
 })

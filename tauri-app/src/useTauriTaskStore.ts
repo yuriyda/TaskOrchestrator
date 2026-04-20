@@ -433,16 +433,32 @@ export function useTauriTaskStore() {
       }
       activatedNames.push(...doneResult.activated.map(a => a.title))
     }
-    // Sync notes: use rtm_series_id if present, otherwise task id
+    // Sync notes: diff old vs new, soft-delete missing, upsert remaining.
+    // Soft-delete (deleted_at) is required so sync can propagate deletions to other devices.
     if (changes.notes !== undefined) {
       const [taskRow] = await db.select('SELECT rtm_series_id FROM tasks WHERE id=?', [id])
       const seriesKey = taskRow?.rtm_series_id || id
-      await db.execute('DELETE FROM notes WHERE task_series_id=?', [seriesKey])
-      for (const note of changes.notes) {
+      const existingNotes = await db.select(
+        'SELECT id FROM notes WHERE task_series_id=? AND deleted_at IS NULL',
+        [seriesKey]
+      )
+      const newNoteIds = new Set((changes.notes || []).map((n: any) => n.id))
+      const deletedIds = existingNotes.filter((n: any) => !newNoteIds.has(n.id)).map((n: any) => n.id)
+      const nowIso = new Date().toISOString()
+      // Soft-delete removed notes
+      for (const noteId of deletedIds) {
+        await db.execute(
+          'UPDATE notes SET deleted_at=?, updated_at=?, lamport_ts=?, device_id=? WHERE id=?',
+          [nowIso, nowIso, lts, did, noteId]
+        )
+        await logChange(db, 'notes', noteId, 'delete', { deletedAt: nowIso, taskSeriesId: seriesKey }, lts, did)
+      }
+      // Upsert remaining notes (INSERT OR REPLACE clears any prior deleted_at)
+      for (const note of (changes.notes || [])) {
         const ts = note.createdAt ? new Date(note.createdAt).getTime() : Date.now()
         await db.execute(
-          'INSERT INTO notes (id, task_series_id, content, created_at) VALUES (?,?,?,?)',
-          [note.id, seriesKey, note.content || '', ts]
+          'INSERT OR REPLACE INTO notes (id, task_series_id, content, created_at, deleted_at, updated_at, lamport_ts, device_id) VALUES (?,?,?,?,NULL,?,?,?)',
+          [note.id, seriesKey, note.content || '', ts, nowIso, lts, did]
         )
       }
     }
