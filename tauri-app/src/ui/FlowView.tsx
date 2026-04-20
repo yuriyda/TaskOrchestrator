@@ -202,10 +202,20 @@ export function FlowView({
   // ── All hooks first (before any early returns) ────────────────────────────
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; task: Task } | null>(null);
   const ctxRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [resizeNonce, setResizeNonce] = useState(0);
   const [editing, setEditing] = useState(false);
   const [editDesc, setEditDesc] = useState("");
   const [editColor, setEditColor] = useState("");
   const [editDeadline, setEditDeadline] = useState("");
+
+  // Re-fit on container resize
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    const ro = new ResizeObserver(() => setResizeNonce(n => n + 1));
+    ro.observe(canvasRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     if (!ctxMenu) return;
@@ -255,8 +265,8 @@ export function FlowView({
   // ── Layout ────────────────────────────────────────────────────────────────
   const { positions, height } = computeLayout(flowTasks, getDeps);
 
-  // ── Key for uncontrolled ReactFlow (remount when deps/status change) ────────
-  const rfKey = flowTasks.map(t => `${String(t.id)}:${t.status}:${JSON.stringify(t.dependsOn)}`).join("|");
+  // ── Key for uncontrolled ReactFlow (remount when deps/status/size change) ──
+  const rfKey = flowTasks.map(t => `${String(t.id)}:${t.status}:${JSON.stringify(t.dependsOn)}`).join("|") + `|r${resizeNonce}`;
 
   // ── React Flow nodes ──────────────────────────────────────────────────────
   const rfNodes: TaskRFNode[] = flowTasks.map(task => ({
@@ -283,7 +293,7 @@ export function FlowView({
         id: `${String(depId)}->${String(task.id)}`,
         source: String(depId),
         target: String(task.id),
-        type: "smoothstep",
+        type: "default",
         markerEnd: { type: MarkerType.ArrowClosed, color: "#6b7280" },
         style: { stroke: "#6b7280", strokeWidth: 1.5 },
       }))
@@ -452,6 +462,7 @@ export function FlowView({
       {/* DAG canvas */}
       {flowTasks.length > 0 && (
         <div
+          ref={canvasRef}
           style={{ height, "--xy-background-color": "#0f172a" } as React.CSSProperties}
           className="rounded-lg overflow-hidden"
         >
@@ -464,7 +475,7 @@ export function FlowView({
             onConnect={onSetDependency ? handleConnect : undefined}
             isValidConnection={onSetDependency ? validateConnection : undefined}
             fitView
-            fitViewOptions={{ padding: 0.25 }}
+            fitViewOptions={{ padding: 0.1 }}
             colorMode="dark"
             nodesDraggable={false}
             nodesConnectable={!!onSetDependency}
@@ -477,7 +488,7 @@ export function FlowView({
             zoomOnDoubleClick={false}
             preventScrolling={false}
             minZoom={0.4}
-            maxZoom={2}
+            maxZoom={4}
             connectionLineStyle={{ stroke: "#38bdf8", strokeWidth: 1.5 }}
             connectionLineType="smoothstep"
             proOptions={{ hideAttribution: true }}
