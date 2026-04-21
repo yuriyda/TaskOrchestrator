@@ -7,7 +7,7 @@
  * for task creation, full-screen detail view on tap.
  */
 
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useCallback, useMemo } from 'react'
 import { STATUSES, PRIORITY_COLORS } from '@shared/core/constants.js'
 import { localIsoDate, parseDateInput, fmtDate } from '@shared/core/date.js'
 import { overdueLevel } from '@shared/core/overdue.js'
@@ -66,7 +66,7 @@ export default function MobileApp({ store }: MobileAppProps) {
     showGdriveSetup, setShowGdriveSetup,
     gdriveClientId, setGdriveClientId,
     gdriveClientSecret, setGdriveClientSecret,
-    syncing, autoSyncing,
+    autoSyncing,
     syncMsg, setSyncMsg,
     syncLog, addSyncLog, setSyncLog,
     lastSync,
@@ -226,11 +226,10 @@ export default function MobileApp({ store }: MobileAppProps) {
         )}
         {store.gdriveSyncNow && gdriveConnected && (
           <button onClick={async () => {
-            setSyncing(true); setSyncMsg(null)
-            try { await handleSyncNow() } catch {}
-            finally { setSyncing(false) }
-          }} disabled={syncing || autoSyncing}
-            className={`p-1.5 rounded-lg text-gray-400 active:text-sky-400 ${syncing || autoSyncing ? 'animate-spin' : ''}`}>
+            setSyncMsg(null)
+            try { await handleSyncNow() } catch { /* already logged in hook */ }
+          }} disabled={autoSyncing}
+            className={`p-1.5 rounded-lg text-gray-400 active:text-sky-400 ${autoSyncing ? 'animate-spin' : ''}`}>
             <RefreshCw size={18} />
           </button>
         )}

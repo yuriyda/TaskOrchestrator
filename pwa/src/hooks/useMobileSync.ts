@@ -27,7 +27,6 @@ export interface MobileSync {
   setGdriveClientId: Dispatch<SetStateAction<string>>
   gdriveClientSecret: string
   setGdriveClientSecret: Dispatch<SetStateAction<string>>
-  syncing: boolean
   autoSyncing: boolean
   syncMsg: string | null
   setSyncMsg: Dispatch<SetStateAction<string | null>>
@@ -41,7 +40,6 @@ export interface MobileSync {
 
 export function useMobileSync(store: any, t: (key: string) => string, locale: string): MobileSync {
   const [syncLog, setSyncLog] = useState<string[]>([])
-  const [syncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [gdriveConnected, setGdriveConnected] = useState(false)
   const [showGdriveSetup, setShowGdriveSetup] = useState(false)
@@ -118,7 +116,7 @@ export function useMobileSync(store: any, t: (key: string) => string, locale: st
     showGdriveSetup, setShowGdriveSetup,
     gdriveClientId, setGdriveClientId,
     gdriveClientSecret, setGdriveClientSecret,
-    syncing, autoSyncing,
+    autoSyncing,
     syncMsg, setSyncMsg,
     syncLog, addSyncLog, setSyncLog,
     lastSync, setLastSync,

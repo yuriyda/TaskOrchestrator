@@ -11,7 +11,7 @@
  * clearUndo() is exposed so the UI's Undo button can dismiss the toast after
  * invoking the callback; the internal timeout clears it after 5s anyway.
  */
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 
 export interface UndoAction {
   label: string
@@ -38,6 +38,11 @@ export function useMobileUndo(): MobileUndo {
 
   const clearUndo = useCallback(() => {
     setUndoAction(null)
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+  }, [])
+
+  // Cancel the 5s timer on unmount so it doesn't fire setUndoAction on a dead hook.
+  useEffect(() => () => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
   }, [])
 
