@@ -23,7 +23,7 @@ import {
 import { localIsoDate } from '@shared/core/date.js'
 
 const DB_NAME = 'task-orchestrator'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 function ulid() {
   const t = Date.now().toString(36).toUpperCase().padStart(10, '0')
@@ -31,32 +31,42 @@ function ulid() {
   return t + r
 }
 
+// Sync conflict resolution: incoming wins if its lamportTs is strictly greater,
+// or if lamportTs is equal and its deviceId is lexicographically greater
+// (deterministic tie-break ensures all devices converge on the same winner).
+function shouldReplace(incomingLts, localLts, incomingDid, localDid) {
+  const inL = incomingLts || 0
+  const loL = localLts || 0
+  if (inL > loL) return true
+  if (inL < loL) return false
+  return (incomingDid || '') > (localDid || '')
+}
+
 async function initDB(name = DB_NAME) {
   return openDB(name, DB_VERSION, {
-    upgrade(db) {
-      // Tasks
-      if (!db.objectStoreNames.contains('tasks')) {
+    upgrade(db, oldVersion, _newVersion, tx) {
+      // v1 → initial schema
+      if (oldVersion < 1) {
         const tasks = db.createObjectStore('tasks', { keyPath: 'id' })
         tasks.createIndex('status', 'status')
         tasks.createIndex('priority', 'priority')
         tasks.createIndex('list', 'list')
         tasks.createIndex('deletedAt', 'deletedAt')
-      }
-      // Notes
-      if (!db.objectStoreNames.contains('notes')) {
         const notes = db.createObjectStore('notes', { keyPath: 'id' })
         notes.createIndex('taskSeriesId', 'taskSeriesId')
+        db.createObjectStore('lists', { keyPath: 'name' })
+        db.createObjectStore('tags', { keyPath: 'name' })
+        db.createObjectStore('flows', { keyPath: 'name' })
+        db.createObjectStore('personas', { keyPath: 'name' })
+        db.createObjectStore('flowMeta', { keyPath: 'name' })
+        db.createObjectStore('meta', { keyPath: 'key' })
+        db.createObjectStore('vectorClock', { keyPath: 'deviceId' })
       }
-      // Lookup tables
-      if (!db.objectStoreNames.contains('lists')) db.createObjectStore('lists', { keyPath: 'name' })
-      if (!db.objectStoreNames.contains('tags')) db.createObjectStore('tags', { keyPath: 'name' })
-      if (!db.objectStoreNames.contains('flows')) db.createObjectStore('flows', { keyPath: 'name' })
-      if (!db.objectStoreNames.contains('personas')) db.createObjectStore('personas', { keyPath: 'name' })
-      if (!db.objectStoreNames.contains('flowMeta')) db.createObjectStore('flowMeta', { keyPath: 'name' })
-      // Meta (key-value)
-      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' })
-      // Sync
-      if (!db.objectStoreNames.contains('vectorClock')) db.createObjectStore('vectorClock', { keyPath: 'deviceId' })
+      // v2 → notes gain soft-delete + lamport/device for cross-device sync parity with desktop
+      if (oldVersion < 2) {
+        const notes = tx.objectStore('notes')
+        if (!notes.indexNames.contains('deletedAt')) notes.createIndex('deletedAt', 'deletedAt')
+      }
     },
   })
 }
@@ -113,6 +123,7 @@ async function fetchAllTasks(db) {
   const notes = await db.getAll('notes')
   const notesMap = {}
   for (const n of notes) {
+    if (n.deletedAt) continue
     if (!notesMap[n.taskSeriesId]) notesMap[n.taskSeriesId] = []
     notesMap[n.taskSeriesId].push(n)
   }
@@ -257,14 +268,28 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
   const saveNotes = useCallback(async (taskId, noteTexts) => {
     const db = dbRef.current
     if (!db) return
+    const did = deviceIdRef.current
+    const lts = await nextLamport(db, did)
+    const now = new Date().toISOString()
     const seriesId = (await db.get('tasks', taskId))?.rtmSeriesId || taskId
-    // Remove old notes for this task
     const existing = await db.getAllFromIndex('notes', 'taskSeriesId', seriesId)
-    for (const n of existing) await db.delete('notes', n.id)
-    // Add new notes
-    for (const content of noteTexts) {
-      if (!content.trim()) continue
-      await db.put('notes', { id: ulid(), taskSeriesId: seriesId, content: content.trim() })
+    const remainingTexts = noteTexts.map(c => c.trim()).filter(Boolean)
+    const alive = existing.filter(n => !n.deletedAt)
+    // Soft-delete notes that are no longer in the edited set
+    for (const n of alive) {
+      n.deletedAt = now
+      n.updatedAt = now
+      n.lamportTs = lts
+      n.deviceId = did
+      await db.put('notes', n)
+    }
+    // Insert fresh notes (always new ids — matches desktop saveNotes semantics)
+    for (const content of remainingTexts) {
+      await db.put('notes', {
+        id: ulid(), taskSeriesId: seriesId, content,
+        createdAt: Date.now(), updatedAt: now,
+        deletedAt: null, lamportTs: lts, deviceId: did,
+      })
     }
     await refresh()
   }, [refresh])
@@ -417,7 +442,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
     const now = new Date().toISOString()
-    const today = now.slice(0, 10)
+    const today = localIsoDate(new Date())
     for (const id of ids) {
       const task = await db.get('tasks', id)
       if (!task) continue
@@ -492,7 +517,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
 
   // ── Google Drive sync (PWA browser flow) ─────────────────────────────────
 
-  // IDB-based computeSyncPackage (same logic as SQLite version)
+  // IDB-based computeSyncPackage (mirrors SQLite version: tasks + notes + flowMeta + lookups)
   const computeSyncPackageIdb = async (db, targetVC = {}) => {
     const devRow = await db.get('meta', 'device_id')
     const localDeviceId = devRow?.value || null
@@ -506,24 +531,53 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       return t.lamportTs > targetKnows
     })
 
+    const allSeriesIds = new Set(allTasks.map(t => t.rtmSeriesId || t.id))
+    const allNotes = await db.getAll('notes')
+    const notesToSend = allNotes
+      .filter(n => {
+        if (!allSeriesIds.has(n.taskSeriesId)) return false
+        if (!n.deviceId) return true
+        const targetKnows = targetVC[n.deviceId] || 0
+        return (n.lamportTs || 0) > targetKnows
+      })
+      .map(n => ({
+        id: n.id,
+        taskSeriesId: n.taskSeriesId,
+        content: n.content || '',
+        createdAt: n.createdAt ?? Date.now(),
+        deletedAt: n.deletedAt || null,
+        updatedAt: n.updatedAt || null,
+        lamportTs: n.lamportTs || 0,
+        deviceId: n.deviceId || null,
+      }))
+
     const lists = (await db.getAll('lists')).map(r => r.name)
     const tags = (await db.getAll('tags')).map(r => r.name)
     const flows = (await db.getAll('flows')).map(r => r.name)
     const personas = (await db.getAll('personas')).map(r => r.name)
+    const flowMetaRows = await db.getAll('flowMeta')
+    const flowMeta = flowMetaRows.map(r => ({
+      name: r.name,
+      description: r.description || '',
+      color: r.color || '',
+      deadline: r.deadline || null,
+    }))
 
     return {
       type: 'sync_package',
       deviceId: localDeviceId,
       vectorClock: localVC,
       tasks: tasksToSend,
-      notes: [],
-      lists, tags, flows, personas, flowMeta: [],
+      notes: notesToSend,
+      lists, tags, flows, personas, flowMeta,
     }
   }
 
-  // IDB-based importSyncPackage
+  // IDB-based importSyncPackage — mirrors desktop semantics including tie-break,
+  // soft-deleted note propagation, and flowMeta upsert.
   const importSyncPackageIdb = async (db, pkg) => {
-    const { tasks: remoteTasks, vectorClock: remoteVC, lists: rLists, tags: rTags, flows: rFlows, personas: rPersonas } = pkg
+    const { tasks: remoteTasks, notes: remoteNotes, vectorClock: remoteVC,
+      lists: rLists, tags: rTags, flows: rFlows, personas: rPersonas, flowMeta: rFlowMeta } = pkg
     const devRow = await db.get('meta', 'device_id')
     const localDeviceId = devRow?.value || null
 
@@ -548,7 +602,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
           applied++
         } else if (task.deviceId === localDeviceId) {
           skipped++
-        } else if ((task.lamportTs || 0) > (existing.lamportTs || 0)) {
+        } else if (shouldReplace(task.lamportTs, existing.lamportTs, task.deviceId, existing.deviceId)) {
           await db.put('tasks', { ...existing, ...task })
           applied++
         } else if ((task.lamportTs || 0) === (existing.lamportTs || 0)) {
@@ -570,6 +624,50 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     if (rTags) for (const n of rTags) await db.put('tags', { name: n })
     if (rFlows) for (const n of rFlows) await db.put('flows', { name: n })
     if (rPersonas) for (const n of rPersonas) await db.put('personas', { name: n })
+
+    // Flow metadata (upsert, also ensures flow row exists)
+    if (rFlowMeta) {
+      for (const fm of rFlowMeta) {
+        await db.put('flows', { name: fm.name })
+        await db.put('flowMeta', {
+          name: fm.name,
+          description: fm.description || '',
+          color: fm.color || '',
+          deadline: fm.deadline || null,
+        })
+      }
+    }
+
+    // Notes with lamport + tie-break, preserving soft-delete (deletedAt)
+    if (remoteNotes) {
+      for (const note of remoteNotes) {
+        const existing = await db.get('notes', note.id)
+        const createdAt = typeof note.createdAt === 'number'
+          ? note.createdAt
+          : (note.createdAt ? new Date(note.createdAt).getTime() : Date.now())
+        if (!existing) {
+          await db.put('notes', {
+            id: note.id,
+            taskSeriesId: note.taskSeriesId || '',
+            content: note.content || '',
+            createdAt,
+            deletedAt: note.deletedAt || null,
+            updatedAt: note.updatedAt || null,
+            lamportTs: note.lamportTs || 0,
+            deviceId: note.deviceId || null,
+          })
+        } else if (shouldReplace(note.lamportTs, existing.lamportTs, note.deviceId, existing.deviceId)) {
+          await db.put('notes', {
+            ...existing,
+            content: note.content || '',
+            deletedAt: note.deletedAt || null,
+            updatedAt: note.updatedAt || null,
+            lamportTs: note.lamportTs || 0,
+            deviceId: note.deviceId || null,
+          })
+        }
+      }
+    }
 
     return { stats: { applied, skipped, outdated } }
   }
