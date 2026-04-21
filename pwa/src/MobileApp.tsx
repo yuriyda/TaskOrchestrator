@@ -95,7 +95,7 @@ export default function MobileApp({ store }: MobileAppProps) {
   const [clearConfirmText, setClearConfirmText] = useState('')
   const [cleanupMsg, setCleanupMsg] = useState(null)
   const [cleaning, setCleaning] = useState(false)
-  const [undoAction, setUndoAction] = useState(null) // { label, undo: () => void }
+  const [undoAction, setUndoAction] = useState(null) // { label, undo: (() => void) | null }
   const [updateMsg, setUpdateMsg] = useState(() => {
     const prev = sessionStorage.getItem('pwa_update_check')
     if (prev) {
@@ -258,20 +258,24 @@ export default function MobileApp({ store }: MobileAppProps) {
     store.addTask(d)
   }, [store, filter, dateRange, listFilter, tagFilter, today])
 
+  // Toast-undo contract: pass a function for undoable operations (bulkDelete,
+  // bulkPriority, etc.). Pass `null` when the operation has fan-out side effects
+  // (bulkStatus→done, bulkCycle→done, single-task completion of a recurring
+  // task or one with dependents) — the toast still shows the completion
+  // notification but omits the Undo button. Full command-based undo is out of
+  // scope; see pwa-architecture-plan-2026-04-21.md Task 2.
   const showUndo = useCallback((label, undoFn) => {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoAction({ label, undo: undoFn })
+    setUndoAction({ label, undo: undoFn || null })
     undoTimerRef.current = setTimeout(() => setUndoAction(null), 5000)
   }, [])
 
   const handleComplete = useCallback((id) => {
-    const task = store.tasks.find(t => t.id === id)
-    const prevStatus = task?.status || 'active'
+    // Completion has fan-out: handleTaskDone may spawn a recurring occurrence
+    // and activate blocked dependents. A simple "restore prevStatus" Undo does
+    // NOT roll those back, so we skip the Undo button here.
     store.bulkStatus(new Set([id]), 'done')
-    showUndo(
-      locale === 'ru' ? 'Задача завершена' : 'Task completed',
-      () => store.bulkStatus(new Set([id]), prevStatus)
-    )
+    showUndo(locale === 'ru' ? 'Задача завершена' : 'Task completed', null)
   }, [store, locale, showUndo])
 
   const handleDelete = useCallback((id) => {
@@ -556,18 +560,20 @@ export default function MobileApp({ store }: MobileAppProps) {
         </div>
       )}
 
-      {/* Undo toast */}
+      {/* Undo toast — Undo button only shown when undo.undo is a function */}
       {undoAction && (
         <div className="fixed bottom-24 left-4 right-4 z-30 flex items-center gap-3 bg-slate-700 rounded-xl px-4 py-3 shadow-lg shadow-black/30 animate-[fadeIn_0.2s_ease-out]">
           <span className="flex-1 text-sm text-gray-200">{undoAction.label}</span>
-          <button onClick={() => {
-            undoAction.undo()
-            setUndoAction(null)
-            if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-          }}
-            className="px-3 py-1 rounded-lg text-sm font-semibold text-sky-400 bg-sky-600/20 active:bg-sky-600/30">
-            {locale === 'ru' ? 'Отменить' : 'Undo'}
-          </button>
+          {undoAction.undo && (
+            <button onClick={() => {
+              undoAction.undo()
+              setUndoAction(null)
+              if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
+            }}
+              className="px-3 py-1 rounded-lg text-sm font-semibold text-sky-400 bg-sky-600/20 active:bg-sky-600/30">
+              {locale === 'ru' ? 'Отменить' : 'Undo'}
+            </button>
+          )}
         </div>
       )}
 
