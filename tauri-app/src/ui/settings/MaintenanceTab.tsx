@@ -4,8 +4,9 @@
  * Extracted from SettingsDialog to reduce component size.
  */
 import { useState, useEffect } from "react";
-import { Copy, FolderOpen, Trash2 } from "lucide-react";
+import { Copy, FolderOpen, Trash2, Gauge } from "lucide-react";
 import { useApp } from "../AppContext";
+import { getPerfStats, getPerfGauges } from "../../../../shared/core/perfMeter.js";
 import type { BackupInfo } from "../../types";
 
 interface MaintenanceTabProps {
@@ -19,6 +20,37 @@ interface MaintenanceTabProps {
   onRestoreBackup?: (path: string) => Promise<void>;
   onCleanupLookups?: () => Promise<{ removed: { lists: string[]; tags: string[]; personas: string[]; flows: string[] } }>;
   onClose: () => void;
+}
+
+function DiagnosticsTable({ t, TC }: { t: (k: string) => string; TC: any }) {
+  const [tick, setTick] = useState(0);
+  useEffect(() => { const id = setInterval(() => setTick(v => v + 1), 1000); return () => clearInterval(id); }, []);
+  void tick; // force re-read each second
+  const stats = getPerfStats();
+  const gauges = getPerfGauges();
+  const labels = Object.keys(stats).sort();
+  if (labels.length === 0) return <div className={`text-xs ${TC.textMuted}`}>{t("settings.maintenance.diagnostics.empty")}</div>;
+  return (
+    <div className="space-y-1">
+      {labels.map(label => {
+        const s = stats[label];
+        const avg = s.count > 0 ? s.totalMs / s.count : 0;
+        return (
+          <div key={label} className={`grid grid-cols-5 gap-2 text-[11px] font-mono ${TC.textSec}`}>
+            <div className="col-span-2 truncate">{label}</div>
+            <div>n={s.count}</div>
+            <div>avg {avg.toFixed(1)}ms</div>
+            <div>max {s.maxMs.toFixed(1)}ms</div>
+          </div>
+        );
+      })}
+      {Object.keys(gauges).length > 0 && (
+        <div className={`text-[11px] font-mono ${TC.textMuted} pt-1 border-t ${TC.borderClass} mt-1`}>
+          {Object.entries(gauges).map(([k, v]) => `${k}=${v}`).join("  ")}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function MaintenanceTab({ dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onCreateBackup, onListBackups, onRestoreBackup, onCleanupLookups, onClose }: MaintenanceTabProps) {
@@ -140,6 +172,16 @@ export function MaintenanceTab({ dbPath, onRevealDb, onOpenDb, onCreateNewDb, on
           </div>
         </div>
       )}
+
+      {/* Diagnostics — fetchAll perf counter (Task 5 phase C). Read-only, per-session. */}
+      <div className={`rounded-lg border p-4 mb-4 ${TC.elevated} ${TC.borderClass}`}>
+        <div className="flex items-center gap-2 mb-2">
+          <Gauge size={12} className={TC.textMuted} />
+          <div className={`text-sm font-medium ${TC.text}`}>{t("settings.maintenance.diagnostics.label")}</div>
+        </div>
+        <div className={`text-xs ${TC.textMuted} mb-2`}>{t("settings.maintenance.diagnostics.desc")}</div>
+        <DiagnosticsTable t={t} TC={TC} />
+      </div>
 
       {/* Backups */}
       <div className={`rounded-lg border p-4 ${TC.elevated} ${TC.borderClass}`}>

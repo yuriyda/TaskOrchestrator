@@ -19,6 +19,7 @@ export interface PerfSample {
 }
 
 const stats: Map<string, PerfSample> = new Map()
+const gauges: Map<string, number> = new Map()
 
 function now(): number {
   try {
@@ -49,6 +50,19 @@ export function getPerfStats(): Record<string, PerfSample> {
   return out
 }
 
+// Point-in-time numeric reading (e.g. "tasks.count") — most-recent value only,
+// no history. Useful for correlating fetchAll duration with dataset size in
+// the Diagnostics panel.
+export function setPerfGauge(label: string, value: number): void {
+  gauges.set(label, value)
+}
+
+export function getPerfGauges(): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const [k, v] of gauges) out[k] = v
+  return out
+}
+
 export function resetPerfStats(label?: string): void {
   if (label) stats.delete(label)
   else stats.clear()
@@ -59,5 +73,6 @@ export function resetPerfStats(label?: string): void {
 try {
   if (typeof globalThis !== 'undefined') {
     (globalThis as any).__perfStats = getPerfStats
+    ;(globalThis as any).__perfGauges = getPerfGauges
   }
 } catch { /* ignore */ }

@@ -158,7 +158,7 @@ export function shiftDue(due: string | null): string | null {
 // statements sequentially and include sync-log writes (logChange) in the
 // same block to minimise the window for inconsistency.
 
-import { measure } from '../../../shared/core/perfMeter.js'
+import { measure, setPerfGauge } from '../../../shared/core/perfMeter.js'
 
 export async function fetchAll(db: DB): Promise<Task[]> {
   return measure('fetchAll.sqlite', async () => {
@@ -175,6 +175,7 @@ export async function fetchAll(db: DB): Promise<Task[]> {
         createdAt: new Date(n.created_at).toISOString(),
       })
     }
+    setPerfGauge('tasks.count.sqlite', taskRows.length)
     return taskRows.map((row: any) => rowToTask(row, notesMap))
   })
 }

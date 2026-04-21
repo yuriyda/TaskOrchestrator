@@ -4,8 +4,9 @@
  * Extracted from MobileApp.tsx to keep the main orchestrator focused on layout.
  * Props are deliberately explicit — there's no app-wide settings context in PWA.
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { ChevronLeft, RefreshCw } from 'lucide-react'
+import { getPerfStats, getPerfGauges } from '@shared/core/perfMeter'
 
 declare const __APP_VERSION__: string
 
@@ -17,6 +18,49 @@ interface Props {
   autoSyncEnabled: boolean
   updateMsg: { text: string; ok: boolean } | null
   onClose: () => void
+}
+
+function MobileDiagnostics({ L }: { L: (ru: string, en: string) => string }) {
+  const [, setTick] = useState(0)
+  useEffect(() => { const id = setInterval(() => setTick(v => v + 1), 1000); return () => clearInterval(id) }, [])
+  const stats = getPerfStats()
+  const gauges = getPerfGauges()
+  const labels = Object.keys(stats).sort()
+  return (
+    <div>
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">
+        {L('Диагностика', 'Diagnostics')}
+      </div>
+      <div className="text-xs text-gray-500 mb-2">
+        {L('Тайминги fetchAll за сессию и число задач.', 'Per-session fetchAll timings and task count.')}
+      </div>
+      {labels.length === 0 ? (
+        <div className="text-xs text-gray-600 italic">
+          {L('Замеров пока нет.', 'No measurements yet.')}
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {labels.map(label => {
+            const s = stats[label]
+            const avg = s.count > 0 ? s.totalMs / s.count : 0
+            return (
+              <div key={label} className="grid grid-cols-5 gap-1 text-[10px] font-mono text-gray-400">
+                <div className="col-span-2 truncate">{label}</div>
+                <div>n={s.count}</div>
+                <div>avg {avg.toFixed(1)}ms</div>
+                <div>max {s.maxMs.toFixed(1)}ms</div>
+              </div>
+            )
+          })}
+          {Object.keys(gauges).length > 0 && (
+            <div className="text-[10px] font-mono text-gray-500 pt-1 border-t border-slate-700 mt-1">
+              {Object.entries(gauges).map(([k, v]) => `${k}=${v}`).join('  ')}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function MobileSettingsScreen({ locale, setLocale, store, gdriveConnected, autoSyncEnabled, updateMsg, onClose }: Props) {
@@ -143,6 +187,9 @@ export function MobileSettingsScreen({ locale, setLocale, store, gdriveConnected
             </button>
           </div>
         </div>
+
+        {/* Diagnostics — fetchAll perf counter (Task 5 phase C). Refreshes every second. */}
+        <MobileDiagnostics L={L} />
 
         {/* About */}
         <div>

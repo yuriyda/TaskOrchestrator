@@ -122,7 +122,7 @@ function buildIdbOps(db) {
   }
 }
 
-import { measure } from '@shared/core/perfMeter'
+import { measure, setPerfGauge } from '@shared/core/perfMeter'
 
 async function fetchAllTasks(db) {
   return measure('fetchAll.idb', async () => {
@@ -134,8 +134,9 @@ async function fetchAllTasks(db) {
       if (!notesMap[n.taskSeriesId]) notesMap[n.taskSeriesId] = []
       notesMap[n.taskSeriesId].push(n)
     }
-    return all
-      .filter(t => !t.deletedAt)
+    const alive = all.filter(t => !t.deletedAt)
+    setPerfGauge('tasks.count.idb', alive.length)
+    return alive
       .map(t => ({ ...t, notes: notesMap[t.rtmSeriesId || t.id] || [], subtasks: [] }))
       .sort((a, b) => (a.priority || 4) - (b.priority || 4) || (a.createdAt || '').localeCompare(b.createdAt || ''))
   })
