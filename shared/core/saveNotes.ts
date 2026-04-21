@@ -43,6 +43,10 @@ export interface NoteStorageAdapter {
   nextLamport(did: string | null): Promise<number>
   now(): string
   generateId(): string
+  // Optional change-log hooks. Desktop uses them to feed its sync_log; PWA leaves
+  // them unset (IDB has no separate delta log). Called AFTER the write lands.
+  logDeleteNote?(noteId: string, seriesId: string, deletedAt: string, lts: number, did: string | null): Promise<void>
+  logUpsertNote?(note: NoteRow): Promise<void>
 }
 
 function coerceCreatedAt(raw: number | string | null | undefined): number {
@@ -88,6 +92,7 @@ export async function saveNotes(
   for (const row of alive) {
     if (keepIds.has(row.id)) continue
     await adapter.softDeleteNote(row.id, nowIso, lts, did)
+    if (adapter.logDeleteNote) await adapter.logDeleteNote(row.id, seriesId, nowIso, lts, did)
   }
 
   // Dedup incoming by id — if the caller passes duplicates, keep only the
@@ -104,5 +109,6 @@ export async function saveNotes(
 
   for (const note of normalized) {
     await adapter.upsertNote(note)
+    if (adapter.logUpsertNote) await adapter.logUpsertNote(note)
   }
 }

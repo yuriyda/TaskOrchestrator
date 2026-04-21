@@ -20,6 +20,8 @@ import { useSyncOps } from './store/useSyncOps.js'
 import { useDbOps } from './store/useDbOps.js'
 import { runLookupGc } from './core/lookup'
 import { createSqliteLookupAdapter } from './store/lookupAdapter'
+import { saveNotes as sharedSaveNotes } from '../../shared/core/saveNotes'
+import { createSqliteNoteAdapter } from './store/noteAdapter'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -444,41 +446,13 @@ export function useTauriTaskStore() {
       }
       activatedNames.push(...doneResult.activated.map(a => a.title))
     }
-    // Sync notes: diff old vs new, soft-delete missing, upsert remaining.
-    // Soft-delete (deleted_at) is required so sync can propagate deletions to other devices.
+    // Note sync — delegated to shared/core/saveNotes.ts via SQLite adapter.
+    // logChange hooks keep the delta log intact (desktop-only surface).
     if (changes.notes !== undefined) {
-      const [taskRow] = await db.select('SELECT rtm_series_id FROM tasks WHERE id=?', [id])
-      const seriesKey = taskRow?.rtm_series_id || id
-      const existingNotes = await db.select(
-        'SELECT id FROM notes WHERE task_series_id=? AND deleted_at IS NULL',
-        [seriesKey]
-      )
-      const newNoteIds = new Set((changes.notes || []).map((n: any) => n.id))
-      const deletedIds = existingNotes.filter((n: any) => !newNoteIds.has(n.id)).map((n: any) => n.id)
-      const nowIso = new Date().toISOString()
-      // Soft-delete removed notes
-      for (const noteId of deletedIds) {
-        await db.execute(
-          'UPDATE notes SET deleted_at=?, updated_at=?, lamport_ts=?, device_id=? WHERE id=?',
-          [nowIso, nowIso, lts, did, noteId]
-        )
-        await logChange(db, 'notes', noteId, 'delete', { deletedAt: nowIso, taskSeriesId: seriesKey }, lts, did)
-      }
-      // Upsert remaining notes (INSERT OR REPLACE clears any prior deleted_at)
-      for (const note of (changes.notes || [])) {
-        const ts = note.createdAt ? new Date(note.createdAt).getTime() : Date.now()
-        await db.execute(
-          'INSERT OR REPLACE INTO notes (id, task_series_id, content, created_at, deleted_at, updated_at, lamport_ts, device_id) VALUES (?,?,?,?,NULL,?,?,?)',
-          [note.id, seriesKey, note.content || '', ts, nowIso, lts, did]
-        )
-      }
+      const adapter = createSqliteNoteAdapter(db, did)
+      await sharedSaveNotes(adapter, id, changes.notes || [])
     }
     await logChange(db, 'tasks', id, 'update', changes, lts, did)
-    if (changes.notes !== undefined) {
-      for (const note of (changes.notes || [])) {
-        await logChange(db, 'notes', note.id, 'insert', { content: note.content, createdAt: note.createdAt }, lts, did)
-      }
-    }
     // Incremental lookup GC — dropping a field (list/tags/personas/flowId) may
     // have orphaned an entry. Runs only when the changeset touches one of those
     // fields to keep the hot path fast.
