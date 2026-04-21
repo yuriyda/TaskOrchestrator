@@ -142,9 +142,14 @@ export function TaskRow({ task, isCursor, isSelected, isBlocked = false, isPlann
       {compact && task.recurrence && (
         <span className="text-xs text-teal-400/70 flex-shrink-0" title={task.recurrence}><Repeat size={10} /></span>
       )}
-      {task.notes && task.notes.length > 0 && (
-        <span className="text-xs text-amber-400/70 flex-shrink-0" title={`${task.notes.length} note${task.notes.length > 1 ? "s" : ""}`}><FileText size={10} /></span>
-      )}
+      {task.notes && task.notes.length > 0 && (() => {
+        const MAX = 500;
+        const joined = task.notes.map((n: any) => n.content || "").filter(Boolean).join("\n\n---\n\n");
+        const tooltip = joined.length > MAX ? joined.slice(0, MAX) + "…" : joined;
+        return (
+          <span className="text-xs text-amber-400/70 flex-shrink-0 inline-flex items-center p-1 -m-1" title={tooltip || `${task.notes.length} note${task.notes.length > 1 ? "s" : ""}`}><FileText size={12} /></span>
+        );
+      })()}
     </div>
   );
 }
