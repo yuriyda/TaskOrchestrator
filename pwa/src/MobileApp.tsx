@@ -29,6 +29,9 @@ import { TaskItem } from './ui/TaskItem'
 import { TaskDetail } from './ui/TaskDetail'
 import { AddTaskSheet } from './ui/AddTaskSheet'
 import { SearchBar } from './ui/SearchBar'
+import { useMobileFilters } from './hooks/useMobileFilters'
+import { useMobileDialogs } from './hooks/useMobileDialogs'
+import { useMobileUpdateCheck } from './hooks/useMobileUpdateCheck'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,69 +52,34 @@ export default function MobileApp({ store }: MobileAppProps) {
   const t = useTranslation(locale)
   const [syncLog, setSyncLog] = useState([])
 
-  const [filter, setFilterRaw] = useState(() => {
-    try { return localStorage.getItem("pwaFilter") || "active" } catch { return "active" }
-  })
-  const setFilter = (v) => { setFilterRaw(v); try { localStorage.setItem("pwaFilter", v || "") } catch {} }
-  const [dateRange, setDateRangeRaw] = useState(() => {
-    try { return localStorage.getItem("pwaDateRange") || "today" } catch { return "today" }
-  })
-  const setDateRange = (v) => { setDateRangeRaw(v); try { localStorage.setItem("pwaDateRange", v || "") } catch {} }
-  const [listFilter, setListFilterRaw] = useState(() => {
-    try { const v = localStorage.getItem("pwaListFilter"); return v || null } catch { return null }
-  })
-  const setListFilter = (v) => {
-    setListFilterRaw(prev => {
-      const next = typeof v === "function" ? v(prev) : v
-      try { localStorage.setItem("pwaListFilter", next || "") } catch {}
-      return next
-    })
-  }
-  const [tagFilter, setTagFilterRaw] = useState(() => {
-    try { return localStorage.getItem("pwaTagFilter") || null } catch { return null }
-  })
-  const setTagFilter = (v) => {
-    setTagFilterRaw(prev => {
-      const next = typeof v === "function" ? v(prev) : v
-      try { localStorage.setItem("pwaTagFilter", next || "") } catch {}
-      return next
-    })
-  }
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchVisible, setSearchVisible] = useState(false)
-  const [drawerOpen, setDrawerOpen] = useState(false)
-  const [showAdd, setShowAdd] = useState(false)
-  const [detailId, setDetailId] = useState(null)
+  const {
+    filter, setFilter,
+    dateRange, setDateRange,
+    listFilter, setListFilter,
+    tagFilter, setTagFilter,
+    searchQuery, setSearchQuery,
+    searchVisible, setSearchVisible,
+    calendarDate, setCalendarDate,
+  } = useMobileFilters()
+  const {
+    drawerOpen, setDrawerOpen,
+    showAdd, setShowAdd,
+    detailId, setDetailId,
+    showCalendar, setShowCalendar,
+    showSettings, setShowSettings,
+  } = useMobileDialogs()
   const [syncing, setSyncing] = useState(false)
   const [syncMsg, setSyncMsg] = useState(null)
-  const [showCalendar, setShowCalendar] = useState(false)
-  const [calendarDate, setCalendarDate] = useState(null)
   const [gdriveConnected, setGdriveConnected] = useState(false)
   const [showGdriveSetup, setShowGdriveSetup] = useState(false)
   const [gdriveClientId, setGdriveClientId] = useState('')
   const [gdriveClientSecret, setGdriveClientSecret] = useState('')
   const [lastSync, setLastSync] = useState(null)
-  const [showSettings, setShowSettings] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState('')
   const [cleanupMsg, setCleanupMsg] = useState(null)
   const [cleaning, setCleaning] = useState(false)
   const [undoAction, setUndoAction] = useState(null) // { label, undo: (() => void) | null }
-  const [updateMsg, setUpdateMsg] = useState(() => {
-    const prev = sessionStorage.getItem('pwa_update_check')
-    if (prev) {
-      sessionStorage.removeItem('pwa_update_check')
-      const currentVer = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
-      if (prev === currentVer) return { text: locale === 'ru' ? 'Обновлений не найдено' : 'No updates available', ok: false }
-      return { text: (locale === 'ru' ? 'Обновлено до v' : 'Updated to v') + currentVer, ok: true }
-    }
-    return null
-  })
-  useEffect(() => {
-    if (updateMsg) {
-      const timer = setTimeout(() => setUpdateMsg(null), 5000)
-      return () => clearTimeout(timer)
-    }
-  }, [updateMsg])
+  const [updateMsg, setUpdateMsg] = useMobileUpdateCheck(locale)
   const undoTimerRef = useRef(null)
 
   const addSyncLog = (msg) => {
