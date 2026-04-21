@@ -2,6 +2,7 @@
 // Extracted from task-orchestrator.jsx and useTauriTaskStore.js
 
 import type { ISODate } from '../types'
+import { localIsoDate } from './date'
 
 export function ruPlural(n: number, one: string, few: string, many: string): string {
   const mod10 = n % 10, mod100 = n % 100;
@@ -112,7 +113,7 @@ export function humanRecurrence(value: string | null | undefined, locale: string
 // ("FREQ=DAILY;INTERVAL=1;WKST=SU" etc.) as stored from RTM import.
 export function nextDue(due: ISODate | null, recurrence: string | null): ISODate | null {
   if (!recurrence) return null
-  const today: string = new Date().toISOString().slice(0, 10)
+  const today: string = localIsoDate(new Date())
   const base: string  = (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) ? due : today
   const d = new Date(base + 'T12:00:00')
 
@@ -132,8 +133,5 @@ export function nextDue(due: ISODate | null, recurrence: string | null): ISODate
   else if (freq === 'yearly')  d.setFullYear(d.getFullYear() + interval)
   else return null
 
-  const y: number  = d.getFullYear()
-  const mo: string = String(d.getMonth() + 1).padStart(2, '0')
-  const dy: string = String(d.getDate()).padStart(2, '0')
-  return `${y}-${mo}-${dy}`
+  return localIsoDate(d)
 }
