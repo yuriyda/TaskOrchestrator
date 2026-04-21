@@ -32,6 +32,10 @@ export default defineConfig({
     include: ['src/**/*.test.{js,jsx}'],
     // Existing node-only tests (schema, ulid, transactions) specify
     // their own environment via comment or work in both environments.
+    // Shared storage-agnostic tests live under shared/core/*.test.{js,ts}
+    // and are re-imported via thin src/**/*-shared.test.{js,ts} wrappers
+    // so the vitest globber picks them up while keeping the test files
+    // themselves storage-agnostic.
   },
 
   // ── Tauri-specific settings ───────────────────────────────────────────────
