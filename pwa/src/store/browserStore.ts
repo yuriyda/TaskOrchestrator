@@ -122,19 +122,23 @@ function buildIdbOps(db) {
   }
 }
 
+import { measure } from '@shared/core/perfMeter'
+
 async function fetchAllTasks(db) {
-  const all = await db.getAll('tasks')
-  const notes = await db.getAll('notes')
-  const notesMap = {}
-  for (const n of notes) {
-    if (n.deletedAt) continue
-    if (!notesMap[n.taskSeriesId]) notesMap[n.taskSeriesId] = []
-    notesMap[n.taskSeriesId].push(n)
-  }
-  return all
-    .filter(t => !t.deletedAt)
-    .map(t => ({ ...t, notes: notesMap[t.rtmSeriesId || t.id] || [], subtasks: [] }))
-    .sort((a, b) => (a.priority || 4) - (b.priority || 4) || (a.createdAt || '').localeCompare(b.createdAt || ''))
+  return measure('fetchAll.idb', async () => {
+    const all = await db.getAll('tasks')
+    const notes = await db.getAll('notes')
+    const notesMap = {}
+    for (const n of notes) {
+      if (n.deletedAt) continue
+      if (!notesMap[n.taskSeriesId]) notesMap[n.taskSeriesId] = []
+      notesMap[n.taskSeriesId].push(n)
+    }
+    return all
+      .filter(t => !t.deletedAt)
+      .map(t => ({ ...t, notes: notesMap[t.rtmSeriesId || t.id] || [], subtasks: [] }))
+      .sort((a, b) => (a.priority || 4) - (b.priority || 4) || (a.createdAt || '').localeCompare(b.createdAt || ''))
+  })
 }
 
 async function fetchLookups(db) {

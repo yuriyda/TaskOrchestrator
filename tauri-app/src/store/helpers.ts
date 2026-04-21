@@ -158,21 +158,25 @@ export function shiftDue(due: string | null): string | null {
 // statements sequentially and include sync-log writes (logChange) in the
 // same block to minimise the window for inconsistency.
 
+import { measure } from '../../../shared/core/perfMeter.js'
+
 export async function fetchAll(db: DB): Promise<Task[]> {
-  const [taskRows, noteRows] = await Promise.all([
-    db.select('SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY priority, created_at'),
-    db.select('SELECT * FROM notes WHERE deleted_at IS NULL ORDER BY created_at'),
-  ])
-  const notesMap: Record<string, Note[]> = {}
-  for (const n of noteRows as any[]) {
-    if (!notesMap[n.task_series_id]) notesMap[n.task_series_id] = []
-    notesMap[n.task_series_id].push({
-      id:        n.id,
-      content:   n.content,
-      createdAt: new Date(n.created_at).toISOString(),
-    })
-  }
-  return taskRows.map((row: any) => rowToTask(row, notesMap))
+  return measure('fetchAll.sqlite', async () => {
+    const [taskRows, noteRows] = await Promise.all([
+      db.select('SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY priority, created_at'),
+      db.select('SELECT * FROM notes WHERE deleted_at IS NULL ORDER BY created_at'),
+    ])
+    const notesMap: Record<string, Note[]> = {}
+    for (const n of noteRows as any[]) {
+      if (!notesMap[n.task_series_id]) notesMap[n.task_series_id] = []
+      notesMap[n.task_series_id].push({
+        id:        n.id,
+        content:   n.content,
+        createdAt: new Date(n.created_at).toISOString(),
+      })
+    }
+    return taskRows.map((row: any) => rowToTask(row, notesMap))
+  })
 }
 
 export function buildSqlOps(db: DB, logChangeFn?: typeof logChange) {
