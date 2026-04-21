@@ -16,7 +16,7 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
 
 /** Parse depends_on from DB: always returns string[] or null.
  *  Handles legacy string values, JSON arrays, and malformed data. */
-function parseDependsOn(raw: string | null): string[] | null {
+export function parseDependsOn(raw: string | null): string[] | null {
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw)
@@ -180,7 +180,9 @@ export function buildSqlOps(db: DB, logChangeFn?: typeof logChange) {
     getTask: async (id: string) => {
       const [row] = await db.select('SELECT * FROM tasks WHERE id=?', [id])
       if (!row) return null
-      return { ...row, dependsOn: row.depends_on ? JSON.parse(row.depends_on) : null }
+      // Use parseDependsOn (tolerant) instead of JSON.parse so mangled legacy
+      // depends_on values don't crash handleTaskDone / isTaskBlocked.
+      return { ...row, dependsOn: parseDependsOn(row.depends_on) }
     },
     insertTask: async (task: any) => {
       await db.execute(TASK_INSERT, taskToRow(task))

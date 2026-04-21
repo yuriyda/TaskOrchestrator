@@ -45,6 +45,7 @@ export function useFilteredTasks({
   const filtered = useMemo(() => {
     let r = tasks;
     if (filters.status) r = r.filter(tk => tk.status === filters.status);
+    else if (filters.hideDone) r = r.filter(tk => tk.status !== 'done');
     if (filters.dateRange) {
       const todayStr = today;
       const isPastDue = (tt: Task) => tt.due && tt.due < todayStr && tt.status !== "done" && tt.status !== "cancelled";
