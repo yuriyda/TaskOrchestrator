@@ -447,10 +447,11 @@ export function useTauriTaskStore() {
       activatedNames.push(...doneResult.activated.map(a => a.title))
     }
     // Note sync — delegated to shared/core/saveNotes.ts via SQLite adapter.
-    // logChange hooks keep the delta log intact (desktop-only surface).
+    // Pass outer lts/did so all rows (task UPDATE + notes) share a single
+    // lamport; logChange hooks keep the delta log intact (desktop-only).
     if (changes.notes !== undefined) {
       const adapter = createSqliteNoteAdapter(db, did)
-      await sharedSaveNotes(adapter, id, changes.notes || [])
+      await sharedSaveNotes(adapter, id, changes.notes || [], { overrideLts: lts, overrideDid: did })
     }
     await logChange(db, 'tasks', id, 'update', changes, lts, did)
     // Incremental lookup GC — dropping a field (list/tags/personas/flowId) may

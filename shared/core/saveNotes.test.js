@@ -155,4 +155,26 @@ describe('shared saveNotes', () => {
     expect(other.deletedAt).toBeNull()
     expect(other.content).toBe('Untouched')
   })
+
+  it('resurrects a soft-deleted note when its id appears in the incoming set', async () => {
+    // n1 was soft-deleted previously; user restores it by saving with the same id.
+    adapter.notes.get('n1').deletedAt = '2026-04-20T00:00:00Z'
+    await saveNotes(adapter, 'T', [{ id: 'n1', content: 'Back' }, { id: 'n2', content: 'Second' }])
+    const n1 = adapter.notes.get('n1')
+    expect(n1.deletedAt).toBeNull()
+    expect(n1.content).toBe('Back')
+  })
+
+  it('honours overrideLts / overrideDid so one logical mutation shares one lamport', async () => {
+    const before = adapter.lamportCounter()
+    await saveNotes(adapter, 'T', [{ id: 'n1', content: 'Same batch' }], {
+      overrideLts: 999,
+      overrideDid: 'DEV_OUTER',
+    })
+    const after = adapter.lamportCounter()
+    expect(after).toBe(before) // nextLamport was NOT called
+    const n1 = adapter.notes.get('n1')
+    expect(n1.lamportTs).toBe(999)
+    expect(n1.deviceId).toBe('DEV_OUTER')
+  })
 })

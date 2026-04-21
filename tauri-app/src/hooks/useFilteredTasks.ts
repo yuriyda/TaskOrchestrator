@@ -18,6 +18,7 @@ interface Filters {
   tag: string | null;
   flow: string | null;
   persona: string | null;
+  hideDone: boolean;
 }
 
 interface SortState {

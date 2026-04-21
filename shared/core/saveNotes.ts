@@ -58,14 +58,23 @@ function coerceCreatedAt(raw: number | string | null | undefined): number {
   return Date.now()
 }
 
+export interface SaveNotesOptions {
+  // When a caller already owns a lamport_ts for the current mutation (desktop's
+  // updateTask wraps task UPDATE + notes in one logical action), pass it here
+  // so all rows share the same lamport and the VC counter doesn't double-bump.
+  overrideLts?: number
+  overrideDid?: string | null
+}
+
 export async function saveNotes(
   adapter: NoteStorageAdapter,
   taskId: string,
   incomingNotes: IncomingNote[] | null | undefined,
+  opts?: SaveNotesOptions,
 ): Promise<void> {
   const seriesId = await adapter.getSeriesId(taskId)
-  const did = adapter.getDeviceId()
-  const lts = await adapter.nextLamport(did)
+  const did = opts?.overrideDid !== undefined ? opts.overrideDid : adapter.getDeviceId()
+  const lts = opts?.overrideLts !== undefined ? opts.overrideLts : await adapter.nextLamport(did)
   const nowIso = adapter.now()
 
   const normalized: NoteRow[] = (incomingNotes || [])

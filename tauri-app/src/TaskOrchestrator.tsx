@@ -108,8 +108,10 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   };
   const clearFilter = (key) => { setFilters(f => ({ ...f, [key]: null })); };
   const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, hideDone: false }); };
-  // Backward-compat helpers
-  const hasAnyFilter = Object.values(filters).some(v => v !== null);
+  // Backward-compat helpers. hideDone:false is a neutral default, not an
+  // active filter — don't count it here (otherwise hasAnyFilter would always be true).
+  const hasAnyFilter = Object.entries(filters).some(([k, v]) =>
+    k === "hideDone" ? v === true : v !== null);
   const [searchQuery, setSearchQuery]   = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchInputRef = useRef(null);

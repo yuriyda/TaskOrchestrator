@@ -151,13 +151,11 @@ export default function MobileApp({ store }: MobileAppProps) {
   )
 
   const handleCycle = useCallback((id) => {
-    const prev = store.tasks.find(t => t.id === id)?.status || 'active'
     store.bulkCycle(new Set([id]))
-    // bulkCycle may transition to done (fan-out) OR to a benign next status.
-    // We can't know the next status synchronously here, so offer notification-only
-    // toast; Undo would be partial at best.
+    // bulkCycle may transition to done (fan-out) OR to a benign next status;
+    // we can't know the next status synchronously, so show a notification-only
+    // toast. Undo would be partial at best, so no button.
     showUndo(locale === 'ru' ? 'Статус переключён' : 'Status cycled', null)
-    void prev
   }, [store, locale, showUndo])
 
   const handleAdd = useCallback((data) => {
