@@ -412,3 +412,58 @@ describe('note soft-delete sync', () => {
     expect(row.deleted_at).toBeNull()
   })
 })
+
+describe('equal lamport conflict resolution', () => {
+  let devA, devB
+
+  beforeEach(() => {
+    devA = createDeviceDb(DEV_A)
+    devB = createDeviceDb(DEV_B)
+  })
+
+  it('converges deterministically when two devices edit the same task with equal lamport_ts', async () => {
+    // Deterministic tie-break requirement:
+    // if lamport_ts is equal, the higher device_id wins.
+    insertTask(devA.raw, 't1', 'From A', DEV_A, 5)
+    insertTask(devB.raw, 't1', 'From B', DEV_B, 5)
+    devA.raw.exec("UPDATE vector_clock SET counter = 5 WHERE device_id = '" + DEV_A + "'")
+    devB.raw.exec("UPDATE vector_clock SET counter = 5 WHERE device_id = '" + DEV_B + "'")
+
+    const pkgFromA = await computeSyncPackage(devA.db, {})
+    const { response: responseForA } = await importSyncPackage(devB.db, pkgFromA)
+    await importSyncPackage(devA.db, responseForA)
+
+    const [rowA] = devA.db.select('SELECT title, device_id, lamport_ts FROM tasks WHERE id = ?', ['t1'])
+    const [rowB] = devB.db.select('SELECT title, device_id, lamport_ts FROM tasks WHERE id = ?', ['t1'])
+
+    expect(rowA.title).toBe('From B')
+    expect(rowB.title).toBe('From B')
+    expect(rowA.device_id).toBe(DEV_B)
+    expect(rowB.device_id).toBe(DEV_B)
+    expect(rowA.lamport_ts).toBe(5)
+    expect(rowB.lamport_ts).toBe(5)
+  })
+
+  it('converges deterministically for notes when lamport_ts is equal', async () => {
+    insertTask(devA.raw, 't1', 'Task 1', DEV_A, 1)
+    insertTask(devB.raw, 't1', 'Task 1', DEV_A, 1)
+    insertNote(devA.raw, 'n1', 't1', 'Note from A', DEV_A, 7)
+    insertNote(devB.raw, 'n1', 't1', 'Note from B', DEV_B, 7)
+    devA.raw.exec("UPDATE vector_clock SET counter = 7 WHERE device_id = '" + DEV_A + "'")
+    devB.raw.exec("UPDATE vector_clock SET counter = 7 WHERE device_id = '" + DEV_B + "'")
+
+    const pkgFromA = await computeSyncPackage(devA.db, {})
+    const { response: responseForA } = await importSyncPackage(devB.db, pkgFromA)
+    await importSyncPackage(devA.db, responseForA)
+
+    const [rowA] = devA.db.select('SELECT content, device_id, lamport_ts FROM notes WHERE id = ?', ['n1'])
+    const [rowB] = devB.db.select('SELECT content, device_id, lamport_ts FROM notes WHERE id = ?', ['n1'])
+
+    expect(rowA.content).toBe('Note from B')
+    expect(rowB.content).toBe('Note from B')
+    expect(rowA.device_id).toBe(DEV_B)
+    expect(rowB.device_id).toBe(DEV_B)
+    expect(rowA.lamport_ts).toBe(7)
+    expect(rowB.lamport_ts).toBe(7)
+  })
+})
