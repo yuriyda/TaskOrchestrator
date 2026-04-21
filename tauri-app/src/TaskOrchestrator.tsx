@@ -81,19 +81,19 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [selected, setSelected] = useState(new Set());
   const [lastIdx, setLastIdx]   = useState(null);
   const [filters, setFiltersRaw] = useState(() => {
+    const defaults = { status: null, dateRange: null, list: null, tag: null, flow: null, persona: null };
     try {
       const saved = localStorage.getItem("taskFilters");
-      if (saved) { const parsed = JSON.parse(saved); return { status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, ...parsed }; }
-    } catch {}
-    // Migrate from legacy statusFilter key
-    const legacy = localStorage.getItem("statusFilter");
-    const status = legacy === "active" ? "active" : legacy === "done" ? "done" : null;
-    return { status, dateRange: null, list: null, tag: null, flow: null, persona: null };
+      if (saved) return { ...defaults, ...JSON.parse(saved) };
+      const legacy = localStorage.getItem("statusFilter");
+      const status = legacy === "active" ? "active" : legacy === "done" ? "done" : null;
+      return { ...defaults, status };
+    } catch { return defaults; }
   });
   const setFilters = (updater) => {
     setFiltersRaw(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      localStorage.setItem("taskFilters", JSON.stringify(next));
+      try { localStorage.setItem("taskFilters", JSON.stringify(next)); } catch {}
       return next;
     });
   };
@@ -159,7 +159,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const setSort = (updater) => {
     setSortRaw(prev => {
       const next = typeof updater === "function" ? updater(prev) : updater;
-      localStorage.setItem("taskSort", JSON.stringify(next));
+      try { localStorage.setItem("taskSort", JSON.stringify(next)); } catch {}
       return next;
     });
   };
