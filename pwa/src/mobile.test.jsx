@@ -3,13 +3,14 @@
  * task CRUD works through the UI, and navigation (drawer, detail, filters) functions.
  */
 
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act, cleanup } from '@testing-library/react'
 import React from 'react'
 import MobileApp from './MobileApp'
 import { useBrowserTaskStore } from './store/browserStore'
 
 let testCounter = 0
+beforeEach(() => { try { localStorage.clear() } catch {} })
 afterEach(() => cleanup())
 
 function renderApp() {
@@ -26,6 +27,20 @@ function renderApp() {
   const result = render(<Wrapper />)
   const waitReady = () => waitFor(() => expect(screen.getByTestId('mobile-app')).toBeInTheDocument(), { timeout: 5000 })
   return { ...result, store: storeRef, waitReady }
+}
+
+// Mobile UI defaults to filter="active" + dateRange="today" — a deliberate product
+// choice so the user lands on "what needs doing right now". Tests that want to
+// exercise CRUD/search/list-filter on arbitrary tasks call this helper to widen
+// the view to "all statuses, all dates" via the same UI chips the user uses.
+async function disableDefaultFilters() {
+  await act(async () => {
+    const chips = [...screen.getByTestId('mobile-app').querySelectorAll('button.rounded-full')]
+    const allChip = chips.find(b => b.textContent.trim().startsWith('All'))
+    const todayChip = chips.find(b => b.textContent.trim().startsWith('Today'))
+    if (allChip) fireEvent.click(allChip)
+    if (todayChip) fireEvent.click(todayChip)
+  })
 }
 
 describe('Mobile Layout', () => {
@@ -64,6 +79,7 @@ describe('Mobile CRUD', () => {
   it('adds a task via FAB + bottom sheet', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     // Add task via store (simulates FAB → bottom sheet → submit)
     await act(async () => { await store.current.addTask({ title: 'Buy groceries' }) })
@@ -73,6 +89,7 @@ describe('Mobile CRUD', () => {
   it('cycles task status via icon tap', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => { await store.current.addTask({ title: 'Cycle me' }) })
     await waitFor(() => expect(screen.getByText('Cycle me')).toBeInTheDocument(), { timeout: 3000 })
@@ -89,6 +106,7 @@ describe('Mobile CRUD', () => {
   it('opens detail view on task tap', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => { await store.current.addTask({ title: 'Detail test' }) })
     await waitFor(() => expect(screen.getByText('Detail test')).toBeInTheDocument(), { timeout: 3000 })
@@ -109,6 +127,7 @@ describe('Mobile CRUD', () => {
   it('opens detail view with due date and notes', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => {
       await store.current.addTask({ title: 'Task with due', due: '2026-04-10', priority: 2 })
@@ -132,6 +151,7 @@ describe('Mobile CRUD', () => {
   it('deletes task via store from detail', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => { await store.current.addTask({ title: 'Delete me mobile' }) })
     await waitFor(() => expect(screen.getByText('Delete me mobile')).toBeInTheDocument(), { timeout: 3000 })
@@ -148,6 +168,7 @@ describe('Mobile Filters', () => {
   it('filters tasks by status', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => {
       await store.current.addTask({ title: 'Inbox task', status: 'inbox' })
@@ -177,6 +198,7 @@ describe('Mobile Filters', () => {
   it('search filters tasks', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => {
       await store.current.addTask({ title: 'Apple pie' })
@@ -225,6 +247,7 @@ describe('List & Tag Filters', () => {
   it('filters tasks by list via drawer', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => {
       await store.current.addTask({ title: 'Work task', list: 'Work', status: 'active' })
@@ -252,6 +275,7 @@ describe('List & Tag Filters', () => {
   it('filters tasks by tag via drawer', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => {
       await store.current.addTask({ title: 'Tagged urgent', tags: ['urgent'], status: 'active' })
@@ -281,6 +305,7 @@ describe('List & Tag Filters', () => {
   it('clears list filter via badge X', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => {
       await store.current.addTask({ title: 'Task A', list: 'Alpha', status: 'active' })
@@ -307,6 +332,7 @@ describe('List & Tag Filters', () => {
   it('new task inherits active list filter', async () => {
     const { store, waitReady } = renderApp()
     await waitReady()
+    await disableDefaultFilters()
 
     await act(async () => {
       await store.current.addTask({ title: 'Existing', list: 'Work', status: 'active' })
