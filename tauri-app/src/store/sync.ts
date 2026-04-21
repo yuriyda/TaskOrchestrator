@@ -21,6 +21,22 @@ import { TASK_INSERT_IGN, taskToRow, rowToTask, fetchAll } from './helpers.js'
 import { logSyncActivity } from './syncActivityLog.js'
 import type { Task } from '../types'
 
+// Sync conflict resolution: incoming wins if its lamport_ts is strictly greater,
+// or if lamport_ts is equal and its device_id is lexicographically greater
+// (deterministic tie-break ensures all devices converge on the same winner).
+function shouldReplace(
+  incomingLts: number | undefined | null,
+  localLts: number | undefined | null,
+  incomingDid: string | undefined | null,
+  localDid: string | undefined | null,
+): boolean {
+  const inL = incomingLts || 0
+  const loL = localLts || 0
+  if (inL > loL) return true
+  if (inL < loL) return false
+  return (incomingDid || '') > (localDid || '')
+}
+
 // ─── Types ─────────────────────────────────────────────────────────────────
 
 interface VectorClock {
@@ -215,17 +231,17 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
       } else if (task.deviceId === localDeviceId) {
         // Our own task bounced back — skip update
         skipped++
-      } else if ((task.lamportTs || 0) > (existing.lamport_ts || 0)) {
-        // Incoming is newer — full update
+      } else if (shouldReplace(task.lamportTs, existing.lamport_ts, task.deviceId, existing.device_id)) {
+        // Incoming wins — strictly newer, or equal lamport with higher device_id
         const changedFields = await detectChangedFields(db, task)
         await fullUpdateTask(db, task)
         applied++
-        console.log(`[sync] UPDATE ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" remote_lts=${task.lamportTs} > local_lts=${existing.lamport_ts} did=${task.deviceId?.slice(0,8)}`)
+        console.log(`[sync] UPDATE ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" remote_lts=${task.lamportTs} local_lts=${existing.lamport_ts} did=${task.deviceId?.slice(0,8)}`)
         if (!task.deletedAt) {
           try { await logSyncActivity(db, task.id, task.title, 'update', changedFields, task.deviceId, task) } catch (e) { console.warn('[sync] activity log error:', e) }
         }
       } else if ((task.lamportTs || 0) === (existing.lamport_ts || 0)) {
-        // Same version — already applied, skip
+        // Equal lamport, local device wins tie-break — skip
         skipped++
       } else {
         // Incoming is older — local wins, skip outdated
@@ -281,15 +297,15 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
            note.deletedAt || null, note.updatedAt || null,
            note.lamportTs || 0, note.deviceId || null]
         )
-      } else if ((note.lamportTs || 0) > (existing.lamport_ts || 0)) {
-        // Incoming is newer — full update (including deletedAt)
+      } else if (shouldReplace(note.lamportTs, existing.lamport_ts, note.deviceId, existing.device_id)) {
+        // Incoming wins — strictly newer, or equal lamport with higher device_id
         await db.execute(
           'UPDATE notes SET content=?, deleted_at=?, updated_at=?, lamport_ts=?, device_id=? WHERE id=?',
           [note.content || '', note.deletedAt || null, note.updatedAt || null,
            note.lamportTs || 0, note.deviceId || null, note.id]
         )
       }
-      // Otherwise local is newer or equal — skip
+      // Otherwise local wins (strictly older, or equal lamport with greater/equal local device) — skip
     }
   }
 

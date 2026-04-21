@@ -6,6 +6,7 @@
 
 import { ulid } from '../ulid.js'
 import { logChange, nextLamport } from './helpers.js'
+import { localIsoDate } from '../core/date.js'
 import { PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, PLANNER_SLOT_STEP_DEFAULT, DEFAULT_TASK_ESTIMATE_MIN } from '../core/constants.js'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
@@ -332,7 +333,7 @@ export function getWeekDates(dateStr: string): string[] {
   for (let i = 0; i < 7; i++) {
     const date = new Date(monday)
     date.setDate(monday.getDate() + i)
-    dates.push(date.toISOString().slice(0, 10))
+    dates.push(localIsoDate(date))
   }
   return dates
 }

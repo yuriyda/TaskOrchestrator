@@ -5,13 +5,14 @@
 import { useState, useReducer } from 'react';
 import { STATUSES } from '../core/constants.js';
 import { MOCK_LISTS, MOCK_TAGS, MOCK_FLOWS, MOCK_PERSONAS, INITIAL_TASKS, buildDemoTasks, uid } from '../core/demo.js';
+import { localIsoDate } from '../core/date.js';
 import type { Task } from '../types';
 
 function shiftDue(due: string | null): string | null {
   if (!due || !/^\d{4}-\d{2}-\d{2}$/.test(due)) return due;
   const d = new Date(due + "T12:00:00");
   d.setDate(d.getDate() + 1);
-  return d.toISOString().slice(0, 10);
+  return localIsoDate(d);
 }
 
 // ─── Reducer ──────────────────────────────────────────────────────────────────
