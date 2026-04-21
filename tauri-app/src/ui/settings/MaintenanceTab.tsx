@@ -4,7 +4,7 @@
  * Extracted from SettingsDialog to reduce component size.
  */
 import { useState, useEffect } from "react";
-import { Copy, FolderOpen } from "lucide-react";
+import { Copy, FolderOpen, Trash2 } from "lucide-react";
 import { useApp } from "../AppContext";
 import type { BackupInfo } from "../../types";
 
@@ -17,13 +17,16 @@ interface MaintenanceTabProps {
   onCreateBackup?: () => Promise<boolean>;
   onListBackups?: () => Promise<BackupInfo[]>;
   onRestoreBackup?: (path: string) => Promise<void>;
+  onCleanupLookups?: () => Promise<{ removed: { lists: string[]; tags: string[]; personas: string[]; flows: string[] } }>;
   onClose: () => void;
 }
 
-export function MaintenanceTab({ dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onCreateBackup, onListBackups, onRestoreBackup, onClose }: MaintenanceTabProps) {
+export function MaintenanceTab({ dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onCreateBackup, onListBackups, onRestoreBackup, onCleanupLookups, onClose }: MaintenanceTabProps) {
   const { t, TC } = useApp();
   const [backups, setBackups] = useState<BackupInfo[] | null>(null);
   const [pathCopied, setPathCopied] = useState(false);
+  const [cleanupMsg, setCleanupMsg] = useState<string | null>(null);
+  const [cleaning, setCleaning] = useState(false);
 
   useEffect(() => {
     if (backups === null && onListBackups) {
@@ -101,6 +104,38 @@ export function MaintenanceTab({ dbPath, onRevealDb, onOpenDb, onCreateNewDb, on
             <button onClick={() => { onMoveDb(); onClose(); }}
               className={`flex-shrink-0 px-4 py-1.5 rounded text-sm font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg}`}>
               {t("settings.maintenance.move.btn")}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Cleanup unused lookups */}
+      {onCleanupLookups && (
+        <div className={`rounded-lg border p-4 mb-4 ${TC.elevated} ${TC.borderClass}`}>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className={`text-sm font-medium mb-1 ${TC.text}`}>{t("settings.maintenance.cleanupLookups.label")}</div>
+              <div className={`text-xs ${TC.textMuted}`}>{t("settings.maintenance.cleanupLookups.desc")}</div>
+              {cleanupMsg && <div className={`text-xs mt-2 ${TC.textSec}`}>{cleanupMsg}</div>}
+            </div>
+            <button
+              onClick={async () => {
+                setCleaning(true);
+                setCleanupMsg(null);
+                try {
+                  const { removed } = await onCleanupLookups!();
+                  const count = removed.lists.length + removed.tags.length + removed.personas.length + removed.flows.length;
+                  setCleanupMsg(count === 0
+                    ? t("settings.maintenance.cleanupLookups.nothing")
+                    : t("settings.maintenance.cleanupLookups.done").replace("{n}", String(count)));
+                } finally {
+                  setCleaning(false);
+                }
+              }}
+              disabled={cleaning}
+              className={`flex items-center gap-1.5 flex-shrink-0 px-4 py-1.5 rounded text-sm font-medium transition-colors border ${TC.surface} ${TC.borderClass} ${TC.textSec} ${TC.hoverBg} ${cleaning ? "opacity-50 cursor-wait" : ""}`}>
+              <Trash2 size={12} />
+              {cleaning ? t("settings.maintenance.cleanupLookups.running") : t("settings.maintenance.cleanupLookups.btn")}
             </button>
           </div>
         </div>

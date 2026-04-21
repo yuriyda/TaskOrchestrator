@@ -93,6 +93,8 @@ export default function MobileApp({ store }: MobileAppProps) {
   const [lastSync, setLastSync] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [clearConfirmText, setClearConfirmText] = useState('')
+  const [cleanupMsg, setCleanupMsg] = useState(null)
+  const [cleaning, setCleaning] = useState(false)
   const [undoAction, setUndoAction] = useState(null) // { label, undo: () => void }
   const [updateMsg, setUpdateMsg] = useState(() => {
     const prev = sessionStorage.getItem('pwa_update_check')
@@ -335,6 +337,42 @@ export default function MobileApp({ store }: MobileAppProps) {
               className={`relative w-11 h-6 rounded-full transition-colors ${store.metaSettings?.pwa_auto_extract_url !== 'false' ? 'bg-sky-600' : 'bg-gray-600'}`}>
               <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${store.metaSettings?.pwa_auto_extract_url !== 'false' ? 'left-[22px]' : 'left-0.5'}`} />
             </button>
+          </div>
+
+          {/* Cleanup unused lookups */}
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">
+              {locale === 'ru' ? 'Обслуживание' : 'Maintenance'}
+            </div>
+            <div className="text-sm text-gray-200 mb-1">
+              {locale === 'ru' ? 'Очистить неиспользуемые списки, теги, персонажи, потоки' : 'Clean up unused lists, tags, personas, flows'}
+            </div>
+            <div className="text-xs text-gray-500 mb-3">
+              {locale === 'ru'
+                ? 'Удаляет записи, на которые больше не ссылается ни одна задача. Потоки с сохранёнными описанием/цветом/дедлайном остаются.'
+                : 'Removes entries no longer referenced by any task. Flows with saved description/color/deadline are kept.'}
+            </div>
+            <button
+              disabled={cleaning}
+              onClick={async () => {
+                setCleaning(true)
+                setCleanupMsg(null)
+                try {
+                  const { removed } = await store.cleanupLookups()
+                  const count = removed.lists.length + removed.tags.length + removed.personas.length + removed.flows.length
+                  setCleanupMsg(count === 0
+                    ? (locale === 'ru' ? 'Очищать нечего' : 'Nothing to clean up')
+                    : (locale === 'ru' ? `Удалено ненужных записей: ${count}` : `Removed ${count} unused entries`))
+                } finally {
+                  setCleaning(false)
+                }
+              }}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${cleaning ? 'bg-slate-700 text-gray-500' : 'bg-slate-800 text-gray-200 active:bg-slate-700'}`}>
+              {cleaning
+                ? (locale === 'ru' ? 'Чистим…' : 'Cleaning…')
+                : (locale === 'ru' ? 'Очистить' : 'Clean up')}
+            </button>
+            {cleanupMsg && <div className="text-xs text-gray-400 mt-2">{cleanupMsg}</div>}
           </div>
 
           {/* Clear local storage */}

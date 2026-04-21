@@ -57,6 +57,7 @@ interface SettingsDialogProps {
   onCreateBackup?: () => Promise<boolean>;
   onListBackups?: () => Promise<BackupInfo[]>;
   onRestoreBackup?: (path: string) => Promise<void>;
+  onCleanupLookups?: () => Promise<{ removed: { lists: string[]; tags: string[]; personas: string[]; flows: string[] } }>;
   onExportSyncRequest?: () => Promise<string>;
   onHandleSyncRequest?: (request: string) => Promise<string>;
   onImportSyncClipboard?: () => Promise<any>;
@@ -75,7 +76,7 @@ interface SettingsDialogProps {
   onGdriveLog: (msg: string) => void;
 }
 
-export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks, filteredTasks, hasActiveFilter, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }: SettingsDialogProps) {
+export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks, filteredTasks, hasActiveFilter, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onCleanupLookups, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }: SettingsDialogProps) {
   const { t, locale, setLocale, theme, setTheme, TC, settings, updateSetting } = useApp();
   const [activeTab, setActiveTab] = useState(initialTab || "general");
   // gdriveConnected is shared between SyncTab and DangerTab — kept in parent
@@ -358,7 +359,8 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
       case "about":      return renderAbout();
       case "maintenance": return <MaintenanceTab dbPath={dbPath} onRevealDb={onRevealDb} onOpenDb={onOpenDb}
                             onCreateNewDb={onCreateNewDb} onMoveDb={onMoveDb} onCreateBackup={onCreateBackup}
-                            onListBackups={onListBackups} onRestoreBackup={onRestoreBackup} onClose={onClose} />;
+                            onListBackups={onListBackups} onRestoreBackup={onRestoreBackup} onCleanupLookups={onCleanupLookups}
+                            onClose={onClose} />;
       case "danger":     return <DangerTab gdriveConnected={gdriveConnected} onClearAll={onClearAll}
                            onGdriveCheckSyncFile={onGdriveCheckSyncFile} onGdrivePurgeSyncFile={onGdrivePurgeSyncFile} onClose={onClose} />;
       default:           return null;

@@ -18,6 +18,8 @@ import { createSafeOpenUrl } from './store/storeApi.js'
 import { usePlannerOps } from './store/usePlannerOps.js'
 import { useSyncOps } from './store/useSyncOps.js'
 import { useDbOps } from './store/useDbOps.js'
+import { runLookupGc } from './core/lookup'
+import { createSqliteLookupAdapter } from './store/lookupAdapter'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -103,6 +105,10 @@ export function useTauriTaskStore() {
       // Cache device_id for sync_log writes
       const [devRow] = await db.select("SELECT value FROM meta WHERE key='device_id'")
       deviceIdRef.current = devRow?.value || null
+
+      // GC orphaned lookup entries before first render — lookups are derived per device.
+      // See shared/core/lookup.ts for rules (flow_meta keeps a flow name alive).
+      try { await runLookupGc(createSqliteLookupAdapter(db)) } catch (e) { console.warn('[lookup gc] init failed', e) }
 
       // Resolve and expose the current DB path
       const customPath = localStorage.getItem(DB_PATH_KEY)
@@ -468,6 +474,12 @@ export function useTauriTaskStore() {
         await logChange(db, 'notes', note.id, 'insert', { content: note.content, createdAt: note.createdAt }, lts, did)
       }
     }
+    // Incremental lookup GC — dropping a field (list/tags/personas/flowId) may
+    // have orphaned an entry. Runs only when the changeset touches one of those
+    // fields to keep the hot path fast.
+    if ('list' in changes || 'tags' in changes || 'personas' in changes || 'flowId' in changes) {
+      await runLookupGc(createSqliteLookupAdapter(db))
+    }
     await refreshRef()
   })
     return promise.then(() => activatedNames)
@@ -738,6 +750,15 @@ export function useTauriTaskStore() {
     })
   }, [])
 
+  // Manual lookup GC — exposed for the Settings "Clean up unused lookups" button.
+  const cleanupLookups = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return { removed: { lists: [], tags: [], personas: [], flows: [] } }
+    const result = await runLookupGc(createSqliteLookupAdapter(db))
+    await refreshRef()
+    return result
+  }, [refreshRef])
+
   return {
     tasks, lists, tags, flows, flowMeta, personas,
     addTask, updateTask, bulkStatus, bulkCycle, bulkDelete, bulkPriority, bulkDueShift, bulkSnooze, bulkAssignToday,
@@ -747,6 +768,7 @@ export function useTauriTaskStore() {
     metaSettings, saveMeta,
     dbPath, revealDb, openNewDb, createNewDb, moveCurrentDb,
     createBackup, listBackups, restoreBackup,
+    cleanupLookups,
     ...syncOps,
     openUrl: createSafeOpenUrl(openUrl),
     // Day Planner

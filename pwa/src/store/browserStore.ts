@@ -21,6 +21,8 @@ import {
   handleTaskDone, isTaskBlocked, computeNextCycleStatus,
 } from '@shared/core/taskActions.js'
 import { localIsoDate } from '@shared/core/date.js'
+import { runLookupGc } from '@shared/core/lookup'
+import { createIdbLookupAdapter } from './lookupAdapter'
 
 const DB_NAME = 'task-orchestrator'
 const DB_VERSION = 2
@@ -183,6 +185,11 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     initDB(dbName).then(async db => {
       dbRef.current = db
       deviceIdRef.current = await getOrCreateDeviceId(db)
+      // GC orphaned lookup entries before first render — lookup tables are derived
+      // state per device; this catches anything left over from previous versions
+      // (where lookup was part of sync) or from sync packages imported before this
+      // behaviour existed. See shared/core/lookup.ts.
+      try { await runLookupGc(createIdbLookupAdapter(db)) } catch (e) { console.warn('[lookup gc] init failed', e) }
       await refresh()
       setReady(true)
     })
@@ -261,6 +268,14 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     if (changes.status === 'done') {
       const ops = buildIdbOps(db)
       await handleTaskDone(ops, id, ulid, lts, did)
+    }
+    // Incremental lookup GC — if the update removed the last reference to any
+    // list/tag/persona/flow, it is orphaned and should disappear from drawers.
+    // Runs only when the changeset touches one of those fields to keep updateTask fast.
+    const touchesRefs = 'list' in changes || 'tags' in changes
+      || 'personas' in changes || 'flowId' in changes
+    if (touchesRefs) {
+      await runLookupGc(createIdbLookupAdapter(db))
     }
     await refresh()
   }, [refresh])
@@ -369,6 +384,9 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       task.lamportTs = lts
       await db.put('tasks', task)
     }
+    // Incremental lookup GC — soft-deleted tasks may have freed references.
+    // flow_meta keeps a flow alive even with no tasks (see shared/core/lookup.ts).
+    await runLookupGc(createIdbLookupAdapter(db))
     await refresh()
   }, [refresh])
 
@@ -551,10 +569,9 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         deviceId: n.deviceId || null,
       }))
 
-    const lists = (await db.getAll('lists')).map(r => r.name)
-    const tags = (await db.getAll('tags')).map(r => r.name)
-    const flows = (await db.getAll('flows')).map(r => r.name)
-    const personas = (await db.getAll('personas')).map(r => r.name)
+    // Lookup tables (lists/tags/flows/personas) are derived state per device
+    // and NOT part of the sync contract. Only flowMeta (description/color/deadline)
+    // is sent across devices — see SyncPackage in tauri-app/src/store/sync.ts.
     const flowMetaRows = await db.getAll('flowMeta')
     const flowMeta = flowMetaRows.map(r => ({
       name: r.name,
@@ -569,15 +586,16 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       vectorClock: localVC,
       tasks: tasksToSend,
       notes: notesToSend,
-      lists, tags, flows, personas, flowMeta,
+      flowMeta,
     }
   }
 
   // IDB-based importSyncPackage — mirrors desktop semantics including tie-break,
   // soft-deleted note propagation, and flowMeta upsert.
   const importSyncPackageIdb = async (db, pkg) => {
-    const { tasks: remoteTasks, notes: remoteNotes, vectorClock: remoteVC,
-      lists: rLists, tags: rTags, flows: rFlows, personas: rPersonas, flowMeta: rFlowMeta } = pkg
+    // Older clients may send lists/tags/flows/personas in pkg — they are silently
+    // ignored; lookup tables are derived state per device.
+    const { tasks: remoteTasks, notes: remoteNotes, vectorClock: remoteVC, flowMeta: rFlowMeta } = pkg
     const devRow = await db.get('meta', 'device_id')
     const localDeviceId = devRow?.value || null
 
@@ -619,11 +637,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       }
     }
 
-    // Lookup tables
-    if (rLists) for (const n of rLists) await db.put('lists', { name: n })
-    if (rTags) for (const n of rTags) await db.put('tags', { name: n })
-    if (rFlows) for (const n of rFlows) await db.put('flows', { name: n })
-    if (rPersonas) for (const n of rPersonas) await db.put('personas', { name: n })
+    // Lookup tables from the package are not applied — they are derived per device.
 
     // Flow metadata (upsert, also ensures flow row exists)
     if (rFlowMeta) {
@@ -728,12 +742,21 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     return gdriveIsConnected(db)
   }, [])
 
+  const cleanupLookups = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return { removed: { lists: [], tags: [], personas: [], flows: [] } }
+    const result = await runLookupGc(createIdbLookupAdapter(db))
+    await refresh()
+    return result
+  }, [refresh])
+
   return {
     ready,
     tasks, lists, tags, flows, flowMeta, personas,
     addTask, updateTask, saveNotes, bulkStatus, bulkCycle, bulkDelete, bulkPriority,
     bulkDueShift, bulkSnooze, bulkAssignToday,
     updateFlow, deleteFlow,
+    cleanupLookups,
     clearAll,
     canUndo: false,
     undo: () => {},

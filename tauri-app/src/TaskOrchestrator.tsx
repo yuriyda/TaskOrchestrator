@@ -842,6 +842,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
             onCreateBackup={store.createBackup}
             onListBackups={store.listBackups}
             onRestoreBackup={store.restoreBackup}
+            onCleanupLookups={store.cleanupLookups}
             onExportSync={store.exportSync}
             onImportSync={store.importSync}
             onExportSyncRequest={store.exportSyncRequest}
