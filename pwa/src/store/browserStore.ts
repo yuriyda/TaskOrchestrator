@@ -23,6 +23,8 @@ import {
 import { localIsoDate } from '@shared/core/date.js'
 import { runLookupGc } from '@shared/core/lookup'
 import { createIdbLookupAdapter } from './lookupAdapter'
+import { saveNotes as sharedSaveNotes } from '@shared/core/saveNotes'
+import { createIdbNoteAdapter } from './noteAdapter'
 
 const DB_NAME = 'task-orchestrator'
 const DB_VERSION = 2
@@ -280,67 +282,17 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     await refresh()
   }, [refresh])
 
-  // Contract: accepts notes as objects { id?, content, createdAt? }.
-  // When `id` is absent the store assigns a new ULID (this is a fresh note).
-  // Diff-by-id: alive notes whose id is NOT in the incoming set get soft-deleted;
-  // incoming notes are upserted (INSERT OR REPLACE by id). This matches the desktop
-  // updateTask({ notes }) contract and keeps note.id stable across sync devices —
-  // fixes the regression where PWA re-generated ids on every save, making sync
-  // packages look like delete+insert instead of update.
+  // Diff-by-id save semantics live in shared/core/saveNotes.ts so desktop
+  // and PWA share one implementation. Adapter just wraps the IDB handle.
   const saveNotes = useCallback(async (taskId, incomingNotes) => {
     const db = dbRef.current
     if (!db) return
-    const did = deviceIdRef.current
-    const lts = await nextLamport(db, did)
-    const now = new Date().toISOString()
-    const seriesId = (await db.get('tasks', taskId))?.rtmSeriesId || taskId
-    const existing = await db.getAllFromIndex('notes', 'taskSeriesId', seriesId)
-    const alive = existing.filter(n => !n.deletedAt)
-
-    const normalized = (incomingNotes || [])
-      .map(n => ({
-        id: n?.id,
-        content: (n?.content || '').trim(),
-        createdAt: n?.createdAt,
-      }))
-      .filter(n => n.content)
-      .map(n => ({ ...n, id: n.id || ulid() }))
-
-    const keepIds = new Set(normalized.map(n => n.id))
-
-    // Soft-delete alive notes whose id is not in the new set
-    for (const n of alive) {
-      if (keepIds.has(n.id)) continue
-      n.deletedAt = now
-      n.updatedAt = now
-      n.lamportTs = lts
-      n.deviceId = did
-      await db.put('notes', n)
-    }
-
-    // Upsert incoming notes by id (content/updates stay stable)
-    for (const n of normalized) {
-      const existingRow = await db.get('notes', n.id)
-      if (existingRow) {
-        existingRow.content = n.content
-        existingRow.deletedAt = null
-        existingRow.updatedAt = now
-        existingRow.lamportTs = lts
-        existingRow.deviceId = did
-        await db.put('notes', existingRow)
-      } else {
-        await db.put('notes', {
-          id: n.id,
-          taskSeriesId: seriesId,
-          content: n.content,
-          createdAt: typeof n.createdAt === 'number' ? n.createdAt : Date.now(),
-          updatedAt: now,
-          deletedAt: null,
-          lamportTs: lts,
-          deviceId: did,
-        })
-      }
-    }
+    const adapter = createIdbNoteAdapter(
+      db,
+      deviceIdRef.current,
+      (did) => nextLamport(db, did),
+    )
+    await sharedSaveNotes(adapter, taskId, incomingNotes)
     await refresh()
   }, [refresh])
 
