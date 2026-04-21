@@ -8,7 +8,6 @@
  */
 
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { LOCALES } from '@shared/i18n/locales.js'
 import { STATUSES, PRIORITY_COLORS } from '@shared/core/constants.js'
 import { localIsoDate, parseDateInput, fmtDate } from '@shared/core/date.js'
 import { overdueLevel } from '@shared/core/overdue.js'
@@ -29,17 +28,13 @@ import { TaskItem } from './ui/TaskItem'
 import { TaskDetail } from './ui/TaskDetail'
 import { AddTaskSheet } from './ui/AddTaskSheet'
 import { SearchBar } from './ui/SearchBar'
+import { MobileSettingsScreen } from './ui/MobileSettingsScreen'
 import { useMobileFilters } from './hooks/useMobileFilters'
 import { useMobileDialogs } from './hooks/useMobileDialogs'
 import { useMobileUpdateCheck } from './hooks/useMobileUpdateCheck'
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function useTranslation(locale) {
-  return useCallback((key) => {
-    return (LOCALES[locale] || LOCALES.en)[key] ?? LOCALES.en[key] ?? key
-  }, [locale])
-}
+import { useMobileSync } from './hooks/useMobileSync'
+import { useMobileLocale } from './hooks/useMobileLocale'
+import { useMobileUndo } from './hooks/useMobileUndo'
 
 // ─── Main Mobile App ──────────────────────────────────────────────────────────
 
@@ -48,9 +43,7 @@ interface MobileAppProps {
 }
 
 export default function MobileApp({ store }: MobileAppProps) {
-  const [locale, setLocale] = useState(() => navigator.language?.startsWith('ru') ? 'ru' : 'en')
-  const t = useTranslation(locale)
-  const [syncLog, setSyncLog] = useState([])
+  const { locale, setLocale, t } = useMobileLocale()
 
   const {
     filter, setFilter,
@@ -68,76 +61,20 @@ export default function MobileApp({ store }: MobileAppProps) {
     showCalendar, setShowCalendar,
     showSettings, setShowSettings,
   } = useMobileDialogs()
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState(null)
-  const [gdriveConnected, setGdriveConnected] = useState(false)
-  const [showGdriveSetup, setShowGdriveSetup] = useState(false)
-  const [gdriveClientId, setGdriveClientId] = useState('')
-  const [gdriveClientSecret, setGdriveClientSecret] = useState('')
-  const [lastSync, setLastSync] = useState(null)
-  const [clearConfirmText, setClearConfirmText] = useState('')
-  const [cleanupMsg, setCleanupMsg] = useState(null)
-  const [cleaning, setCleaning] = useState(false)
-  const [undoAction, setUndoAction] = useState(null) // { label, undo: (() => void) | null }
-  const [updateMsg, setUpdateMsg] = useMobileUpdateCheck(locale)
-  const undoTimerRef = useRef(null)
-
-  const addSyncLog = (msg) => {
-    const ts = new Date().toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-    setSyncLog(prev => [...prev, `[${ts}] ${msg}`])
-  }
-
-  // Check gdrive connection and load last sync on mount
-  useEffect(() => {
-    store.gdriveGetConfig?.().then(cfg => {
-      if (cfg?.hasToken) setGdriveConnected(true)
-      if (cfg?.clientId) setGdriveClientId(cfg.clientId)
-    })
-    if (store.metaSettings?.last_sync) setLastSync(store.metaSettings.last_sync)
-  }, [store, store.metaSettings])
-
-  // React to OAuth redirect completing in browserStore
-  useEffect(() => {
-    if (store.gdriveJustConnected) setGdriveConnected(true)
-  }, [store.gdriveJustConnected])
-
-  // ── Auto-sync after task edits (debounced) ─────────────────────────────
+  const {
+    gdriveConnected, setGdriveConnected,
+    showGdriveSetup, setShowGdriveSetup,
+    gdriveClientId, setGdriveClientId,
+    gdriveClientSecret, setGdriveClientSecret,
+    syncing, autoSyncing,
+    syncMsg, setSyncMsg,
+    syncLog, addSyncLog, setSyncLog,
+    lastSync,
+    handleSyncNow,
+  } = useMobileSync(store, t, locale)
   const autoSyncEnabled = store.metaSettings?.pwa_auto_sync !== 'false'
-  const autoSyncTimerRef = useRef(null)
-  const syncInProgressRef = useRef(false)
-  const [autoSyncing, setAutoSyncing] = useState(false)
-  const prevTasksRef = useRef(null)
-
-  const handleSyncNow = useCallback(async () => {
-    if (!store.gdriveSyncNow || !gdriveConnected) return
-    syncInProgressRef.current = true
-    addSyncLog(t('sync.gdriveSyncing'))
-    try {
-      const r = await store.gdriveSyncNow()
-      if (r) {
-        setSyncMsg(`+${r.applied}`)
-        setLastSync(new Date().toISOString())
-        addSyncLog(t('sync.gdriveSynced').replace('{applied}', r.applied).replace('{outdated}', r.outdated).replace('{uploaded}', r.uploaded))
-      }
-    } catch (e) { setSyncMsg(t('sync.gdriveError')); addSyncLog(`${t('sync.gdriveError')}: ${e.message}`) }
-    finally { syncInProgressRef.current = false; setTimeout(() => setSyncMsg(null), 3000) }
-  }, [store, gdriveConnected, t])
-
-  useEffect(() => {
-    if (!autoSyncEnabled || !gdriveConnected || !store.gdriveSyncNow) return
-    if (prevTasksRef.current !== null && prevTasksRef.current !== store.tasks && prevTasksRef.current.length > 0 && !syncInProgressRef.current) {
-      clearTimeout(autoSyncTimerRef.current)
-      autoSyncTimerRef.current = setTimeout(async () => {
-        if (syncInProgressRef.current) return
-        syncInProgressRef.current = true
-        setAutoSyncing(true)
-        try { await handleSyncNow() } catch {}
-        syncInProgressRef.current = false
-        setAutoSyncing(false)
-      }, 3000)
-    }
-    prevTasksRef.current = store.tasks
-  }, [store.tasks, autoSyncEnabled, gdriveConnected, handleSyncNow])
+  const { undoAction, showUndo, clearUndo } = useMobileUndo()
+  const [updateMsg, setUpdateMsg] = useMobileUpdateCheck(locale)
 
   const { tasks } = store
   const today = localIsoDate(new Date())
@@ -226,18 +163,6 @@ export default function MobileApp({ store }: MobileAppProps) {
     store.addTask(d)
   }, [store, filter, dateRange, listFilter, tagFilter, today])
 
-  // Toast-undo contract: pass a function for undoable operations (bulkDelete,
-  // bulkPriority, etc.). Pass `null` when the operation has fan-out side effects
-  // (bulkStatus→done, bulkCycle→done, single-task completion of a recurring
-  // task or one with dependents) — the toast still shows the completion
-  // notification but omits the Undo button. Full command-based undo is out of
-  // scope; see pwa-architecture-plan-2026-04-21.md Task 2.
-  const showUndo = useCallback((label, undoFn) => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-    setUndoAction({ label, undo: undoFn || null })
-    undoTimerRef.current = setTimeout(() => setUndoAction(null), 5000)
-  }, [])
-
   const handleComplete = useCallback((id) => {
     // Completion has fan-out: handleTaskDone may spawn a recurring occurrence
     // and activate blocked dependents. A simple "restore prevStatus" Undo does
@@ -259,158 +184,15 @@ export default function MobileApp({ store }: MobileAppProps) {
   // ── Settings screen ────────────────────────────────────────────────────
   if (showSettings) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col" data-testid="mobile-settings">
-        <div className="flex items-center gap-3 px-4 py-3 bg-slate-800 border-b border-slate-700/50">
-          <button onClick={() => setShowSettings(false)} className="p-1 -ml-1 text-gray-400 active:text-white">
-            <ChevronLeft size={24} />
-          </button>
-          <h2 className="text-base font-semibold">{locale === 'ru' ? 'Настройки' : 'Settings'}</h2>
-        </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-6">
-          {/* Language */}
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">{locale === 'ru' ? 'Язык' : 'Language'}</div>
-            <div className="flex gap-2">
-              {['en', 'ru'].map(l => (
-                <button key={l} onClick={() => setLocale(l)}
-                  className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${locale === l ? 'bg-sky-600 text-white' : 'bg-slate-800 text-gray-400 active:bg-slate-700'}`}>
-                  {l === 'en' ? 'English' : 'Русский'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Auto-sync toggle */}
-          {gdriveConnected && (
-            <div>
-              <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">{locale === 'ru' ? 'Синхронизация' : 'Sync'}</div>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-200">{locale === 'ru' ? 'Автосинхронизация' : 'Auto-sync'}</div>
-                  <div className="text-xs text-gray-500">{locale === 'ru' ? 'После каждого изменения (3 сек)' : 'After every change (3 sec)'}</div>
-                </div>
-                <button
-                  onClick={() => store.saveMeta('pwa_auto_sync', autoSyncEnabled ? 'false' : 'true')}
-                  className={`relative w-11 h-6 rounded-full transition-colors ${autoSyncEnabled ? 'bg-sky-600' : 'bg-gray-600'}`}>
-                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${autoSyncEnabled ? 'left-[22px]' : 'left-0.5'}`} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Auto-extract URL toggle */}
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-sm text-gray-200">{locale === 'ru' ? 'Извлекать URL' : 'Auto-extract URL'}</div>
-              <div className="text-xs text-gray-500">{locale === 'ru' ? 'Переносить ссылку из названия в поле URL' : 'Move links from title to URL field'}</div>
-            </div>
-            <button
-              onClick={() => store.saveMeta('pwa_auto_extract_url', store.metaSettings?.pwa_auto_extract_url === 'false' ? 'true' : 'false')}
-              className={`relative w-11 h-6 rounded-full transition-colors ${store.metaSettings?.pwa_auto_extract_url !== 'false' ? 'bg-sky-600' : 'bg-gray-600'}`}>
-              <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${store.metaSettings?.pwa_auto_extract_url !== 'false' ? 'left-[22px]' : 'left-0.5'}`} />
-            </button>
-          </div>
-
-          {/* Cleanup unused lookups */}
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">
-              {locale === 'ru' ? 'Обслуживание' : 'Maintenance'}
-            </div>
-            <div className="text-sm text-gray-200 mb-1">
-              {locale === 'ru' ? 'Очистить неиспользуемые списки, теги, персонажи, потоки' : 'Clean up unused lists, tags, personas, flows'}
-            </div>
-            <div className="text-xs text-gray-500 mb-3">
-              {locale === 'ru'
-                ? 'Удаляет записи, на которые больше не ссылается ни одна задача. Потоки с сохранёнными описанием/цветом/дедлайном остаются.'
-                : 'Removes entries no longer referenced by any task. Flows with saved description/color/deadline are kept.'}
-            </div>
-            <button
-              disabled={cleaning}
-              onClick={async () => {
-                setCleaning(true)
-                setCleanupMsg(null)
-                try {
-                  const { removed } = await store.cleanupLookups()
-                  const count = removed.lists.length + removed.tags.length + removed.personas.length + removed.flows.length
-                  setCleanupMsg(count === 0
-                    ? (locale === 'ru' ? 'Очищать нечего' : 'Nothing to clean up')
-                    : (locale === 'ru' ? `Удалено ненужных записей: ${count}` : `Removed ${count} unused entries`))
-                } finally {
-                  setCleaning(false)
-                }
-              }}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${cleaning ? 'bg-slate-700 text-gray-500' : 'bg-slate-800 text-gray-200 active:bg-slate-700'}`}>
-              {cleaning
-                ? (locale === 'ru' ? 'Чистим…' : 'Cleaning…')
-                : (locale === 'ru' ? 'Очистить' : 'Clean up')}
-            </button>
-            {cleanupMsg && <div className="text-xs text-gray-400 mt-2">{cleanupMsg}</div>}
-          </div>
-
-          {/* Clear local storage */}
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-3">{locale === 'ru' ? 'Опасная зона' : 'Danger zone'}</div>
-            <p className="text-xs text-gray-500 mb-3">
-              {locale === 'ru'
-                ? 'Удалит все задачи и справочники из локального хранилища. Настройки синхронизации сохранятся.'
-                : 'Deletes all tasks and lookups from local storage. Sync settings are preserved.'}
-            </p>
-            <div className="flex items-center gap-2 mb-2">
-              <input
-                type="text"
-                value={clearConfirmText}
-                onChange={e => setClearConfirmText(e.target.value)}
-                placeholder={locale === 'ru' ? 'Введите DELETE' : 'Type DELETE'}
-                className="flex-1 px-3 py-2 rounded-lg bg-slate-800 border border-slate-700 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-red-500"
-              />
-              <button
-                disabled={clearConfirmText !== 'DELETE'}
-                onClick={async () => {
-                  await store.clearAll()
-                  setClearConfirmText('')
-                  setShowSettings(false)
-                }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  clearConfirmText === 'DELETE'
-                    ? 'bg-red-600 text-white active:bg-red-700'
-                    : 'bg-slate-800 text-gray-600 cursor-not-allowed'
-                }`}>
-                {locale === 'ru' ? 'Очистить' : 'Clear all'}
-              </button>
-            </div>
-          </div>
-
-          {/* About */}
-          <div>
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-2">{locale === 'ru' ? 'О приложении' : 'About'}</div>
-            <div className="text-xs text-gray-500 mb-3">Task Orchestrator PWA v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?'}</div>
-            <button
-              onClick={async () => {
-                const currentVer = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : ''
-                sessionStorage.setItem('pwa_update_check', currentVer)
-                try {
-                  if ('serviceWorker' in navigator) {
-                    const reg = await navigator.serviceWorker.getRegistration()
-                    if (reg) {
-                      await reg.update()
-                      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' })
-                    }
-                  }
-                  if ('caches' in window) {
-                    const keys = await caches.keys()
-                    await Promise.all(keys.map(k => caches.delete(k)))
-                  }
-                } catch { /* ignore */ }
-                window.location.reload()
-              }}
-              className="w-full py-2.5 rounded-xl text-sm font-medium bg-slate-800 text-gray-300 active:bg-slate-700">
-              <RefreshCw size={14} className="inline mr-2" />
-              {locale === 'ru' ? 'Проверить обновления' : 'Check for updates'}
-            </button>
-            {updateMsg && <div className={`text-xs mt-2 text-center ${updateMsg.ok ? 'text-emerald-400' : 'text-amber-400'}`}>{updateMsg.text}</div>}
-          </div>
-        </div>
-      </div>
+      <MobileSettingsScreen
+        locale={locale}
+        setLocale={setLocale}
+        store={store}
+        gdriveConnected={gdriveConnected}
+        autoSyncEnabled={autoSyncEnabled}
+        updateMsg={updateMsg}
+        onClose={() => setShowSettings(false)}
+      />
     )
   }
 
@@ -533,11 +315,7 @@ export default function MobileApp({ store }: MobileAppProps) {
         <div className="fixed bottom-24 left-4 right-4 z-30 flex items-center gap-3 bg-slate-700 rounded-xl px-4 py-3 shadow-lg shadow-black/30 animate-[fadeIn_0.2s_ease-out]">
           <span className="flex-1 text-sm text-gray-200">{undoAction.label}</span>
           {undoAction.undo && (
-            <button onClick={() => {
-              undoAction.undo()
-              setUndoAction(null)
-              if (undoTimerRef.current) clearTimeout(undoTimerRef.current)
-            }}
+            <button onClick={() => { undoAction.undo!(); clearUndo() }}
               className="px-3 py-1 rounded-lg text-sm font-semibold text-sky-400 bg-sky-600/20 active:bg-sky-600/30">
               {locale === 'ru' ? 'Отменить' : 'Undo'}
             </button>
