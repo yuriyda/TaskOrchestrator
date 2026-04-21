@@ -33,8 +33,19 @@ function TaskDetail({ task, store, onBack, t }: TaskDetailProps) {
       tags, recurrence: recurrence || null, estimate: estimate || null, url: url || null,
     })
     if (store.saveNotes) {
-      const noteTexts = notesStr.split('\n---\n').map(s => s.trim()).filter(Boolean)
-      await store.saveNotes(task.id, noteTexts)
+      // saveNotes contract: Array<{ id?, content, createdAt? }>.
+      // Position-based id preservation — editing note at index i keeps its id
+      // so sync stays cheap (update, not delete+insert). Reordering by insert/
+      // delete in the middle of the list is a known-imperfect case; full rich
+      // note editor with explicit per-note id is out of scope (Task 4 phase 2+).
+      const texts = notesStr.split('\n---\n').map(s => s.trim()).filter(Boolean)
+      const oldNotes = task.notes || []
+      const notes = texts.map((content, i) => ({
+        id: oldNotes[i]?.id,
+        content,
+        createdAt: oldNotes[i]?.createdAt,
+      }))
+      await store.saveNotes(task.id, notes)
     }
     setEditing(false)
   }

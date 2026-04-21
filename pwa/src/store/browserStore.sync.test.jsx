@@ -102,7 +102,7 @@ describe('BrowserStore sync regressions', () => {
     await waitFor(() => expect(store.current.tasks).toHaveLength(1), { timeout: 3000 })
 
     await act(async () => {
-      await store.current.saveNotes(store.current.tasks[0].id, ['First synced note'])
+      await store.current.saveNotes(store.current.tasks[0].id, [{ content: 'First synced note' }])
       await store.current.updateFlow('Sprint', {
         description: 'Remote flow metadata',
         color: '#123456',
