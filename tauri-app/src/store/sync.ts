@@ -229,6 +229,15 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
           applied++
           console.log(`[sync] INSERT ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" lts=${task.lamportTs} did=${task.deviceId?.slice(0,8)}`)
         } catch { skipped++; continue }
+        // Backfill lookup stores from the new task's fields so filters see values
+        // without waiting for the user to edit a synced task. Lookup is derived
+        // per device — this just primes the local index.
+        if (!task.deletedAt) {
+          if (task.list) await db.execute('INSERT OR IGNORE INTO lists VALUES (?)', [task.list])
+          if (task.tags) for (const tg of task.tags) await db.execute('INSERT OR IGNORE INTO tags VALUES (?)', [tg])
+          if (task.personas) for (const p of task.personas) await db.execute('INSERT OR IGNORE INTO personas VALUES (?)', [p])
+          if (task.flowId) await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [task.flowId])
+        }
         if (!task.deletedAt) {
           try { await logSyncActivity(db, task.id, task.title, 'insert', null, task.deviceId, task) } catch (e) { console.warn('[sync] activity log error:', e) }
         }
@@ -309,6 +318,14 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
       // Otherwise local wins (strictly older, or equal lamport with greater/equal local device) — skip
     }
   }
+
+  // GC orphaned lookup entries after import: incoming soft-deletes may have
+  // removed the last reference to a list/tag/persona/flow. Inline SQL for
+  // perf (same pattern as bulkDelete), but equivalent to runLookupGc rules.
+  await db.execute(`DELETE FROM lists    WHERE name NOT IN (SELECT DISTINCT list_name FROM tasks WHERE list_name IS NOT NULL AND deleted_at IS NULL)`)
+  await db.execute(`DELETE FROM flows    WHERE name NOT IN (SELECT DISTINCT flow_id FROM tasks WHERE flow_id IS NOT NULL AND deleted_at IS NULL) AND name NOT IN (SELECT name FROM flow_meta)`)
+  await db.execute(`DELETE FROM tags     WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.tags) WHERE tasks.deleted_at IS NULL)`)
+  await db.execute(`DELETE FROM personas WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.personas) WHERE tasks.deleted_at IS NULL)`)
 
   // Compute response: what does the sender need from us?
   const response = await computeSyncPackage(db, remoteVC || {})

@@ -635,6 +635,18 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         const maxCounter = Math.max(existing?.counter || 0, maxImportedLts)
         await db.put('vectorClock', { deviceId: localDeviceId, counter: maxCounter })
       }
+
+      // Backfill lookup stores from imported tasks so drawer/filter UI sees the
+      // values without waiting for the user to edit a synced task. Lookup
+      // tables are derived per device — the task rows themselves are the source
+      // of truth, this just primes the local lookup index.
+      for (const task of remoteTasks) {
+        if (task.deletedAt) continue
+        if (task.list) await db.put('lists', { name: task.list })
+        if (Array.isArray(task.tags)) for (const tg of task.tags) await db.put('tags', { name: tg })
+        if (Array.isArray(task.personas)) for (const p of task.personas) await db.put('personas', { name: p })
+        if (task.flowId) await db.put('flows', { name: task.flowId })
+      }
     }
 
     // Lookup tables from the package are not applied — they are derived per device.
@@ -682,6 +694,12 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         }
       }
     }
+
+    // GC orphaned lookup entries: incoming soft-deletes (task.deletedAt set)
+    // may have removed the last reference to a list/tag/persona/flow. This
+    // closes the convergence loop: device A deleted a task → syncs to B →
+    // B drops the orphan from its lookup too, without waiting for reload.
+    await runLookupGc(createIdbLookupAdapter(db))
 
     return { stats: { applied, skipped, outdated } }
   }

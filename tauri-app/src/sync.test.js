@@ -159,6 +159,49 @@ describe('importSyncPackage — tasks', () => {
     expect(devB.db.select('SELECT name FROM personas')).toEqual([])
   })
 
+  it('backfills lookup stores on receiver from imported task fields', async () => {
+    // When a task arrives via sync, its list/tags/personas/flowId values should
+    // appear in the receiver's lookup tables so drawers/filters see them.
+    insertTask(devA.raw, 't1', 'From A', DEV_A, 3, { list: 'Work', tags: ['urgent'] })
+    devA.raw.exec("UPDATE vector_clock SET counter = 3 WHERE device_id = '" + DEV_A + "'")
+
+    const pkg = await computeSyncPackage(devA.db, {})
+    await importSyncPackage(devB.db, pkg)
+
+    expect(devB.db.select('SELECT name FROM lists').map(r => r.name)).toContain('Work')
+    expect(devB.db.select('SELECT name FROM tags').map(r => r.name)).toContain('urgent')
+  })
+
+  it('converges on tag deletion across devices (M1 end-to-end)', async () => {
+    // Scenario: A creates task with list 'Work' → sync to B → A deletes task
+    // → sync to B. Result: 'Work' must be gone from both devices' lookup tables,
+    // and subsequent syncs from B must not reintroduce it.
+    insertTask(devA.raw, 't1', 'Work task', DEV_A, 3, { list: 'Work' })
+    devA.raw.exec("UPDATE vector_clock SET counter = 3 WHERE device_id = '" + DEV_A + "'")
+
+    // 1st sync: A → B. B learns the task and 'Work'.
+    let pkg = await computeSyncPackage(devA.db, {})
+    await importSyncPackage(devB.db, pkg)
+    expect(devB.db.select('SELECT name FROM lists').map(r => r.name)).toContain('Work')
+
+    // A soft-deletes the task and cleans its lookup (mimics bulkDelete cleanup).
+    devA.raw.exec("UPDATE tasks SET deleted_at='2026-04-21T00:00:00Z', lamport_ts=5 WHERE id='t1'")
+    devA.raw.exec(`DELETE FROM lists WHERE name NOT IN (SELECT DISTINCT list_name FROM tasks WHERE list_name IS NOT NULL AND deleted_at IS NULL)`)
+    devA.raw.exec("UPDATE vector_clock SET counter = 5 WHERE device_id = '" + DEV_A + "'")
+    expect(devA.db.select('SELECT name FROM lists')).toEqual([])
+
+    // 2nd sync: A → B carrying the soft-delete. B's import GC drops 'Work'.
+    pkg = await computeSyncPackage(devA.db, {})
+    await importSyncPackage(devB.db, pkg)
+    expect(devB.db.select('SELECT name FROM lists')).toEqual([])
+
+    // Finally, B → A response: 'Work' must not reappear on A.
+    const bPkg = await computeSyncPackage(devB.db, await getVectorClock(devA.db))
+    expect(bPkg.lists).toBeUndefined()
+    await importSyncPackage(devA.db, bPkg)
+    expect(devA.db.select('SELECT name FROM lists')).toEqual([])
+  })
+
   it('updates task when incoming lamport_ts is higher', async () => {
     insertTask(devB.raw, 't1', 'Old', DEV_B, 2)
     insertTask(devA.raw, 't1', 'Updated', DEV_A, 5)

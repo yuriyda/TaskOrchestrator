@@ -310,7 +310,12 @@ export function useTauriTaskStore() {
       for (const id of idArr) {
         await logChange(db, 'tasks', id, 'delete', null, lts, did)
       }
-      // Clean up orphaned lookup entries (only count non-deleted tasks)
+      // Clean up orphaned lookup entries (only count non-deleted tasks).
+      // Inline SQL here (not runLookupGc) is deliberate: single set-based
+      // DELETE per kind is faster than round-tripping adapter calls for a
+      // batch delete. Rules mirror shared/core/lookup.ts — keep in sync if
+      // you change either. Don't "refactor for consistency" with updateTask;
+      // that path uses runLookupGc because it handles one task at a time.
       await db.execute(`DELETE FROM lists    WHERE name NOT IN (SELECT DISTINCT list_name FROM tasks WHERE list_name IS NOT NULL AND deleted_at IS NULL)`)
       await db.execute(`DELETE FROM flows    WHERE name NOT IN (SELECT DISTINCT flow_id FROM tasks WHERE flow_id IS NOT NULL AND deleted_at IS NULL) AND name NOT IN (SELECT name FROM flow_meta)`)
       await db.execute(`DELETE FROM tags     WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.tags) WHERE tasks.deleted_at IS NULL)`)
