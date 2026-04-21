@@ -246,13 +246,16 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     await refresh()
   }, [refresh])
 
+  // Matches shared/types.ts StoreApi: returns activated dependents' titles (string[]).
+  // Return type is always an array — empty when the change wasn't a completion.
   const updateTask = useCallback(async (id, changes) => {
     const db = dbRef.current
-    if (!db) return
+    if (!db) return []
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
     const task = await db.get('tasks', id)
-    if (!task) return
+    if (!task) return []
+    const activatedNames = []
     const updated = {
       ...task,
       ...changes,
@@ -273,7 +276,8 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     // Handle completion side-effects: spawn next occurrence, activate dependents
     if (changes.status === 'done') {
       const ops = buildIdbOps(db)
-      await handleTaskDone(ops, id, ulid, lts, did)
+      const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+      activatedNames.push(...doneResult.activated.map(a => a.title))
     }
     // Incremental lookup GC — if the update removed the last reference to any
     // list/tag/persona/flow, it is orphaned and should disappear from drawers.
@@ -284,6 +288,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       await runLookupGc(createIdbLookupAdapter(db))
     }
     await refresh()
+    return activatedNames
   }, [refresh])
 
   // Diff-by-id save semantics live in shared/core/saveNotes.ts so desktop

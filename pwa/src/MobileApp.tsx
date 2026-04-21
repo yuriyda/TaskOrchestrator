@@ -53,6 +53,7 @@ export default function MobileApp({ store }: MobileAppProps) {
     searchQuery, setSearchQuery,
     searchVisible, setSearchVisible,
     calendarDate, setCalendarDate,
+    hideDone, toggleHideDone,
   } = useMobileFilters()
   const {
     drawerOpen, setDrawerOpen,
@@ -102,6 +103,7 @@ export default function MobileApp({ store }: MobileAppProps) {
   const filtered = useMemo(() => {
     let r = tasks
     if (filter) r = r.filter(t => t.status === filter)
+    else if (hideDone) r = r.filter(t => t.status !== 'done')
     if (dateRange) {
       if (dateRange === 'overdue') r = r.filter(isPastDue)
       else if (dateRange === 'today') r = r.filter(tt => tt.due === today || isPastDue(tt))
@@ -124,7 +126,7 @@ export default function MobileApp({ store }: MobileAppProps) {
       r = r.filter(t => t.title.toLowerCase().includes(q))
     }
     return r
-  }, [tasks, filter, dateRange, listFilter, tagFilter, calendarDate, searchQuery, today, isPastDue])
+  }, [tasks, filter, dateRange, listFilter, tagFilter, calendarDate, searchQuery, today, isPastDue, hideDone])
 
   // Counts
   const counts = useMemo(() => ({
@@ -145,8 +147,14 @@ export default function MobileApp({ store }: MobileAppProps) {
   )
 
   const handleCycle = useCallback((id) => {
+    const prev = store.tasks.find(t => t.id === id)?.status || 'active'
     store.bulkCycle(new Set([id]))
-  }, [store])
+    // bulkCycle may transition to done (fan-out) OR to a benign next status.
+    // We can't know the next status synchronously here, so offer notification-only
+    // toast; Undo would be partial at best.
+    showUndo(locale === 'ru' ? 'Статус переключён' : 'Status cycled', null)
+    void prev
+  }, [store, locale, showUndo])
 
   const handleAdd = useCallback((data) => {
     const d = { ...data }
@@ -198,7 +206,8 @@ export default function MobileApp({ store }: MobileAppProps) {
 
   // ── Detail view ──────────────────────────────────────────────────────────
   if (detailTask) {
-    return <TaskDetail task={detailTask} store={store} onBack={() => setDetailId(null)} t={t} />
+    return <TaskDetail task={detailTask} store={store} onBack={() => setDetailId(null)}
+      onToast={(label, undoFn) => showUndo(label, undoFn ?? null)} locale={locale} t={t} />
   }
 
   // ── Main list view ───────────────────────────────────────────────────────
@@ -247,7 +256,8 @@ export default function MobileApp({ store }: MobileAppProps) {
       )}
 
       {/* Filter chips */}
-      <FilterBar filter={filter} onFilter={setFilter} counts={counts} t={t} />
+      <FilterBar filter={filter} onFilter={setFilter} counts={counts}
+        hideDone={hideDone} onToggleHideDone={toggleHideDone} t={t} />
 
       {/* Agenda chips */}
       <AgendaBar dateRange={dateRange} onDateRange={setDateRange} agendaCounts={agendaCounts} t={t} />

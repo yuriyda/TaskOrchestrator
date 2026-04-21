@@ -24,6 +24,7 @@ const KEY_FILTER = 'pwaFilter'
 const KEY_DATE_RANGE = 'pwaDateRange'
 const KEY_LIST_FILTER = 'pwaListFilter'
 const KEY_TAG_FILTER = 'pwaTagFilter'
+const KEY_HIDE_DONE = 'pwaHideDone'
 
 function readStringOrDefault(key: string, def: string | null): string | null {
   try {
@@ -56,6 +57,8 @@ export interface MobileFilters {
   setSearchVisible: Dispatch<SetStateAction<boolean>>
   calendarDate: string | null
   setCalendarDate: Dispatch<SetStateAction<string | null>>
+  hideDone: boolean
+  toggleHideDone: () => void
 }
 
 export function useMobileFilters(): MobileFilters {
@@ -66,6 +69,16 @@ export function useMobileFilters(): MobileFilters {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchVisible, setSearchVisible] = useState(false)
   const [calendarDate, setCalendarDate] = useState<string | null>(null)
+  const [hideDone, setHideDone] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEY_HIDE_DONE) === '1' } catch { return false }
+  })
+  const toggleHideDone = useCallback(() => {
+    setHideDone(prev => {
+      const next = !prev
+      try { localStorage.setItem(KEY_HIDE_DONE, next ? '1' : '0') } catch { /* best-effort */ }
+      return next
+    })
+  }, [])
 
   const setFilter = useCallback((v: SetAction<string | null>) => {
     setFilterState(prev => {
@@ -107,5 +120,6 @@ export function useMobileFilters(): MobileFilters {
     searchQuery, setSearchQuery,
     searchVisible, setSearchVisible,
     calendarDate, setCalendarDate,
+    hideDone, toggleHideDone,
   }
 }
