@@ -121,21 +121,31 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [showCalendar, setShowCalendar]     = useState(true);
   const [showPlanner, setShowPlanner]       = useState(false);
   const [plannerDate, setPlannerDate]       = useState(() => localIsoDate(new Date()));
-  // Auto-advance to next day at midnight (app may stay open overnight)
+  // Auto-advance to next day at midnight — app often stays open overnight, and
+  // a plain setTimeout is not reliable across OS sleep/resume (Windows suspends
+  // the timer). Poll every minute + re-check on window focus/visibility change.
+  // If plannerDate was tracking the previous "today", it hops to the new today;
+  // otherwise the user had an explicit date pinned — leave it alone.
   const [today, setToday] = useState(() => localIsoDate(new Date()));
   useEffect(() => {
-    const scheduleNextMidnight = () => {
-      const now = new Date();
-      const msToMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime();
-      return setTimeout(() => {
-        const newToday = localIsoDate(new Date());
-        setToday(newToday);
-        setPlannerDate(newToday);
-        timerId = scheduleNextMidnight();
-      }, msToMidnight);
+    const check = () => {
+      const newToday = localIsoDate(new Date());
+      setToday(prev => {
+        if (prev === newToday) return prev;
+        setPlannerDate(pd => (pd === prev ? newToday : pd));
+        return newToday;
+      });
     };
-    let timerId = scheduleNextMidnight();
-    return () => clearTimeout(timerId);
+    const interval = setInterval(check, 60_000);
+    const onVisibility = () => { if (document.visibilityState === "visible") check(); };
+    const onFocus = () => check();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   const [plannerWidthPct, setPlannerWidthPct] = useState(40);

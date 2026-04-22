@@ -70,6 +70,9 @@ export function DayPlanner({
     const now = new Date();
     return now.getHours() * 60 + now.getMinutes();
   });
+  // Reactive "today" — must re-evaluate when the calendar day flips while the
+  // app is open overnight (setInterval below + visibilitychange rebase).
+  const [today, setToday] = useState(() => localIsoDate(new Date()));
   const [contextMenu, setContextMenu] = useState(null);
   const [editingTitle, setEditingTitle] = useState(null); // slotId being edited
   const [titleDraft, setTitleDraft] = useState("");
@@ -83,18 +86,32 @@ export function DayPlanner({
   const totalMinutes = (dayEndHour - dayStartHour) * 60;
   const totalHeight = (dayEndHour - dayStartHour) * HOUR_HEIGHT;
 
-  // Update current time every minute
+  // Update current time + calendar day every minute. visibilitychange/focus
+  // catch the case where the OS suspended the tab/window past midnight and
+  // the interval callback missed its slot.
   useEffect(() => {
-    const timer = setInterval(() => {
+    const tick = () => {
       const now = new Date();
       setNowMinutes(now.getHours() * 60 + now.getMinutes());
-    }, 60_000);
-    return () => clearInterval(timer);
+      setToday(prev => {
+        const next = localIsoDate(now);
+        return prev === next ? prev : next;
+      });
+    };
+    const timer = setInterval(tick, 60_000);
+    const onVisibility = () => { if (document.visibilityState === "visible") tick(); };
+    const onFocus = () => tick();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("focus", onFocus);
+    };
   }, []);
 
   // Week dates
   const weekDates = useMemo(() => getWeekDates(selectedDate), [selectedDate]);
-  const today = useMemo(() => localIsoDate(new Date()), []);
   const dayNames = locale === "ru" ? DAY_NAMES_RU : DAY_NAMES_EN;
 
   // ─── Position helpers ─────────────────────────────────────────────────────
