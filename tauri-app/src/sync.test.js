@@ -85,7 +85,9 @@ describe('computeSyncPackage', () => {
     expect(pkg.tasks[0].title).toBe('New')
   })
 
-  it('includes lookup tables always', async () => {
+  it('does not include derived lookup tables in the sync package', async () => {
+    // Lookup tables (lists/tags/flows/personas) are derived state per device;
+    // see pwa-architecture-plan-2026-04-21.md Task 1. flow_meta still travels.
     devA.raw.exec("INSERT INTO lists VALUES ('Work')")
     devA.raw.exec("INSERT INTO tags VALUES ('urgent')")
     devA.raw.exec("INSERT INTO flows VALUES ('Sprint1')")
@@ -93,11 +95,12 @@ describe('computeSyncPackage', () => {
 
     const pkg = await computeSyncPackage(devA.db, { [DEV_A]: 999 }) // high VC = no tasks
     expect(pkg.tasks).toHaveLength(0)
-    expect(pkg.lists).toContain('Work')
-    expect(pkg.tags).toContain('urgent')
-    expect(pkg.flows).toContain('Sprint1')
-    expect(pkg.personas).toContain('Alice')
+    expect(pkg.lists).toBeUndefined()
+    expect(pkg.tags).toBeUndefined()
+    expect(pkg.flows).toBeUndefined()
+    expect(pkg.personas).toBeUndefined()
   })
+
 
   it('includes notes for exported tasks', async () => {
     insertTask(devA.raw, 't1', 'Task', DEV_A, 1)
@@ -129,7 +132,74 @@ describe('importSyncPackage — tasks', () => {
     expect(stats.applied).toBe(1)
     const [row] = devB.db.select('SELECT * FROM tasks WHERE id = ?', ['t1'])
     expect(row.title).toBe('From A')
-    expect(devB.db.select('SELECT name FROM lists')[0].name).toBe('Work')
+    // lookup is derived per device — devB will populate its own 'lists' via
+    // its own GC/mutation flow (not via sync). The task row carries the list_name.
+    expect(row.list_name).toBe('Work')
+  })
+
+  it('ignores legacy lookup fields on import (backward compat)', async () => {
+    // A package from an older client may still carry lists/tags/flows/personas —
+    // they must be silently ignored and must not appear in this device's lookup tables.
+    const legacyPkg = {
+      type: 'sync_package',
+      deviceId: DEV_A,
+      vectorClock: {},
+      tasks: [],
+      notes: [],
+      lists: ['LegacyList'],
+      tags: ['legacyTag'],
+      flows: ['LegacyFlow'],
+      personas: ['LegacyPersona'],
+      flowMeta: [],
+    }
+    await importSyncPackage(devB.db, legacyPkg)
+    expect(devB.db.select('SELECT name FROM lists')).toEqual([])
+    expect(devB.db.select('SELECT name FROM tags')).toEqual([])
+    expect(devB.db.select('SELECT name FROM flows')).toEqual([])
+    expect(devB.db.select('SELECT name FROM personas')).toEqual([])
+  })
+
+  it('backfills lookup stores on receiver from imported task fields', async () => {
+    // When a task arrives via sync, its list/tags/personas/flowId values should
+    // appear in the receiver's lookup tables so drawers/filters see them.
+    insertTask(devA.raw, 't1', 'From A', DEV_A, 3, { list: 'Work', tags: ['urgent'] })
+    devA.raw.exec("UPDATE vector_clock SET counter = 3 WHERE device_id = '" + DEV_A + "'")
+
+    const pkg = await computeSyncPackage(devA.db, {})
+    await importSyncPackage(devB.db, pkg)
+
+    expect(devB.db.select('SELECT name FROM lists').map(r => r.name)).toContain('Work')
+    expect(devB.db.select('SELECT name FROM tags').map(r => r.name)).toContain('urgent')
+  })
+
+  it('converges on tag deletion across devices (M1 end-to-end)', async () => {
+    // Scenario: A creates task with list 'Work' → sync to B → A deletes task
+    // → sync to B. Result: 'Work' must be gone from both devices' lookup tables,
+    // and subsequent syncs from B must not reintroduce it.
+    insertTask(devA.raw, 't1', 'Work task', DEV_A, 3, { list: 'Work' })
+    devA.raw.exec("UPDATE vector_clock SET counter = 3 WHERE device_id = '" + DEV_A + "'")
+
+    // 1st sync: A → B. B learns the task and 'Work'.
+    let pkg = await computeSyncPackage(devA.db, {})
+    await importSyncPackage(devB.db, pkg)
+    expect(devB.db.select('SELECT name FROM lists').map(r => r.name)).toContain('Work')
+
+    // A soft-deletes the task and cleans its lookup (mimics bulkDelete cleanup).
+    devA.raw.exec("UPDATE tasks SET deleted_at='2026-04-21T00:00:00Z', lamport_ts=5 WHERE id='t1'")
+    devA.raw.exec(`DELETE FROM lists WHERE name NOT IN (SELECT DISTINCT list_name FROM tasks WHERE list_name IS NOT NULL AND deleted_at IS NULL)`)
+    devA.raw.exec("UPDATE vector_clock SET counter = 5 WHERE device_id = '" + DEV_A + "'")
+    expect(devA.db.select('SELECT name FROM lists')).toEqual([])
+
+    // 2nd sync: A → B carrying the soft-delete. B's import GC drops 'Work'.
+    pkg = await computeSyncPackage(devA.db, {})
+    await importSyncPackage(devB.db, pkg)
+    expect(devB.db.select('SELECT name FROM lists')).toEqual([])
+
+    // Finally, B → A response: 'Work' must not reappear on A.
+    const bPkg = await computeSyncPackage(devB.db, await getVectorClock(devA.db))
+    expect(bPkg.lists).toBeUndefined()
+    await importSyncPackage(devA.db, bPkg)
+    expect(devA.db.select('SELECT name FROM lists')).toEqual([])
   })
 
   it('updates task when incoming lamport_ts is higher', async () => {

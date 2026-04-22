@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest'
 import fs from 'fs'
 import path from 'path'
 import { safeIsoDate } from './core/date.js'
-import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow } from './store/helpers.js'
+import { TASK_COLUMNS, TASK_INSERT, TASK_INSERT_IGN, rowToTask, taskToRow, parseDependsOn } from './store/helpers.js'
 import { VERSIONED_MIGRATIONS, LATEST_SCHEMA_VERSION } from './store/migrations.js'
 
 // Read source files for schema consistency checks
@@ -56,6 +56,29 @@ function countTaskToRowFields() {
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
+
+describe('parseDependsOn (tolerant legacy parser)', () => {
+  it('returns null for empty/null/undefined raw', () => {
+    expect(parseDependsOn(null)).toBeNull()
+    expect(parseDependsOn('')).toBeNull()
+  })
+  it('parses a JSON array', () => {
+    expect(parseDependsOn('["id1","id2"]')).toEqual(['id1', 'id2'])
+  })
+  it('returns null for a JSON empty array', () => {
+    expect(parseDependsOn('[]')).toBeNull()
+  })
+  it('wraps a raw non-JSON legacy string into a single-element array', () => {
+    expect(parseDependsOn('legacy-task-id')).toEqual(['legacy-task-id'])
+  })
+  it('wraps a JSON-encoded string into a single-element array', () => {
+    expect(parseDependsOn('"single-id"')).toEqual(['single-id'])
+  })
+  it('returns null for JSON objects or numbers (unsupported shapes)', () => {
+    expect(parseDependsOn('{"a":1}')).toBeNull()
+    expect(parseDependsOn('42')).toBeNull()
+  })
+})
 
 describe('safeIsoDate (DB-layer date guard)', () => {
   it('passes valid ISO dates through', () => {

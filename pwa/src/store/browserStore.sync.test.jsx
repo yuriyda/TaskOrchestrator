@@ -102,7 +102,7 @@ describe('BrowserStore sync regressions', () => {
     await waitFor(() => expect(store.current.tasks).toHaveLength(1), { timeout: 3000 })
 
     await act(async () => {
-      await store.current.saveNotes(store.current.tasks[0].id, ['First synced note'])
+      await store.current.saveNotes(store.current.tasks[0].id, [{ content: 'First synced note' }])
       await store.current.updateFlow('Sprint', {
         description: 'Remote flow metadata',
         color: '#123456',
@@ -276,5 +276,72 @@ describe('BrowserStore sync regressions', () => {
 
     const noteRow = await mockState.capturedDb.get('notes', 'deleted-note')
     expect(noteRow?.deletedAt).toBe('2026-04-20T10:00:00.000Z')
+  })
+
+  it('ignores legacy lookup fields in the imported package (backward compat)', async () => {
+    // Older clients still send lists/tags/flows/personas arrays. Under M1 these
+    // fields must not seed the local lookup stores — lookup is derived per device.
+    mockState.syncRunner = async ({ db, importSyncPackageFn }) => {
+      await importSyncPackageFn(db, {
+        type: 'sync_package',
+        deviceId: 'REMOTE_DEVICE',
+        vectorClock: {},
+        tasks: [],
+        notes: [],
+        lists: ['LegacyList'],
+        tags: ['legacyTag'],
+        flows: ['LegacyFlow'],
+        personas: ['LegacyPersona'],
+        flowMeta: [],
+      })
+      return { applied: 0, outdated: 0, uploaded: 0 }
+    }
+
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.gdriveSyncNow()
+    })
+
+    expect(store.current.lists).not.toContain('LegacyList')
+    expect(store.current.tags).not.toContain('legacyTag')
+    expect(store.current.flows).not.toContain('LegacyFlow')
+    expect(store.current.personas).not.toContain('LegacyPersona')
+  })
+
+  it('backfills lookup stores from imported task fields', async () => {
+    // When a task arrives via sync with list/tags/personas/flowId, those values
+    // must appear in the receiver's lookup stores so drawers/filters see them.
+    mockState.syncRunner = async ({ db, importSyncPackageFn }) => {
+      await importSyncPackageFn(db, {
+        type: 'sync_package',
+        deviceId: 'REMOTE_DEVICE',
+        vectorClock: { REMOTE_DEVICE: 5 },
+        tasks: [makeRemoteTask({
+          id: 'backfill-task',
+          list: 'Work',
+          tags: ['urgent'],
+          personas: ['Alice'],
+          flowId: 'Sprint',
+        })],
+        notes: [],
+        flowMeta: [],
+      })
+      return { applied: 1, outdated: 0, uploaded: 0 }
+    }
+
+    const { store, waitReady } = renderStore()
+    await waitReady()
+
+    await act(async () => {
+      await store.current.gdriveSyncNow()
+    })
+
+    await waitFor(() => expect(store.current.tasks).toHaveLength(1), { timeout: 3000 })
+    expect(store.current.lists).toContain('Work')
+    expect(store.current.tags).toContain('urgent')
+    expect(store.current.personas).toContain('Alice')
+    expect(store.current.flows).toContain('Sprint')
   })
 })

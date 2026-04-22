@@ -73,10 +73,13 @@ interface SyncPackage {
   vectorClock: VectorClock
   tasks: Task[]
   notes: SyncNote[]
-  lists: string[]
-  tags: string[]
-  flows: string[]
-  personas: string[]
+  // Lookup lists (lists/tags/flows/personas) are NOT part of the sync contract:
+  // they are derived state per device. Older clients may still include them —
+  // fields are optional for backward compatibility and silently ignored on import.
+  lists?: string[]
+  tags?: string[]
+  flows?: string[]
+  personas?: string[]
   flowMeta: FlowMetaEntry[]
 }
 
@@ -157,11 +160,9 @@ export async function computeSyncPackage(db: any, targetVC: VectorClock = {}): P
     return (n.lamport_ts || 0) > targetKnows
   })
 
-  // Always include all lookup tables (small, idempotent)
-  const lists = (await db.select('SELECT name FROM lists')).map((r: any) => r.name)
-  const tags = (await db.select('SELECT name FROM tags')).map((r: any) => r.name)
-  const flows = (await db.select('SELECT name FROM flows')).map((r: any) => r.name)
-  const personas = (await db.select('SELECT name FROM personas')).map((r: any) => r.name)
+  // flow_meta carries user-authored description/color/deadline — part of sync.
+  // Lookup tables (lists/tags/flows/personas) are derived from tasks per device
+  // and are NOT included in the sync package; see SyncPackage interface above.
   const flowMeta = await db.select('SELECT * FROM flow_meta')
 
   return {
@@ -177,7 +178,6 @@ export async function computeSyncPackage(db: any, targetVC: VectorClock = {}): P
       lamportTs: n.lamport_ts || 0,
       deviceId: n.device_id || null,
     })),
-    lists, tags, flows, personas,
     flowMeta: flowMeta.map((r: any) => ({
       name: r.name, description: r.description || '',
       color: r.color || '', deadline: r.deadline || null,
@@ -192,7 +192,11 @@ export async function computeSyncPackage(db: any, targetVC: VectorClock = {}): P
  * Returns { stats: { applied, skipped, outdated }, response: <package for sender> }
  */
 export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<ImportSyncResult> {
-  const { deviceId: remoteDeviceId, vectorClock: remoteVC, tasks, notes, lists, tags, flows, personas, flowMeta } = pkg
+  // lists/tags/flows/personas may be present in packages from older clients —
+  // extract into _ignored so the destructure still works but we don't apply them.
+  // Lookup tables are derived per device; see SyncPackage interface.
+  const { deviceId: remoteDeviceId, vectorClock: remoteVC, tasks, notes, flowMeta } = pkg
+  void remoteDeviceId
 
   let applied = 0
   let skipped = 0
@@ -225,6 +229,15 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
           applied++
           console.log(`[sync] INSERT ${task.id?.slice(0,8)} "${task.title?.slice(0,20)}" lts=${task.lamportTs} did=${task.deviceId?.slice(0,8)}`)
         } catch { skipped++; continue }
+        // Backfill lookup stores from the new task's fields so filters see values
+        // without waiting for the user to edit a synced task. Lookup is derived
+        // per device — this just primes the local index.
+        if (!task.deletedAt) {
+          if (task.list) await db.execute('INSERT OR IGNORE INTO lists VALUES (?)', [task.list])
+          if (task.tags) for (const tg of task.tags) await db.execute('INSERT OR IGNORE INTO tags VALUES (?)', [tg])
+          if (task.personas) for (const p of task.personas) await db.execute('INSERT OR IGNORE INTO personas VALUES (?)', [p])
+          if (task.flowId) await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [task.flowId])
+        }
         if (!task.deletedAt) {
           try { await logSyncActivity(db, task.id, task.title, 'insert', null, task.deviceId, task) } catch (e) { console.warn('[sync] activity log error:', e) }
         }
@@ -262,11 +275,8 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
     }
   }
 
-  // Apply lookup tables (idempotent)
-  if (lists) for (const name of lists) await db.execute('INSERT OR IGNORE INTO lists VALUES (?)', [name])
-  if (tags) for (const name of tags) await db.execute('INSERT OR IGNORE INTO tags VALUES (?)', [name])
-  if (flows) for (const name of flows) await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [name])
-  if (personas) for (const name of personas) await db.execute('INSERT OR IGNORE INTO personas VALUES (?)', [name])
+  // Lookup tables (lists/tags/flows/personas) from the package are ignored —
+  // they are derived from tasks per device. See SyncPackage interface for rationale.
 
   // Apply flow_meta (upsert)
   if (flowMeta) {
@@ -308,6 +318,14 @@ export async function importSyncPackage(db: any, pkg: SyncPackage): Promise<Impo
       // Otherwise local wins (strictly older, or equal lamport with greater/equal local device) — skip
     }
   }
+
+  // GC orphaned lookup entries after import: incoming soft-deletes may have
+  // removed the last reference to a list/tag/persona/flow. Inline SQL for
+  // perf (same pattern as bulkDelete), but equivalent to runLookupGc rules.
+  await db.execute(`DELETE FROM lists    WHERE name NOT IN (SELECT DISTINCT list_name FROM tasks WHERE list_name IS NOT NULL AND deleted_at IS NULL)`)
+  await db.execute(`DELETE FROM flows    WHERE name NOT IN (SELECT DISTINCT flow_id FROM tasks WHERE flow_id IS NOT NULL AND deleted_at IS NULL) AND name NOT IN (SELECT name FROM flow_meta)`)
+  await db.execute(`DELETE FROM tags     WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.tags) WHERE tasks.deleted_at IS NULL)`)
+  await db.execute(`DELETE FROM personas WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.personas) WHERE tasks.deleted_at IS NULL)`)
 
   // Compute response: what does the sender need from us?
   const response = await computeSyncPackage(db, remoteVC || {})

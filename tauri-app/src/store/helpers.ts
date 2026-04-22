@@ -16,7 +16,7 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
 
 /** Parse depends_on from DB: always returns string[] or null.
  *  Handles legacy string values, JSON arrays, and malformed data. */
-function parseDependsOn(raw: string | null): string[] | null {
+export function parseDependsOn(raw: string | null): string[] | null {
   if (!raw) return null
   try {
     const parsed = JSON.parse(raw)
@@ -158,21 +158,26 @@ export function shiftDue(due: string | null): string | null {
 // statements sequentially and include sync-log writes (logChange) in the
 // same block to minimise the window for inconsistency.
 
+import { measure, setPerfGauge } from '../../../shared/core/perfMeter.js'
+
 export async function fetchAll(db: DB): Promise<Task[]> {
-  const [taskRows, noteRows] = await Promise.all([
-    db.select('SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY priority, created_at'),
-    db.select('SELECT * FROM notes WHERE deleted_at IS NULL ORDER BY created_at'),
-  ])
-  const notesMap: Record<string, Note[]> = {}
-  for (const n of noteRows as any[]) {
-    if (!notesMap[n.task_series_id]) notesMap[n.task_series_id] = []
-    notesMap[n.task_series_id].push({
-      id:        n.id,
-      content:   n.content,
-      createdAt: new Date(n.created_at).toISOString(),
-    })
-  }
-  return taskRows.map((row: any) => rowToTask(row, notesMap))
+  return measure('fetchAll.sqlite', async () => {
+    const [taskRows, noteRows] = await Promise.all([
+      db.select('SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY priority, created_at'),
+      db.select('SELECT * FROM notes WHERE deleted_at IS NULL ORDER BY created_at'),
+    ])
+    const notesMap: Record<string, Note[]> = {}
+    for (const n of noteRows as any[]) {
+      if (!notesMap[n.task_series_id]) notesMap[n.task_series_id] = []
+      notesMap[n.task_series_id].push({
+        id:        n.id,
+        content:   n.content,
+        createdAt: new Date(n.created_at).toISOString(),
+      })
+    }
+    setPerfGauge('tasks.count.sqlite', taskRows.length)
+    return taskRows.map((row: any) => rowToTask(row, notesMap))
+  })
 }
 
 export function buildSqlOps(db: DB, logChangeFn?: typeof logChange) {
@@ -180,7 +185,9 @@ export function buildSqlOps(db: DB, logChangeFn?: typeof logChange) {
     getTask: async (id: string) => {
       const [row] = await db.select('SELECT * FROM tasks WHERE id=?', [id])
       if (!row) return null
-      return { ...row, dependsOn: row.depends_on ? JSON.parse(row.depends_on) : null }
+      // Use parseDependsOn (tolerant) instead of JSON.parse so mangled legacy
+      // depends_on values don't crash handleTaskDone / isTaskBlocked.
+      return { ...row, dependsOn: parseDependsOn(row.depends_on) }
     },
     insertTask: async (task: any) => {
       await db.execute(TASK_INSERT, taskToRow(task))

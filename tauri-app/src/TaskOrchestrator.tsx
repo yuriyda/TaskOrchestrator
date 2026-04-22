@@ -81,7 +81,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [selected, setSelected] = useState(new Set());
   const [lastIdx, setLastIdx]   = useState(null);
   const [filters, setFiltersRaw] = useState(() => {
-    const defaults = { status: null, dateRange: null, list: null, tag: null, flow: null, persona: null };
+    const defaults = { status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, hideDone: false };
     try {
       const saved = localStorage.getItem("taskFilters");
       if (saved) return { ...defaults, ...JSON.parse(saved) };
@@ -107,9 +107,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     if (key === "dateRange") setCalendarFilter(null);
   };
   const clearFilter = (key) => { setFilters(f => ({ ...f, [key]: null })); };
-  const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null }); };
-  // Backward-compat helpers
-  const hasAnyFilter = Object.values(filters).some(v => v !== null);
+  const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, hideDone: false }); };
+  // Backward-compat helpers. hideDone:false is a neutral default, not an
+  // active filter — don't count it here (otherwise hasAnyFilter would always be true).
+  const hasAnyFilter = Object.entries(filters).some(([k, v]) =>
+    k === "hideDone" ? v === true : v !== null);
   const [searchQuery, setSearchQuery]   = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchInputRef = useRef(null);
@@ -436,6 +438,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               filters={filters}
               setFilter={setFilter}
               clearFilter={clearFilter}
+              onToggleHideDone={() => setFilters(f => ({ ...f, hideDone: !f.hideDone }))}
               onOpenSettings={() => setShowSettings(true)}
             />
           )}
@@ -842,6 +845,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
             onCreateBackup={store.createBackup}
             onListBackups={store.listBackups}
             onRestoreBackup={store.restoreBackup}
+            onCleanupLookups={store.cleanupLookups}
             onExportSync={store.exportSync}
             onImportSync={store.importSync}
             onExportSyncRequest={store.exportSyncRequest}

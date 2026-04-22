@@ -21,6 +21,10 @@ import {
   handleTaskDone, isTaskBlocked, computeNextCycleStatus,
 } from '@shared/core/taskActions.js'
 import { localIsoDate } from '@shared/core/date.js'
+import { runLookupGc } from '@shared/core/lookup'
+import { createIdbLookupAdapter } from './lookupAdapter'
+import { saveNotes as sharedSaveNotes } from '@shared/core/saveNotes'
+import { createIdbNoteAdapter } from './noteAdapter'
 
 const DB_NAME = 'task-orchestrator'
 const DB_VERSION = 2
@@ -118,19 +122,24 @@ function buildIdbOps(db) {
   }
 }
 
+import { measure, setPerfGauge } from '@shared/core/perfMeter'
+
 async function fetchAllTasks(db) {
-  const all = await db.getAll('tasks')
-  const notes = await db.getAll('notes')
-  const notesMap = {}
-  for (const n of notes) {
-    if (n.deletedAt) continue
-    if (!notesMap[n.taskSeriesId]) notesMap[n.taskSeriesId] = []
-    notesMap[n.taskSeriesId].push(n)
-  }
-  return all
-    .filter(t => !t.deletedAt)
-    .map(t => ({ ...t, notes: notesMap[t.rtmSeriesId || t.id] || [], subtasks: [] }))
-    .sort((a, b) => (a.priority || 4) - (b.priority || 4) || (a.createdAt || '').localeCompare(b.createdAt || ''))
+  return measure('fetchAll.idb', async () => {
+    const all = await db.getAll('tasks')
+    const notes = await db.getAll('notes')
+    const notesMap = {}
+    for (const n of notes) {
+      if (n.deletedAt) continue
+      if (!notesMap[n.taskSeriesId]) notesMap[n.taskSeriesId] = []
+      notesMap[n.taskSeriesId].push(n)
+    }
+    const alive = all.filter(t => !t.deletedAt)
+    setPerfGauge('tasks.count.idb', alive.length)
+    return alive
+      .map(t => ({ ...t, notes: notesMap[t.rtmSeriesId || t.id] || [], subtasks: [] }))
+      .sort((a, b) => (a.priority || 4) - (b.priority || 4) || (a.createdAt || '').localeCompare(b.createdAt || ''))
+  })
 }
 
 async function fetchLookups(db) {
@@ -183,6 +192,11 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     initDB(dbName).then(async db => {
       dbRef.current = db
       deviceIdRef.current = await getOrCreateDeviceId(db)
+      // GC orphaned lookup entries before first render — lookup tables are derived
+      // state per device; this catches anything left over from previous versions
+      // (where lookup was part of sync) or from sync packages imported before this
+      // behaviour existed. See shared/core/lookup.ts.
+      try { await runLookupGc(createIdbLookupAdapter(db)) } catch (e) { console.warn('[lookup gc] init failed', e) }
       await refresh()
       setReady(true)
     })
@@ -233,13 +247,16 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     await refresh()
   }, [refresh])
 
+  // Matches shared/types.ts StoreApi: returns activated dependents' titles (string[]).
+  // Return type is always an array — empty when the change wasn't a completion.
   const updateTask = useCallback(async (id, changes) => {
     const db = dbRef.current
-    if (!db) return
+    if (!db) return []
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
     const task = await db.get('tasks', id)
-    if (!task) return
+    if (!task) return []
+    const activatedNames = []
     const updated = {
       ...task,
       ...changes,
@@ -260,37 +277,32 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     // Handle completion side-effects: spawn next occurrence, activate dependents
     if (changes.status === 'done') {
       const ops = buildIdbOps(db)
-      await handleTaskDone(ops, id, ulid, lts, did)
+      const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+      activatedNames.push(...doneResult.activated.map(a => a.title))
+    }
+    // Incremental lookup GC — if the update removed the last reference to any
+    // list/tag/persona/flow, it is orphaned and should disappear from drawers.
+    // Runs only when the changeset touches one of those fields to keep updateTask fast.
+    const touchesRefs = 'list' in changes || 'tags' in changes
+      || 'personas' in changes || 'flowId' in changes
+    if (touchesRefs) {
+      await runLookupGc(createIdbLookupAdapter(db))
     }
     await refresh()
+    return activatedNames
   }, [refresh])
 
-  const saveNotes = useCallback(async (taskId, noteTexts) => {
+  // Diff-by-id save semantics live in shared/core/saveNotes.ts so desktop
+  // and PWA share one implementation. Adapter just wraps the IDB handle.
+  const saveNotes = useCallback(async (taskId, incomingNotes) => {
     const db = dbRef.current
     if (!db) return
-    const did = deviceIdRef.current
-    const lts = await nextLamport(db, did)
-    const now = new Date().toISOString()
-    const seriesId = (await db.get('tasks', taskId))?.rtmSeriesId || taskId
-    const existing = await db.getAllFromIndex('notes', 'taskSeriesId', seriesId)
-    const remainingTexts = noteTexts.map(c => c.trim()).filter(Boolean)
-    const alive = existing.filter(n => !n.deletedAt)
-    // Soft-delete notes that are no longer in the edited set
-    for (const n of alive) {
-      n.deletedAt = now
-      n.updatedAt = now
-      n.lamportTs = lts
-      n.deviceId = did
-      await db.put('notes', n)
-    }
-    // Insert fresh notes (always new ids — matches desktop saveNotes semantics)
-    for (const content of remainingTexts) {
-      await db.put('notes', {
-        id: ulid(), taskSeriesId: seriesId, content,
-        createdAt: Date.now(), updatedAt: now,
-        deletedAt: null, lamportTs: lts, deviceId: did,
-      })
-    }
+    const adapter = createIdbNoteAdapter(
+      db,
+      deviceIdRef.current,
+      (did) => nextLamport(db, did),
+    )
+    await sharedSaveNotes(adapter, taskId, incomingNotes)
     await refresh()
   }, [refresh])
 
@@ -369,6 +381,9 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       task.lamportTs = lts
       await db.put('tasks', task)
     }
+    // Incremental lookup GC — soft-deleted tasks may have freed references.
+    // flow_meta keeps a flow alive even with no tasks (see shared/core/lookup.ts).
+    await runLookupGc(createIdbLookupAdapter(db))
     await refresh()
   }, [refresh])
 
@@ -551,10 +566,9 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         deviceId: n.deviceId || null,
       }))
 
-    const lists = (await db.getAll('lists')).map(r => r.name)
-    const tags = (await db.getAll('tags')).map(r => r.name)
-    const flows = (await db.getAll('flows')).map(r => r.name)
-    const personas = (await db.getAll('personas')).map(r => r.name)
+    // Lookup tables (lists/tags/flows/personas) are derived state per device
+    // and NOT part of the sync contract. Only flowMeta (description/color/deadline)
+    // is sent across devices — see SyncPackage in tauri-app/src/store/sync.ts.
     const flowMetaRows = await db.getAll('flowMeta')
     const flowMeta = flowMetaRows.map(r => ({
       name: r.name,
@@ -569,15 +583,16 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       vectorClock: localVC,
       tasks: tasksToSend,
       notes: notesToSend,
-      lists, tags, flows, personas, flowMeta,
+      flowMeta,
     }
   }
 
   // IDB-based importSyncPackage — mirrors desktop semantics including tie-break,
   // soft-deleted note propagation, and flowMeta upsert.
   const importSyncPackageIdb = async (db, pkg) => {
-    const { tasks: remoteTasks, notes: remoteNotes, vectorClock: remoteVC,
-      lists: rLists, tags: rTags, flows: rFlows, personas: rPersonas, flowMeta: rFlowMeta } = pkg
+    // Older clients may send lists/tags/flows/personas in pkg — they are silently
+    // ignored; lookup tables are derived state per device.
+    const { tasks: remoteTasks, notes: remoteNotes, vectorClock: remoteVC, flowMeta: rFlowMeta } = pkg
     const devRow = await db.get('meta', 'device_id')
     const localDeviceId = devRow?.value || null
 
@@ -617,13 +632,21 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         const maxCounter = Math.max(existing?.counter || 0, maxImportedLts)
         await db.put('vectorClock', { deviceId: localDeviceId, counter: maxCounter })
       }
+
+      // Backfill lookup stores from imported tasks so drawer/filter UI sees the
+      // values without waiting for the user to edit a synced task. Lookup
+      // tables are derived per device — the task rows themselves are the source
+      // of truth, this just primes the local lookup index.
+      for (const task of remoteTasks) {
+        if (task.deletedAt) continue
+        if (task.list) await db.put('lists', { name: task.list })
+        if (Array.isArray(task.tags)) for (const tg of task.tags) await db.put('tags', { name: tg })
+        if (Array.isArray(task.personas)) for (const p of task.personas) await db.put('personas', { name: p })
+        if (task.flowId) await db.put('flows', { name: task.flowId })
+      }
     }
 
-    // Lookup tables
-    if (rLists) for (const n of rLists) await db.put('lists', { name: n })
-    if (rTags) for (const n of rTags) await db.put('tags', { name: n })
-    if (rFlows) for (const n of rFlows) await db.put('flows', { name: n })
-    if (rPersonas) for (const n of rPersonas) await db.put('personas', { name: n })
+    // Lookup tables from the package are not applied — they are derived per device.
 
     // Flow metadata (upsert, also ensures flow row exists)
     if (rFlowMeta) {
@@ -668,6 +691,12 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         }
       }
     }
+
+    // GC orphaned lookup entries: incoming soft-deletes (task.deletedAt set)
+    // may have removed the last reference to a list/tag/persona/flow. This
+    // closes the convergence loop: device A deleted a task → syncs to B →
+    // B drops the orphan from its lookup too, without waiting for reload.
+    await runLookupGc(createIdbLookupAdapter(db))
 
     return { stats: { applied, skipped, outdated } }
   }
@@ -728,12 +757,21 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     return gdriveIsConnected(db)
   }, [])
 
+  const cleanupLookups = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return { removed: { lists: [], tags: [], personas: [], flows: [] } }
+    const result = await runLookupGc(createIdbLookupAdapter(db))
+    await refresh()
+    return result
+  }, [refresh])
+
   return {
     ready,
     tasks, lists, tags, flows, flowMeta, personas,
     addTask, updateTask, saveNotes, bulkStatus, bulkCycle, bulkDelete, bulkPriority,
     bulkDueShift, bulkSnooze, bulkAssignToday,
     updateFlow, deleteFlow,
+    cleanupLookups,
     clearAll,
     canUndo: false,
     undo: () => {},

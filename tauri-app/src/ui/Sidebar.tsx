@@ -17,13 +17,14 @@ import type { Task } from "../types";
 
 interface SidebarProps {
   tasks: Task[];
-  filters: Record<string, string | null>;
+  filters: Record<string, string | null | boolean>;
   setFilter: (key: string, value: string) => void;
   clearFilter: (key: string) => void;
+  onToggleHideDone?: () => void;
   onOpenSettings: () => void;
 }
 
-export function Sidebar({ tasks, filters, setFilter, clearFilter, onOpenSettings }: SidebarProps) {
+export function Sidebar({ tasks, filters, setFilter, clearFilter, onToggleHideDone, onOpenSettings }: SidebarProps) {
   const { t, theme, setTheme, TC, settings, flowMeta, openUrl: ctxOpenUrl } = useApp();
 
   const lists    = useMemo(() => { const m = {}; tasks.forEach(t => { if (t.list) m[t.list] = (m[t.list] || 0) + 1; }); return Object.entries(m).sort((a, b) => b[1] - a[1]); }, [tasks]);
@@ -152,6 +153,12 @@ export function Sidebar({ tasks, filters, setFilter, clearFilter, onOpenSettings
               <Filter size={14} /><span className="flex-1 text-left">{t("filter.all")}</span><span className="text-xs opacity-60">{tasks.length}</span>
             </button>
             {STATUSES.map(s => <FilterItem key={s} icon={STATUS_ICONS[s]} label={t("status." + s)} count={statusCounts[s]} filterKey="status" filterValue={s} />)}
+            {onToggleHideDone && (
+              <button onClick={onToggleHideDone}
+                className={`w-full flex items-center gap-2 px-3 rounded-md text-sm transition-colors ${settings?.condense ? "py-0.5" : "py-1.5"} ${filters.hideDone ? "bg-sky-600/20 text-sky-300" : `${TC.textMuted} ${TC.hoverBg} hover:text-gray-200`}`}>
+                <X size={14} /><span className="flex-1 text-left">{t("filter.hideDone")}</span>
+              </button>
+            )}
           </div>
         </Section>
 

@@ -18,6 +18,10 @@ import { createSafeOpenUrl } from './store/storeApi.js'
 import { usePlannerOps } from './store/usePlannerOps.js'
 import { useSyncOps } from './store/useSyncOps.js'
 import { useDbOps } from './store/useDbOps.js'
+import { runLookupGc } from './core/lookup'
+import { createSqliteLookupAdapter } from './store/lookupAdapter'
+import { saveNotes as sharedSaveNotes } from '../../shared/core/saveNotes'
+import { createSqliteNoteAdapter } from './store/noteAdapter'
 
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
@@ -103,6 +107,10 @@ export function useTauriTaskStore() {
       // Cache device_id for sync_log writes
       const [devRow] = await db.select("SELECT value FROM meta WHERE key='device_id'")
       deviceIdRef.current = devRow?.value || null
+
+      // GC orphaned lookup entries before first render — lookups are derived per device.
+      // See shared/core/lookup.ts for rules (flow_meta keeps a flow name alive).
+      try { await runLookupGc(createSqliteLookupAdapter(db)) } catch (e) { console.warn('[lookup gc] init failed', e) }
 
       // Resolve and expose the current DB path
       const customPath = localStorage.getItem(DB_PATH_KEY)
@@ -304,7 +312,12 @@ export function useTauriTaskStore() {
       for (const id of idArr) {
         await logChange(db, 'tasks', id, 'delete', null, lts, did)
       }
-      // Clean up orphaned lookup entries (only count non-deleted tasks)
+      // Clean up orphaned lookup entries (only count non-deleted tasks).
+      // Inline SQL here (not runLookupGc) is deliberate: single set-based
+      // DELETE per kind is faster than round-tripping adapter calls for a
+      // batch delete. Rules mirror shared/core/lookup.ts — keep in sync if
+      // you change either. Don't "refactor for consistency" with updateTask;
+      // that path uses runLookupGc because it handles one task at a time.
       await db.execute(`DELETE FROM lists    WHERE name NOT IN (SELECT DISTINCT list_name FROM tasks WHERE list_name IS NOT NULL AND deleted_at IS NULL)`)
       await db.execute(`DELETE FROM flows    WHERE name NOT IN (SELECT DISTINCT flow_id FROM tasks WHERE flow_id IS NOT NULL AND deleted_at IS NULL) AND name NOT IN (SELECT name FROM flow_meta)`)
       await db.execute(`DELETE FROM tags     WHERE name NOT IN (SELECT DISTINCT value FROM tasks, json_each(tasks.tags) WHERE tasks.deleted_at IS NULL)`)
@@ -433,40 +446,19 @@ export function useTauriTaskStore() {
       }
       activatedNames.push(...doneResult.activated.map(a => a.title))
     }
-    // Sync notes: diff old vs new, soft-delete missing, upsert remaining.
-    // Soft-delete (deleted_at) is required so sync can propagate deletions to other devices.
+    // Note sync — delegated to shared/core/saveNotes.ts via SQLite adapter.
+    // Pass outer lts/did so all rows (task UPDATE + notes) share a single
+    // lamport; logChange hooks keep the delta log intact (desktop-only).
     if (changes.notes !== undefined) {
-      const [taskRow] = await db.select('SELECT rtm_series_id FROM tasks WHERE id=?', [id])
-      const seriesKey = taskRow?.rtm_series_id || id
-      const existingNotes = await db.select(
-        'SELECT id FROM notes WHERE task_series_id=? AND deleted_at IS NULL',
-        [seriesKey]
-      )
-      const newNoteIds = new Set((changes.notes || []).map((n: any) => n.id))
-      const deletedIds = existingNotes.filter((n: any) => !newNoteIds.has(n.id)).map((n: any) => n.id)
-      const nowIso = new Date().toISOString()
-      // Soft-delete removed notes
-      for (const noteId of deletedIds) {
-        await db.execute(
-          'UPDATE notes SET deleted_at=?, updated_at=?, lamport_ts=?, device_id=? WHERE id=?',
-          [nowIso, nowIso, lts, did, noteId]
-        )
-        await logChange(db, 'notes', noteId, 'delete', { deletedAt: nowIso, taskSeriesId: seriesKey }, lts, did)
-      }
-      // Upsert remaining notes (INSERT OR REPLACE clears any prior deleted_at)
-      for (const note of (changes.notes || [])) {
-        const ts = note.createdAt ? new Date(note.createdAt).getTime() : Date.now()
-        await db.execute(
-          'INSERT OR REPLACE INTO notes (id, task_series_id, content, created_at, deleted_at, updated_at, lamport_ts, device_id) VALUES (?,?,?,?,NULL,?,?,?)',
-          [note.id, seriesKey, note.content || '', ts, nowIso, lts, did]
-        )
-      }
+      const adapter = createSqliteNoteAdapter(db, did)
+      await sharedSaveNotes(adapter, id, changes.notes || [], { overrideLts: lts, overrideDid: did })
     }
     await logChange(db, 'tasks', id, 'update', changes, lts, did)
-    if (changes.notes !== undefined) {
-      for (const note of (changes.notes || [])) {
-        await logChange(db, 'notes', note.id, 'insert', { content: note.content, createdAt: note.createdAt }, lts, did)
-      }
+    // Incremental lookup GC — dropping a field (list/tags/personas/flowId) may
+    // have orphaned an entry. Runs only when the changeset touches one of those
+    // fields to keep the hot path fast.
+    if ('list' in changes || 'tags' in changes || 'personas' in changes || 'flowId' in changes) {
+      await runLookupGc(createSqliteLookupAdapter(db))
     }
     await refreshRef()
   })
@@ -738,6 +730,15 @@ export function useTauriTaskStore() {
     })
   }, [])
 
+  // Manual lookup GC — exposed for the Settings "Clean up unused lookups" button.
+  const cleanupLookups = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return { removed: { lists: [], tags: [], personas: [], flows: [] } }
+    const result = await runLookupGc(createSqliteLookupAdapter(db))
+    await refreshRef()
+    return result
+  }, [refreshRef])
+
   return {
     tasks, lists, tags, flows, flowMeta, personas,
     addTask, updateTask, bulkStatus, bulkCycle, bulkDelete, bulkPriority, bulkDueShift, bulkSnooze, bulkAssignToday,
@@ -747,6 +748,7 @@ export function useTauriTaskStore() {
     metaSettings, saveMeta,
     dbPath, revealDb, openNewDb, createNewDb, moveCurrentDb,
     createBackup, listBackups, restoreBackup,
+    cleanupLookups,
     ...syncOps,
     openUrl: createSafeOpenUrl(openUrl),
     // Day Planner

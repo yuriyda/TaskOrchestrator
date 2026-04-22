@@ -10,10 +10,12 @@ interface TaskDetailProps {
   task: any;
   store: any;
   onBack: () => void;
+  onToast?: (label: string, undo?: (() => void) | null) => void;
+  locale?: string;
   t: (key: string) => string;
 }
 
-function TaskDetail({ task, store, onBack, t }: TaskDetailProps) {
+function TaskDetail({ task, store, onBack, onToast, locale, t }: TaskDetailProps) {
   if (!task) return null
   const today = localIsoDate(new Date())
   const [editing, setEditing] = useState(false)
@@ -33,8 +35,19 @@ function TaskDetail({ task, store, onBack, t }: TaskDetailProps) {
       tags, recurrence: recurrence || null, estimate: estimate || null, url: url || null,
     })
     if (store.saveNotes) {
-      const noteTexts = notesStr.split('\n---\n').map(s => s.trim()).filter(Boolean)
-      await store.saveNotes(task.id, noteTexts)
+      // saveNotes contract: Array<{ id?, content, createdAt? }>.
+      // Position-based id preservation — editing note at index i keeps its id
+      // so sync stays cheap (update, not delete+insert). Reordering by insert/
+      // delete in the middle of the list is a known-imperfect case; full rich
+      // note editor with explicit per-note id is out of scope (Task 4 phase 2+).
+      const texts = notesStr.split('\n---\n').map(s => s.trim()).filter(Boolean)
+      const oldNotes = task.notes || []
+      const notes = texts.map((content, i) => ({
+        id: oldNotes[i]?.id,
+        content,
+        createdAt: oldNotes[i]?.createdAt,
+      }))
+      await store.saveNotes(task.id, notes)
     }
     setEditing(false)
   }
@@ -211,7 +224,20 @@ function TaskDetail({ task, store, onBack, t }: TaskDetailProps) {
                 {FULL_CYCLE.map(s => {
                   const Icon = STATUS_ICONS[s]
                   return (
-                    <button key={s} onClick={() => store.bulkStatus(new Set([task.id]), s)}
+                    <button key={s} onClick={async () => {
+                      const prev = task.status
+                      await store.bulkStatus(new Set([task.id]), s)
+                      // Fan-out (spawn recurring / activate dependents) happens only on → done;
+                      // offer Undo only for no-fan-out transitions.
+                      if (onToast && s !== 'done') {
+                        onToast(
+                          locale === 'ru' ? `Статус изменён на ${t(`status.${s}`)}` : `Status → ${t(`status.${s}`)}`,
+                          () => store.bulkStatus(new Set([task.id]), prev),
+                        )
+                      } else if (onToast && s === 'done') {
+                        onToast(locale === 'ru' ? 'Задача завершена' : 'Task completed', null)
+                      }
+                    }}
                       className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all ${
                         task.status === s ? 'bg-sky-600 text-white' : 'bg-slate-800 text-gray-300 active:bg-slate-700'
                       }`}>
@@ -230,7 +256,16 @@ function TaskDetail({ task, store, onBack, t }: TaskDetailProps) {
                   const colors = { 1: 'bg-red-500', 2: 'bg-orange-400', 3: 'bg-blue-400', 4: 'bg-gray-500' }
                   const inactiveColors = { 1: 'text-red-400 bg-red-500/15', 2: 'text-orange-400 bg-orange-400/15', 3: 'text-blue-400 bg-blue-400/15', 4: 'text-gray-400 bg-slate-800' }
                   return (
-                  <button key={p} onClick={() => store.bulkPriority(new Set([task.id]), p)}
+                  <button key={p} onClick={async () => {
+                    const prev = task.priority
+                    await store.bulkPriority(new Set([task.id]), p)
+                    if (onToast) {
+                      onToast(
+                        locale === 'ru' ? `Приоритет P${p}` : `Priority P${p}`,
+                        () => store.bulkPriority(new Set([task.id]), prev),
+                      )
+                    }
+                  }}
                     className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${
                       task.priority === p ? `${colors[p]} text-white` : `${inactiveColors[p]} active:opacity-80`
                     }`}>
