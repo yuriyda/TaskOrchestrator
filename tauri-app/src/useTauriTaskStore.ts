@@ -100,6 +100,7 @@ export function useTauriTaskStore() {
   const deviceIdRef = useRef(null)
   const slotsRef = useRef([])
   const currentPlanIdRef = useRef(null)
+  const plannerRef = useRef(null)
 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -196,6 +197,9 @@ export function useTauriTaskStore() {
   // Keep refs in sync with planner state — used by pushHistory/undo for slot-level history
   useEffect(() => { slotsRef.current = planner.dayPlanSlots }, [planner.dayPlanSlots])
   useEffect(() => { currentPlanIdRef.current = planner.currentPlan?.id || null }, [planner.currentPlan?.id])
+  // Undo captures `planner` at first render (empty deps) — stash via ref so we
+  // read the latest plannerRefreshSlots (depends on currentPlan) on each call.
+  useEffect(() => { plannerRef.current = planner })
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const addTask = useCallback((data, cur) => mutate(cur, async db => {
@@ -772,8 +776,13 @@ export function useTauriTaskStore() {
         setTasks(prev)
         // Re-read slots from DB for the currently-viewed plan instead of setting stale snapshot;
         // also refresh plannedTaskIds so task-list highlighting stays in sync.
-        await planner.plannerRefreshSlots()
-        await planner.refreshPlannedTaskIds()
+        // Access via plannerRef because `undo` was captured with empty deps and
+        // `plannerRefreshSlots` depends on the live `currentPlan` state.
+        const p = plannerRef.current
+        if (p) {
+          await p.plannerRefreshSlots()
+          await p.refreshPlannedTaskIds()
+        }
         if (onDone) onDone()
       })()
       return h.slice(0, -1)
