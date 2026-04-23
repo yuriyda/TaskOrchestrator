@@ -98,6 +98,8 @@ export function useTauriTaskStore() {
   const [dbKey,        setDbKey]        = useState(0)
   const dbRef = useRef(null)
   const deviceIdRef = useRef(null)
+  const slotsRef = useRef([])
+  const currentPlanIdRef = useRef(null)
 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -158,7 +160,7 @@ export function useTauriTaskStore() {
   const mutate = useCallback(async (currentTasks, fn) => {
     const db = dbRef.current
     if (!db) return
-    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
+    setHistory(h => [...h.slice(-HISTORY_LIMIT), { tasks: currentTasks, slots: slotsRef.current, planId: currentPlanIdRef.current }])
     const result = await fn(db)
     setTasks(await fetchAll(db))
     return result
@@ -185,11 +187,15 @@ export function useTauriTaskStore() {
 
   // ── Sub-hooks (must be before inline code that uses their state/setters) ──
   const pushHistory = useCallback((currentTasks) => {
-    setHistory(h => [...h.slice(-HISTORY_LIMIT), currentTasks])
+    setHistory(h => [...h.slice(-HISTORY_LIMIT), { tasks: currentTasks, slots: slotsRef.current, planId: currentPlanIdRef.current }])
   }, [])
 
   const planner = usePlannerOps({ dbRef, deviceIdRef, pushHistory })
   const syncOps = useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refreshRef })
+
+  // Keep refs in sync with planner state — used by pushHistory/undo for slot-level history
+  useEffect(() => { slotsRef.current = planner.dayPlanSlots }, [planner.dayPlanSlots])
+  useEffect(() => { currentPlanIdRef.current = planner.currentPlan?.id || null }, [planner.currentPlan?.id])
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const addTask = useCallback((data, cur) => mutate(cur, async db => {
@@ -684,7 +690,11 @@ export function useTauriTaskStore() {
   const undo = useCallback((onDone) => {
     setHistory(h => {
       if (h.length === 0) return h
-      const prev = h[h.length - 1]
+      const entry = h[h.length - 1]
+      // Backward compat: older entries were plain tasks[]
+      const prev = Array.isArray(entry) ? entry : entry.tasks
+      const prevSlots = Array.isArray(entry) ? [] : (entry.slots || [])
+      const snapshotPlanId = Array.isArray(entry) ? null : (entry.planId || null)
       ;(async () => {
         const db = dbRef.current
         if (!db) return
@@ -721,9 +731,49 @@ export function useTauriTaskStore() {
             await db.execute(TASK_INSERT, taskToRow(task))
           }
         }
+
+        // 3. Restore planner slots — scoped to the plan that was active at snapshot time.
+        // Recurring slots from other plans (planId !== snapshotPlanId) are skipped — they
+        // belong to other plans' history and must not be touched here.
+        if (snapshotPlanId) {
+          const ownPrevSlots = prevSlots.filter(s => s.planId === snapshotPlanId)
+          const prevSlotIds = new Set(ownPrevSlots.map(s => s.id))
+          const currentSlotRows = await db.select('SELECT id FROM day_plan_slots WHERE plan_id = ?', [snapshotPlanId])
+          const currentSlotIds = new Set(currentSlotRows.map(r => r.id))
+          for (const row of currentSlotRows) {
+            if (!prevSlotIds.has(row.id)) {
+              await db.execute('DELETE FROM day_plan_slots WHERE id = ?', [row.id])
+            }
+          }
+          const slotSets = 'plan_id=?, task_id=?, title=?, start_time=?, end_time=?, slot_type=?, sort_order=?, recurrence=?, created_at=?, device_id=?, lamport_ts=?'
+          for (const slot of ownPrevSlots) {
+            const slotVals = [
+              slot.planId, slot.taskId ?? null, slot.title ?? null,
+              slot.startTime, slot.endTime, slot.slotType || 'task',
+              slot.sortOrder || 0, slot.recurrence ?? null,
+              slot.createdAt || new Date().toISOString(),
+              slot.deviceId ?? null, slot.lamportTs || 0,
+            ]
+            try {
+              if (currentSlotIds.has(slot.id)) {
+                await db.execute(`UPDATE day_plan_slots SET ${slotSets} WHERE id = ?`, [...slotVals, slot.id])
+              } else {
+                await db.execute(
+                  'INSERT INTO day_plan_slots (id, plan_id, task_id, title, start_time, end_time, slot_type, sort_order, recurrence, created_at, device_id, lamport_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+                  [slot.id, ...slotVals]
+                )
+              }
+            } catch (e) {
+              console.warn('[undo] failed to restore slot', slot.id, e)
+            }
+          }
+        }
+
         setTasks(prev)
-        // Remove planner slots for deleted tasks from React state
-        planner.setDayPlanSlots(s => s.filter(slot => !slot.taskId || prevIds.has(slot.taskId)))
+        // Re-read slots from DB for the currently-viewed plan instead of setting stale snapshot;
+        // also refresh plannedTaskIds so task-list highlighting stays in sync.
+        await planner.plannerRefreshSlots()
+        await planner.refreshPlannedTaskIds()
         if (onDone) onDone()
       })()
       return h.slice(0, -1)
