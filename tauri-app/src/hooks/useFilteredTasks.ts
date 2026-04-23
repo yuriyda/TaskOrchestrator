@@ -108,7 +108,7 @@ export function useFilteredTasks({
     // keep their global sort position, so those with higher priority than any
     // flow task naturally land above the first flow group; lower-priority
     // ones fall below.
-    if (filters.groupByFlow) {
+    if (filters.groupByFlow && !filters.flow) {
       const seen = new Set<string>();
       const grouped: Task[] = [];
       for (const task of rest) {
@@ -125,7 +125,7 @@ export function useFilteredTasks({
 
     if (over.length === 0) return rest;
     return [...over, ...rest];
-  }, [filtered, filters.groupByFlow]);
+  }, [filtered, filters.groupByFlow, filters.flow]);
 
   const overdueCount = useMemo(
     () => displayFiltered.filter(t => overdueLevel(t) !== null).length,

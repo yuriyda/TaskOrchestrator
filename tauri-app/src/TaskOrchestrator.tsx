@@ -487,7 +487,9 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
 
             {(() => {
               const canShowActualOnly = !filters.status;
-              const hasFlowTasks = filtered.some(t => t.flowId);
+              // Group by Flow only makes sense when viewing multiple flows at once —
+              // hide the checkbox (and skip grouping below) if a single flow is already pinned.
+              const hasFlowTasks = !filters.flow && filtered.some(t => t.flowId);
               const rowVisible = hasAnyFilter || calendarFilter || canShowActualOnly || hasFlowTasks;
               if (!rowVisible) return null;
               return (
@@ -667,7 +669,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                       rows.push(<div key="__overdue_gap" className="h-3" />);
                     }
                     const inNonOverdue = idx >= overdueCount;
-                    const shouldGroup = filters.groupByFlow && inNonOverdue && !!task.flowId;
+                    const shouldGroup = filters.groupByFlow && !filters.flow && inNonOverdue && !!task.flowId;
                     if (shouldGroup) {
                       if (!groupBuffer || groupBuffer.flowId !== task.flowId) {
                         flushFlowGroup();
