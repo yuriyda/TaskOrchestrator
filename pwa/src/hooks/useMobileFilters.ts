@@ -24,7 +24,8 @@ const KEY_FILTER = 'pwaFilter'
 const KEY_DATE_RANGE = 'pwaDateRange'
 const KEY_LIST_FILTER = 'pwaListFilter'
 const KEY_TAG_FILTER = 'pwaTagFilter'
-const KEY_HIDE_DONE = 'pwaHideDone'
+const KEY_ACTUAL_ONLY = 'pwaActualOnly'
+const KEY_GROUP_BY_FLOW = 'pwaGroupByFlow'
 
 function readStringOrDefault(key: string, def: string | null): string | null {
   try {
@@ -57,8 +58,10 @@ export interface MobileFilters {
   setSearchVisible: Dispatch<SetStateAction<boolean>>
   calendarDate: string | null
   setCalendarDate: Dispatch<SetStateAction<string | null>>
-  hideDone: boolean
-  toggleHideDone: () => void
+  actualOnly: boolean
+  toggleActualOnly: () => void
+  groupByFlow: boolean
+  toggleGroupByFlow: () => void
 }
 
 export function useMobileFilters(): MobileFilters {
@@ -69,13 +72,28 @@ export function useMobileFilters(): MobileFilters {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchVisible, setSearchVisible] = useState(false)
   const [calendarDate, setCalendarDate] = useState<string | null>(null)
-  const [hideDone, setHideDone] = useState<boolean>(() => {
-    try { return localStorage.getItem(KEY_HIDE_DONE) === '1' } catch { return false }
+  const [actualOnly, setActualOnly] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem(KEY_ACTUAL_ONLY)
+      if (stored !== null) return stored === '1'
+      // Legacy key from pre-actualOnly rename — preserve user's setting.
+      return localStorage.getItem('pwaHideDone') === '1'
+    } catch { return false }
   })
-  const toggleHideDone = useCallback(() => {
-    setHideDone(prev => {
+  const toggleActualOnly = useCallback(() => {
+    setActualOnly(prev => {
       const next = !prev
-      try { localStorage.setItem(KEY_HIDE_DONE, next ? '1' : '0') } catch { /* best-effort */ }
+      try { localStorage.setItem(KEY_ACTUAL_ONLY, next ? '1' : '0') } catch { /* best-effort */ }
+      return next
+    })
+  }, [])
+  const [groupByFlow, setGroupByFlow] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEY_GROUP_BY_FLOW) === '1' } catch { return false }
+  })
+  const toggleGroupByFlow = useCallback(() => {
+    setGroupByFlow(prev => {
+      const next = !prev
+      try { localStorage.setItem(KEY_GROUP_BY_FLOW, next ? '1' : '0') } catch { /* best-effort */ }
       return next
     })
   }, [])
@@ -120,6 +138,7 @@ export function useMobileFilters(): MobileFilters {
     searchQuery, setSearchQuery,
     searchVisible, setSearchVisible,
     calendarDate, setCalendarDate,
-    hideDone, toggleHideDone,
+    actualOnly, toggleActualOnly,
+    groupByFlow, toggleGroupByFlow,
   }
 }

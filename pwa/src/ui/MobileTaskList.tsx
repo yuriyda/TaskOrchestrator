@@ -12,6 +12,8 @@ interface Props {
   overdueTasks: any[]
   regularTasks: any[]
   searchQuery: string
+  groupByFlow?: boolean
+  flowMeta?: Record<string, { color?: string }>
   onTap: (id: string) => void
   onCycle: (id: string) => void
   onComplete: (id: string) => void
@@ -43,10 +45,48 @@ export function MobileTaskList(p: Props) {
               <div className="h-2" />
             </>
           )}
-          {p.regularTasks.map(task => (
-            <TaskItem key={task.id} task={task} locale={p.locale}
-              onTap={p.onTap} onCycle={p.onCycle} onComplete={p.onComplete} onDelete={p.onDelete} />
-          ))}
+          {(() => {
+            if (!p.groupByFlow) {
+              return p.regularTasks.map(task => (
+                <TaskItem key={task.id} task={task} locale={p.locale}
+                  onTap={p.onTap} onCycle={p.onCycle} onComplete={p.onComplete} onDelete={p.onDelete} />
+              ))
+            }
+            const rows: any[] = []
+            let buf: { flowId: string; color: string; items: any[] } | null = null
+            const flush = () => {
+              if (!buf || buf.items.length === 0) { buf = null; return }
+              const c = buf.color
+              rows.push(
+                <div key={`flow-${buf.flowId}-${rows.length}`}
+                     className="relative pl-2 py-1 my-1 mx-2"
+                     style={{ borderLeft: `2px solid ${c}80`, borderTop: `2px solid ${c}80`, borderBottom: `2px solid ${c}80`, borderTopLeftRadius: '6px', borderBottomLeftRadius: '6px' }}>
+                  <div className="text-[9px] uppercase tracking-wider font-semibold mb-1 ml-1" style={{ color: c }}>{buf.flowId}</div>
+                  <div className="space-y-1.5">{buf.items}</div>
+                </div>
+              )
+              buf = null
+            }
+            p.regularTasks.forEach(task => {
+              const item = (
+                <TaskItem key={task.id} task={task} locale={p.locale}
+                  onTap={p.onTap} onCycle={p.onCycle} onComplete={p.onComplete} onDelete={p.onDelete} />
+              )
+              if (task.flowId) {
+                if (!buf || buf.flowId !== task.flowId) {
+                  flush()
+                  const color = p.flowMeta?.[task.flowId]?.color || '#38bdf8'
+                  buf = { flowId: task.flowId, color, items: [] }
+                }
+                buf.items.push(item)
+              } else {
+                flush()
+                rows.push(item)
+              }
+            })
+            flush()
+            return rows
+          })()}
         </div>
       )}
     </main>

@@ -18,7 +18,8 @@ interface Filters {
   tag: string | null;
   flow: string | null;
   persona: string | null;
-  hideDone: boolean;
+  actualOnly: boolean;
+  groupByFlow: boolean;
 }
 
 interface SortState {
@@ -46,7 +47,7 @@ export function useFilteredTasks({
   const filtered = useMemo(() => {
     let r = tasks;
     if (filters.status) r = r.filter(tk => tk.status === filters.status);
-    else if (filters.hideDone) r = r.filter(tk => tk.status !== 'done');
+    else if (filters.actualOnly) r = r.filter(tk => tk.status !== 'done' && tk.status !== 'cancelled');
     if (filters.dateRange) {
       const todayStr = today;
       const isPastDue = (tt: Task) => tt.due && tt.due < todayStr && tt.status !== "done" && tt.status !== "cancelled";
@@ -100,9 +101,31 @@ export function useFilteredTasks({
   const displayFiltered = useMemo(() => {
     const isOverdue = (t: Task) => overdueLevel(t) !== null;
     const over = filtered.filter(isOverdue);
-    if (over.length === 0) return filtered;
-    return [...over, ...filtered.filter(t => !isOverdue(t))];
-  }, [filtered]);
+    let rest = filtered.filter(t => !isOverdue(t));
+
+    // Group tasks by flow: cluster tasks with the same flowId together at the
+    // position of their first occurrence in the sorted list. Non-flow tasks
+    // keep their global sort position, so those with higher priority than any
+    // flow task naturally land above the first flow group; lower-priority
+    // ones fall below.
+    if (filters.groupByFlow) {
+      const seen = new Set<string>();
+      const grouped: Task[] = [];
+      for (const task of rest) {
+        if (task.flowId) {
+          if (seen.has(task.flowId)) continue;
+          seen.add(task.flowId);
+          grouped.push(...rest.filter(t => t.flowId === task.flowId));
+        } else {
+          grouped.push(task);
+        }
+      }
+      rest = grouped;
+    }
+
+    if (over.length === 0) return rest;
+    return [...over, ...rest];
+  }, [filtered, filters.groupByFlow]);
 
   const overdueCount = useMemo(
     () => displayFiltered.filter(t => overdueLevel(t) !== null).length,

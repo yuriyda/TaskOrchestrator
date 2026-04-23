@@ -19,7 +19,7 @@ export const LOCALES = {
     "bulk.selected": "selected", "bulk.complete": "Complete",
     "bulk.cycle": "Cycle status", "bulk.shift": "+1 day", "bulk.delete": "Delete",
     // filter
-    "filter.label": "Filter:", "filter.all": "All", "filter.hideDone": "Hide completed",
+    "filter.label": "Filter:", "filter.all": "All", "filter.actualOnly": "Actual only", "filter.groupByFlow": "Group by Flow",
     "cf.label": "Show:", "cf.all": "All", "cf.active": "Active", "cf.done": "Done",
     // sidebar
     "sidebar.agenda": "Agenda",
@@ -391,7 +391,7 @@ export const LOCALES = {
     "qe.placeholder": "Новая задача... (@список #тег !приоритет ^дата >>flow ~зависимость *повтор /персона)",
     "bulk.selected": "выделено", "bulk.complete": "Выполнить",
     "bulk.cycle": "Цикл статуса", "bulk.shift": "+1 день", "bulk.delete": "Удалить",
-    "filter.label": "Фильтр:", "filter.all": "Все", "filter.hideDone": "Скрыть выполненные",
+    "filter.label": "Фильтр:", "filter.all": "Все", "filter.actualOnly": "Только актуальные", "filter.groupByFlow": "Группировать по Flow",
     "cf.label": "Показать:", "cf.all": "Все", "cf.active": "Активные", "cf.done": "Завершённые",
     "sidebar.agenda": "Расписание",
     "agenda.today": "Сегодня",  "agenda.tomorrow": "Завтра",

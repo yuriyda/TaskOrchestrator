@@ -57,7 +57,8 @@ export default function MobileApp({ store }: MobileAppProps) {
     searchQuery, setSearchQuery,
     searchVisible, setSearchVisible,
     calendarDate, setCalendarDate,
-    hideDone, toggleHideDone,
+    actualOnly, toggleActualOnly,
+    groupByFlow, toggleGroupByFlow,
   } = useMobileFilters()
   const {
     drawerOpen, setDrawerOpen,
@@ -107,7 +108,7 @@ export default function MobileApp({ store }: MobileAppProps) {
   const filtered = useMemo(() => {
     let r = tasks
     if (filter) r = r.filter(t => t.status === filter)
-    else if (hideDone) r = r.filter(t => t.status !== 'done')
+    else if (actualOnly) r = r.filter(t => t.status !== 'done' && t.status !== 'cancelled')
     if (dateRange) {
       if (dateRange === 'overdue') r = r.filter(isPastDue)
       else if (dateRange === 'today') r = r.filter(tt => tt.due === today || isPastDue(tt))
@@ -130,7 +131,25 @@ export default function MobileApp({ store }: MobileAppProps) {
       r = r.filter(t => t.title.toLowerCase().includes(q))
     }
     return r
-  }, [tasks, filter, dateRange, listFilter, tagFilter, calendarDate, searchQuery, today, isPastDue, hideDone])
+  }, [tasks, filter, dateRange, listFilter, tagFilter, calendarDate, searchQuery, today, isPastDue, actualOnly])
+
+  // Regular (non-overdue) tasks, reordered by flow when groupByFlow is on.
+  const regularReordered = useMemo(() => {
+    const rest = filtered.filter(t => !isPastDue(t))
+    if (!groupByFlow) return rest
+    const seen = new Set<string>()
+    const grouped: typeof rest = []
+    for (const task of rest) {
+      if (task.flowId) {
+        if (seen.has(task.flowId)) continue
+        seen.add(task.flowId)
+        grouped.push(...rest.filter(t => t.flowId === task.flowId))
+      } else {
+        grouped.push(task)
+      }
+    }
+    return grouped
+  }, [filtered, groupByFlow, isPastDue])
 
   // Counts
   const counts = useMemo(() => ({
@@ -140,15 +159,12 @@ export default function MobileApp({ store }: MobileAppProps) {
     done: tasks.filter(t => t.status === 'done').length,
   }), [tasks])
 
-  // Overdue tasks float to top
+  // Overdue tasks float to top (not subject to flow grouping)
   const overdueTasks = useMemo(() =>
     filtered.filter(t => isPastDue(t)),
     [filtered, isPastDue]
   )
-  const regularTasks = useMemo(() =>
-    filtered.filter(t => !isPastDue(t)),
-    [filtered, isPastDue]
-  )
+  const regularTasks = regularReordered
 
   const handleCycle = useCallback((id) => {
     store.bulkCycle(new Set([id]))
@@ -227,7 +243,9 @@ export default function MobileApp({ store }: MobileAppProps) {
       )}
 
       <FilterBar filter={filter} onFilter={setFilter} counts={counts}
-        hideDone={hideDone} onToggleHideDone={toggleHideDone} t={t} />
+        actualOnly={actualOnly} onToggleActualOnly={toggleActualOnly}
+        groupByFlow={groupByFlow} onToggleGroupByFlow={toggleGroupByFlow}
+        hasFlowTasks={filtered.some(tk => tk.flowId)} t={t} />
       <AgendaBar dateRange={dateRange} onDateRange={setDateRange} agendaCounts={agendaCounts} t={t} />
       {(listFilter || tagFilter) && (
         <div className="flex items-center gap-1.5 px-4 py-1.5">
@@ -248,6 +266,7 @@ export default function MobileApp({ store }: MobileAppProps) {
 
       <MobileTaskList t={t} locale={locale} filtered={filtered}
         overdueTasks={overdueTasks} regularTasks={regularTasks} searchQuery={searchQuery}
+        groupByFlow={groupByFlow} flowMeta={store.flowMeta || {}}
         onTap={setDetailId} onCycle={handleCycle} onComplete={handleComplete} onDelete={handleDelete} />
 
       <MobileToasts locale={locale} updateMsg={updateMsg} setUpdateMsg={setUpdateMsg}

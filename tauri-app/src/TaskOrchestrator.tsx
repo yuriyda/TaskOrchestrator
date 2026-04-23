@@ -81,7 +81,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [selected, setSelected] = useState(new Set());
   const [lastIdx, setLastIdx]   = useState(null);
   const [filters, setFiltersRaw] = useState(() => {
-    const defaults = { status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, hideDone: false };
+    const defaults = { status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, actualOnly: false, groupByFlow: false };
     try {
       const saved = localStorage.getItem("taskFilters");
       if (saved) return { ...defaults, ...JSON.parse(saved) };
@@ -107,11 +107,15 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     if (key === "dateRange") setCalendarFilter(null);
   };
   const clearFilter = (key) => { setFilters(f => ({ ...f, [key]: null })); };
-  const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, hideDone: false }); };
-  // Backward-compat helpers. hideDone:false is a neutral default, not an
-  // active filter — don't count it here (otherwise hasAnyFilter would always be true).
-  const hasAnyFilter = Object.entries(filters).some(([k, v]) =>
-    k === "hideDone" ? v === true : v !== null);
+  const clearAllFilters = () => { setFilters({ status: null, dateRange: null, list: null, tag: null, flow: null, persona: null, actualOnly: false, groupByFlow: false }); };
+  // `groupByFlow` is a display preference, not a filter — don't count it here,
+  // otherwise the header's "clear all" and export's "filtered view" scope would
+  // incorrectly flag as filtered when the user only toggled grouping.
+  const hasAnyFilter = Object.entries(filters).some(([k, v]) => {
+    if (k === "groupByFlow") return false;
+    if (k === "actualOnly") return v === true;
+    return v !== null;
+  });
   const [searchQuery, setSearchQuery]   = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
   const searchInputRef = useRef(null);
@@ -448,7 +452,6 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               filters={filters}
               setFilter={setFilter}
               clearFilter={clearFilter}
-              onToggleHideDone={() => setFilters(f => ({ ...f, hideDone: !f.hideDone }))}
               onOpenSettings={() => setShowSettings(true)}
             />
           )}
@@ -482,9 +485,15 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
             <QuickEntry onAdd={handleAdd} />
             <SortBar sort={sort} onToggle={toggleSort} />
 
-            {(hasAnyFilter || calendarFilter) && (
-              <div className="flex items-center gap-1.5 text-sm flex-wrap">
-                <span className={TC.textMuted}>{t("filter.label")}</span>
+            {(() => {
+              const canShowActualOnly = !filters.status;
+              const hasFlowTasks = filtered.some(t => t.flowId);
+              const rowVisible = hasAnyFilter || calendarFilter || canShowActualOnly || hasFlowTasks;
+              if (!rowVisible) return null;
+              return (
+              <div className="flex items-center gap-3 text-sm flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                {(hasAnyFilter || calendarFilter) && <span className={TC.textMuted}>{t("filter.label")}</span>}
                 {filters.status && (
                   <span className="inline-flex items-center gap-1 bg-sky-600/20 text-sky-300 px-2 py-0.5 rounded text-xs">
                     {t("status." + filters.status)}
@@ -527,8 +536,27 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                     <button onClick={() => setCalendarFilter(null)} className="hover:text-white"><X size={10} /></button>
                   </span>
                 )}
+                </div>
+                <div className="flex items-center gap-3 ml-auto text-xs">
+                  {canShowActualOnly && (
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <input type="checkbox" className="cursor-pointer"
+                        checked={!!filters.actualOnly}
+                        onChange={() => setFilters(f => ({ ...f, actualOnly: !f.actualOnly }))} />
+                      <span className={TC.textMuted}>{t("filter.actualOnly")}</span>
+                    </label>
+                  )}
+                  {hasFlowTasks && (
+                    <label className="flex items-center gap-1.5 cursor-pointer select-none">
+                      <input type="checkbox" className="cursor-pointer"
+                        checked={!!filters.groupByFlow}
+                        onChange={() => setFilters(f => ({ ...f, groupByFlow: !f.groupByFlow }))} />
+                      <span className={TC.textMuted}>{t("filter.groupByFlow")}</span>
+                    </label>
+                  )}
+                </div>
               </div>
-            )}
+            )})()}
 
             {filtered.length === 0 ? (
               <div className={`text-center py-12 ${TC.textMuted}`}>
@@ -552,53 +580,56 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
               <div className={settings.condense ? "space-y-0" : "space-y-1"}>
                 {(() => {
                   const rows = [];
-                  displayFiltered.forEach((task, idx) => {
-                    if (idx === 0 && overdueCount > 0) {
-                      rows.push(<SectionDivider key="__overdue_header" label={t("group.overdue")} count={overdueCount}
-                        onClick={() => {
-                          const overdueIds = displayFiltered.slice(0, overdueCount).map(t => t.id);
-                          setSelected(new Set(overdueIds));
-                        }} />);
-                    }
-                    if (idx === overdueCount && overdueCount > 0) {
-                      rows.push(<div key="__overdue_gap" className="h-3" />);
-                    }
+                  let groupBuffer: { flowId: string; color: string; items: any[] } | null = null;
+                  const flushFlowGroup = () => {
+                    if (!groupBuffer || groupBuffer.items.length === 0) { groupBuffer = null; return; }
+                    const color = groupBuffer.color;
                     rows.push(
-                      <div
-                        key={task.id}
-                        draggable={showPlanner}
-                        onDragStart={(e) => {
-                          const ids = selected.size > 0 && selected.has(task.id) ? [...selected] : [task.id];
-                          e.dataTransfer.setData("text/task-ids", ids.join(","));
-                          e.dataTransfer.effectAllowed = "move";
-                          // Custom drag image: planner-style block matching slot appearance
-                          const pColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS[4];
-                          const ghost = document.createElement("div");
-                          Object.assign(ghost.style, {
-                            position: "fixed", left: "0px", top: "-500px",
-                            width: "200px", minHeight: "50px",
-                            borderRadius: "6px", fontSize: "12px",
-                            background: `${pColor}25`, border: `1px solid ${pColor}`,
-                            borderLeft: `3px solid ${pColor}`,
-                            color: "#e2e8f0", padding: "6px 10px",
-                            boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
-                            fontFamily: "monospace",
-                          });
-                          const title = document.createElement("div");
-                          title.textContent = ids.length > 1 ? `${ids.length} tasks` : task.title;
-                          Object.assign(title.style, { fontWeight: "600", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" });
-                          ghost.appendChild(title);
-                          if (task.list || task.tags?.length) {
-                            const meta = document.createElement("div");
-                            meta.style.cssText = "font-size:10px; color:#38bdf8; opacity:0.7; margin-top:2px;";
-                            meta.textContent = [task.list ? `@${task.list}` : "", ...(task.tags || []).slice(0, 2).map(t => `#${t}`)].filter(Boolean).join(" ");
-                            ghost.appendChild(meta);
-                          }
-                          document.body.appendChild(ghost);
-                          e.dataTransfer.setDragImage(ghost, 100, 25);
-                          setTimeout(() => ghost.remove(), 200);
-                        }}
-                      >
+                      <div key={`flow-${groupBuffer.flowId}-${rows.length}`}
+                           className="relative pl-3 py-1 my-1"
+                           style={{ borderLeft: `2px solid ${color}80`, borderTop: `2px solid ${color}80`, borderBottom: `2px solid ${color}80`, borderTopLeftRadius: "6px", borderBottomLeftRadius: "6px" }}>
+                        <div className="text-[10px] uppercase tracking-wider font-semibold mb-1 ml-1" style={{ color }}>{groupBuffer.flowId}</div>
+                        <div className={settings.condense ? "space-y-0" : "space-y-1"}>{groupBuffer.items}</div>
+                      </div>
+                    );
+                    groupBuffer = null;
+                  };
+
+                  const renderTask = (task, idx) => (
+                    <div
+                      key={task.id}
+                      draggable={showPlanner}
+                      onDragStart={(e) => {
+                        const ids = selected.size > 0 && selected.has(task.id) ? [...selected] : [task.id];
+                        e.dataTransfer.setData("text/task-ids", ids.join(","));
+                        e.dataTransfer.effectAllowed = "move";
+                        const pColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS[4];
+                        const ghost = document.createElement("div");
+                        Object.assign(ghost.style, {
+                          position: "fixed", left: "0px", top: "-500px",
+                          width: "200px", minHeight: "50px",
+                          borderRadius: "6px", fontSize: "12px",
+                          background: `${pColor}25`, border: `1px solid ${pColor}`,
+                          borderLeft: `3px solid ${pColor}`,
+                          color: "#e2e8f0", padding: "6px 10px",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+                          fontFamily: "monospace",
+                        });
+                        const title = document.createElement("div");
+                        title.textContent = ids.length > 1 ? `${ids.length} tasks` : task.title;
+                        Object.assign(title.style, { fontWeight: "600", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" });
+                        ghost.appendChild(title);
+                        if (task.list || task.tags?.length) {
+                          const meta = document.createElement("div");
+                          meta.style.cssText = "font-size:10px; color:#38bdf8; opacity:0.7; margin-top:2px;";
+                          meta.textContent = [task.list ? `@${task.list}` : "", ...(task.tags || []).slice(0, 2).map(t => `#${t}`)].filter(Boolean).join(" ");
+                          ghost.appendChild(meta);
+                        }
+                        document.body.appendChild(ghost);
+                        e.dataTransfer.setDragImage(ghost, 100, 0);
+                        setTimeout(() => ghost.remove(), 200);
+                      }}
+                    >
                       <TaskRow
                         task={task}
                         isCursor={idx === cursor}
@@ -620,9 +651,36 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                         onDoubleClick={(e) => { e.preventDefault(); handleEditFull(task.id); }}
                         onContextMenu={(e) => handleContextMenu(e, task)}
                       />
-                      </div>
-                    );
+                    </div>
+                  );
+
+                  displayFiltered.forEach((task, idx) => {
+                    if (idx === 0 && overdueCount > 0) {
+                      rows.push(<SectionDivider key="__overdue_header" label={t("group.overdue")} count={overdueCount}
+                        onClick={() => {
+                          const overdueIds = displayFiltered.slice(0, overdueCount).map(t => t.id);
+                          setSelected(new Set(overdueIds));
+                        }} />);
+                    }
+                    if (idx === overdueCount && overdueCount > 0) {
+                      flushFlowGroup();
+                      rows.push(<div key="__overdue_gap" className="h-3" />);
+                    }
+                    const inNonOverdue = idx >= overdueCount;
+                    const shouldGroup = filters.groupByFlow && inNonOverdue && !!task.flowId;
+                    if (shouldGroup) {
+                      if (!groupBuffer || groupBuffer.flowId !== task.flowId) {
+                        flushFlowGroup();
+                        const meta = store.flowMeta?.[task.flowId];
+                        groupBuffer = { flowId: task.flowId, color: meta?.color || "#38bdf8", items: [] };
+                      }
+                      groupBuffer.items.push(renderTask(task, idx));
+                    } else {
+                      flushFlowGroup();
+                      rows.push(renderTask(task, idx));
+                    }
                   });
+                  flushFlowGroup();
                   return rows;
                 })()}
               </div>
