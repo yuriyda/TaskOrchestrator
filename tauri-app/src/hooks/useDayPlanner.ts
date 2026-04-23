@@ -91,7 +91,26 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
 
     for (const id of taskIds) {
       const task = tasks.find(t => t.id === id);
-      const durationMin = parseEstimateMinutes(task?.estimate);
+      const hasEstimate = !!task?.estimate;
+      let durationMin = parseEstimateMinutes(task?.estimate);
+      let fittedToGap = false;
+
+      // Gap-fit: task without estimate dropped into a sub-default gap
+      // picks up the gap size AND writes it back as the task's estimate.
+      if (!hasEstimate) {
+        let maxAvailable = dayEnd - nextStartMin;
+        for (const b of occupied) {
+          if (b.start <= nextStartMin && b.end > nextStartMin) { maxAvailable = 0; break; }
+          if (b.start >= nextStartMin && b.start - nextStartMin < maxAvailable) {
+            maxAvailable = b.start - nextStartMin;
+          }
+        }
+        if (maxAvailable > 0 && maxAvailable < DEFAULT_TASK_ESTIMATE_MIN) {
+          durationMin = maxAvailable;
+          fittedToGap = true;
+        }
+      }
+
       if (durationMin > dayEnd - dayStart) continue;
       const freeStart = findFree(nextStartMin, durationMin);
       const freeEnd = freeStart + durationMin;
@@ -100,6 +119,12 @@ export function useDayPlanner({ store, tasks, settings, t, handleUpdate, showPla
       if (overlaps) break;
       const fmt = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
       store.plannerAddTaskSlot(id, fmt(freeStart), fmt(freeEnd), tasks);
+      if (fittedToGap) {
+        const estimateStr = durationMin >= 60
+          ? `${(durationMin / 60).toFixed(durationMin % 60 ? 1 : 0)} hours`
+          : `${durationMin} min`;
+        handleUpdate(id, { estimate: estimateStr });
+      }
       occupied.push({ start: freeStart, end: freeEnd });
       occupied.sort((a, b) => a.start - b.start);
       nextStartMin = freeEnd;

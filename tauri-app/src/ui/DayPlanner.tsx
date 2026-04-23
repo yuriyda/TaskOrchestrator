@@ -193,7 +193,7 @@ export function DayPlanner({
     const rect = gridRef.current.getBoundingClientRect();
     const y = e.clientY - rect.top + (gridRef.current.scrollTop || 0);
     const rawMinutes = yToMinutes(y);
-    const snappedMinutes = snapToGrid(rawMinutes, slotStep);
+    const snappedMinutes = Math.floor(rawMinutes / slotStep) * slotStep;
     const clampedMinutes = Math.max(dayStartHour * 60, Math.min(snappedMinutes, (dayEndHour - 1) * 60));
     const startTime = minutesToTime(clampedMinutes);
 
