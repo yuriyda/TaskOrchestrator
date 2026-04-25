@@ -1,7 +1,7 @@
 {
   "name": "task-orchestrator-tauri",
   "private": true,
-  "version": "2.5.6",
+  "version": "2.5.7",
   "type": "module",
   "scripts": {
     "version:sync": "node ../scripts/sync-version.mjs",
