@@ -73,6 +73,8 @@ export default function MobileApp({ store }: MobileAppProps) {
     gdriveClientId, setGdriveClientId,
     gdriveClientSecret, setGdriveClientSecret,
     autoSyncing,
+    manualSyncing,
+    syncError,
     syncMsg, setSyncMsg,
     syncLog, addSyncLog, setSyncLog,
     lastSync,
@@ -235,7 +237,8 @@ export default function MobileApp({ store }: MobileAppProps) {
         searchVisible={searchVisible} searchQuery={searchQuery} setSearchVisible={setSearchVisible}
         onOpenDrawer={() => setDrawerOpen(true)}
         syncMsg={syncMsg} setSyncMsg={setSyncMsg} handleSyncNow={handleSyncNow}
-        autoSyncing={autoSyncing} gdriveConnected={gdriveConnected}
+        autoSyncing={autoSyncing} manualSyncing={manualSyncing} syncError={syncError}
+        gdriveConnected={gdriveConnected}
         syncEnabledOnStore={!!store.gdriveSyncNow} lastSync={lastSync} />
 
       {(searchVisible || searchQuery) && (

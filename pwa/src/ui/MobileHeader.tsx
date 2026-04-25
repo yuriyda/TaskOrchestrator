@@ -18,6 +18,8 @@ interface Props {
   setSyncMsg: (v: string | null) => void
   handleSyncNow: () => Promise<void>
   autoSyncing: boolean
+  manualSyncing: boolean
+  syncError: string | null
   gdriveConnected: boolean
   syncEnabledOnStore: boolean
   lastSync: string | null
@@ -42,16 +44,27 @@ export function MobileHeader(p: Props) {
         className={`p-1.5 rounded-lg ${p.searchVisible || p.searchQuery ? 'text-sky-400' : 'text-gray-400'} active:text-white`}>
         <Search size={18} />
       </button>
-      {p.syncMsg && <span className="text-[10px] text-emerald-400 mr-1">{p.syncMsg}</span>}
-      {p.syncEnabledOnStore && p.gdriveConnected && (
-        <button onClick={async () => {
-          p.setSyncMsg(null)
-          try { await p.handleSyncNow() } catch { /* already logged in hook */ }
-        }} disabled={p.autoSyncing}
-          className={`p-1.5 rounded-lg text-gray-400 active:text-sky-400 ${p.autoSyncing ? 'animate-spin' : ''}`}>
-          <RefreshCw size={18} />
-        </button>
+      {p.syncMsg && (
+        <span className={`text-[10px] mr-1 ${p.syncError ? 'text-red-400' : 'text-emerald-400'}`}>{p.syncMsg}</span>
       )}
+      {p.syncEnabledOnStore && p.gdriveConnected && (() => {
+        const isSyncing = p.autoSyncing || p.manualSyncing
+        const tone = isSyncing
+          ? 'text-gray-400'
+          : p.syncError
+            ? 'text-red-400'
+            : 'text-gray-400 active:text-sky-400'
+        return (
+          <button onClick={async () => {
+            p.setSyncMsg(null)
+            try { await p.handleSyncNow() } catch { /* already logged in hook */ }
+          }} disabled={isSyncing}
+            title={p.syncError ? `${p.t('sync.gdriveError')}: ${p.syncError}` : undefined}
+            className={`p-1.5 rounded-lg ${tone} ${isSyncing ? 'animate-spin' : ''}`}>
+            <RefreshCw size={18} />
+          </button>
+        )
+      })()}
       <div className="text-[10px] text-gray-500 tabular-nums text-right">
         {p.lastSync && (
           <div className="text-emerald-500/70">{p.t('sync.lastSync') || 'Sync'}: {new Date(p.lastSync).toLocaleTimeString(p.locale, { hour: '2-digit', minute: '2-digit' })}</div>

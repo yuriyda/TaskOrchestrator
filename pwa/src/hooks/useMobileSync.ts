@@ -28,6 +28,8 @@ export interface MobileSync {
   gdriveClientSecret: string
   setGdriveClientSecret: Dispatch<SetStateAction<string>>
   autoSyncing: boolean
+  manualSyncing: boolean
+  syncError: string | null
   syncMsg: string | null
   setSyncMsg: Dispatch<SetStateAction<string | null>>
   syncLog: string[]
@@ -47,6 +49,8 @@ export function useMobileSync(store: any, t: (key: string) => string, locale: st
   const [gdriveClientSecret, setGdriveClientSecret] = useState('')
   const [lastSync, setLastSync] = useState<string | null>(null)
   const [autoSyncing, setAutoSyncing] = useState(false)
+  const [manualSyncing, setManualSyncing] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   const autoSyncTimerRef = useRef<any>(null)
   const syncInProgressRef = useRef(false)
@@ -77,19 +81,24 @@ export function useMobileSync(store: any, t: (key: string) => string, locale: st
   const handleSyncNow = useCallback(async () => {
     if (!store.gdriveSyncNow || !gdriveConnected) return
     syncInProgressRef.current = true
+    setManualSyncing(true)
     addSyncLog(t('sync.gdriveSyncing'))
     try {
       const r = await store.gdriveSyncNow()
       if (r) {
         setSyncMsg(`+${r.applied}`)
         setLastSync(new Date().toISOString())
+        setSyncError(null)
         addSyncLog(t('sync.gdriveSynced').replace('{applied}', r.applied).replace('{outdated}', r.outdated).replace('{uploaded}', r.uploaded))
       }
     } catch (e: any) {
+      const msg = e?.message || String(e)
       setSyncMsg(t('sync.gdriveError'))
-      addSyncLog(`${t('sync.gdriveError')}: ${e.message}`)
+      setSyncError(msg)
+      addSyncLog(`${t('sync.gdriveError')}: ${msg}`)
     } finally {
       syncInProgressRef.current = false
+      setManualSyncing(false)
       setTimeout(() => setSyncMsg(null), 3000)
     }
   }, [store, gdriveConnected, t, addSyncLog])
@@ -117,6 +126,8 @@ export function useMobileSync(store: any, t: (key: string) => string, locale: st
     gdriveClientId, setGdriveClientId,
     gdriveClientSecret, setGdriveClientSecret,
     autoSyncing,
+    manualSyncing,
+    syncError,
     syncMsg, setSyncMsg,
     syncLog, addSyncLog, setSyncLog,
     lastSync, setLastSync,
