@@ -23,9 +23,12 @@ function renderApp(dbName = `mobile-undo-${++testCounter}-${Date.now()}`) {
 
 async function disableDefaultFilters() {
   await act(async () => {
+    // Inactive chips show only their icon — match by textContent OR title.
     const chips = [...screen.getByTestId('mobile-app').querySelectorAll('button.rounded-full')]
-    const allChip = chips.find(b => b.textContent.trim().startsWith('All'))
-    const todayChip = chips.find(b => b.textContent.trim().startsWith('Today'))
+    const findChip = (label) => chips.find(b =>
+      b.textContent.trim().startsWith(label) || (b.getAttribute('title') || '').startsWith(label))
+    const allChip = findChip('All')
+    const todayChip = findChip('Today')
     if (allChip) fireEvent.click(allChip)
     if (todayChip) fireEvent.click(todayChip)
   })

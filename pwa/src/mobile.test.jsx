@@ -35,9 +35,13 @@ function renderApp() {
 // the view to "all statuses, all dates" via the same UI chips the user uses.
 async function disableDefaultFilters() {
   await act(async () => {
+    // Inactive chips collapse to icon-only and expose their label via `title`,
+    // so match against textContent (active chip) OR title (inactive chip).
     const chips = [...screen.getByTestId('mobile-app').querySelectorAll('button.rounded-full')]
-    const allChip = chips.find(b => b.textContent.trim().startsWith('All'))
-    const todayChip = chips.find(b => b.textContent.trim().startsWith('Today'))
+    const findChip = (label) => chips.find(b =>
+      b.textContent.trim().startsWith(label) || (b.getAttribute('title') || '').startsWith(label))
+    const allChip = findChip('All')
+    const todayChip = findChip('Today')
     if (allChip) fireEvent.click(allChip)
     if (todayChip) fireEvent.click(todayChip)
   })
@@ -177,18 +181,19 @@ describe('Mobile Filters', () => {
     await waitFor(() => expect(screen.getByText('Inbox task')).toBeInTheDocument(), { timeout: 3000 })
     await waitFor(() => expect(screen.getByText('Active task')).toBeInTheDocument(), { timeout: 3000 })
 
+    // Inactive chips collapse to icon-only — match by textContent OR title.
+    const matchChip = (label) => [...screen.getByTestId('mobile-app').querySelectorAll('button.rounded-full')].find(b =>
+      b.textContent.includes(label) || (b.getAttribute('title') || '').includes(label))
+
     // Filter to Active only — click the "Active" chip in the filter bar (not drawer)
-    const filterChips = screen.getByTestId('mobile-app').querySelectorAll('button')
-    const activeChip = [...filterChips].find(b => b.textContent.includes('Active') && b.className.includes('rounded-full'))
-    fireEvent.click(activeChip)
+    fireEvent.click(matchChip('Active'))
     await waitFor(() => {
       expect(screen.getByText('Active task')).toBeInTheDocument()
       expect(screen.queryByText('Inbox task')).toBeNull()
     })
 
     // Filter back to All
-    const allChip = [...screen.getByTestId('mobile-app').querySelectorAll('button')].find(b => b.textContent.includes('All') && b.className.includes('rounded-full'))
-    fireEvent.click(allChip)
+    fireEvent.click(matchChip('All'))
     await waitFor(() => {
       expect(screen.getByText('Inbox task')).toBeInTheDocument()
       expect(screen.getByText('Active task')).toBeInTheDocument()
@@ -229,10 +234,12 @@ describe('Mobile Drawer', () => {
     const menuBtn = screen.getByTestId('mobile-app').querySelector('header button')
     fireEvent.click(menuBtn)
 
-    // Drawer should show status filters
+    // Drawer should show status filters. Note: chips collapse to icons when
+    // inactive — only the active chip's label is rendered, so drawer items
+    // dominate the count. Just assert drawer's status-section labels exist.
     await waitFor(() => {
-      const drawerTexts = screen.getAllByText(/All|Inbox|Active/)
-      expect(drawerTexts.length).toBeGreaterThan(4) // filter chips + drawer items
+      const labels = screen.getAllByText(/All|Inbox|Active|Done/)
+      expect(labels.length).toBeGreaterThanOrEqual(4)
     })
   })
 })
