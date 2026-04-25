@@ -4,11 +4,24 @@ import { localIsoDate } from '@shared/core/date.js'
 import { humanRecurrence } from '@shared/core/recurrence.js'
 import { STATUS_ICONS, STATUS_COLORS, OVERDUE_STRIPE_CLS, NORMAL_STRIPE_CLS } from './mobileConstants'
 
+// Subtle left-to-right tint by priority. Done/cancelled tasks lose the tint
+// so the strikethrough stays the dominant visual cue.
+const PRIORITY_TINTS = {
+  1: 'rgba(239, 68, 68, 0.22)',  // red-500 — urgent
+  2: 'rgba(245, 158, 11, 0.20)', // amber-500 — high
+  3: 'rgba(56, 189, 248, 0.16)', // sky-500 — medium
+}
+const SLATE_BASE = 'rgb(30 41 59 / 0.9)' // matches bg-slate-800/90
+
 function TaskItem({ task, locale = 'en', onTap, onCycle, onComplete, onDelete }) {
   const StatusIcon = STATUS_ICONS[task.status] || Circle
   const today = localIsoDate(new Date())
   const isOverdue = task.due && task.due < today && task.status !== 'done' && task.status !== 'cancelled'
   const stripeCls = isOverdue ? OVERDUE_STRIPE_CLS : NORMAL_STRIPE_CLS
+  const tint = (task.status !== 'done' && task.status !== 'cancelled') ? PRIORITY_TINTS[task.priority] : null
+  const cardBg = tint
+    ? `linear-gradient(to right, ${tint}, transparent 60%), ${SLATE_BASE}`
+    : SLATE_BASE
 
   const cardRef = useRef(null)
   const touchRef = useRef({ startX: 0, startY: 0, swiping: false, dx: 0 })
@@ -61,8 +74,8 @@ function TaskItem({ task, locale = 'en', onTap, onCycle, onComplete, onDelete })
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
         onClick={() => { if (!touchRef.current.swiping) onTap(task.id) }}
-        style={{ transform: `translateX(${swipeX}px)`, transition: swipeX === 0 ? 'transform 0.2s ease-out' : 'none', touchAction: 'pan-y' }}
-        className={`flex flex-col gap-1 px-3 py-2.5 bg-slate-800/90 border-l-[3px] ${stripeCls} rounded-xl relative z-10`}>
+        style={{ transform: `translateX(${swipeX}px)`, transition: swipeX === 0 ? 'transform 0.2s ease-out' : 'none', touchAction: 'pan-y', background: cardBg }}
+        className={`flex flex-col gap-1 px-3 py-2.5 border-l-[3px] ${stripeCls} rounded-xl relative z-10`}>
         <div className={`text-sm leading-tight ${task.status === 'done' ? 'line-through text-gray-500' : 'text-gray-200'}`}>
           {task.title}
         </div>
