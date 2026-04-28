@@ -111,11 +111,19 @@ export function humanRecurrence(value: string | null | undefined, locale: string
 // Returns next due date string for a recurring task, or null for unknown recurrence.
 // Handles both simple strings ("daily","weekly","monthly") and iCal RRULE
 // ("FREQ=DAILY;INTERVAL=1;WKST=SU" etc.) as stored from RTM import.
-export function nextDue(due: ISODate | null, recurrence: string | null): ISODate | null {
+//
+// The base is *today*, not `task.due`: the next occurrence is always one
+// interval after the day the user actually completes the task. This avoids
+// two failure modes of the old `task.due + interval` logic:
+//   - Early completion (today < due): the chain ran ahead and skipped the
+//     scheduled day on the calendar.
+//   - Late completion (today > due): the chain caught up day by day, leaving
+//     the user to spam-complete a task multiple times to clear backlog.
+// `due` is accepted for signature compatibility but not consulted.
+export function nextDue(_due: ISODate | null, recurrence: string | null): ISODate | null {
   if (!recurrence) return null
   const today: string = localIsoDate(new Date())
-  const base: string  = (due && /^\d{4}-\d{2}-\d{2}$/.test(due)) ? due : today
-  const d = new Date(base + 'T12:00:00')
+  const d = new Date(today + 'T12:00:00')
 
   let freq: string | null = recurrence.toLowerCase()  // default: treat whole string as freq
   let interval: number = 1

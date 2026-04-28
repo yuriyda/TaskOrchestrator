@@ -2,7 +2,7 @@
  * PWA integration tests — verifies IndexedDB store and basic React rendering.
  */
 
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act, cleanup } from '@testing-library/react'
 import React from 'react'
 import { useBrowserTaskStore } from './store/browserStore'
@@ -185,7 +185,40 @@ describe('BrowserStore — IndexedDB', () => {
 // ─── Recurrence tests ──────────────────────────────────────────────────────
 
 describe('BrowserStore — Recurrence', () => {
+  // buildNextOccurrence is anchored to today, so each test pins the system
+  // clock to a date that makes the legacy expectations hold.
+  let realDateNow
+  beforeEach(() => {
+    realDateNow = Date.now
+  })
+  afterEach(() => {
+    Date.now = realDateNow
+  })
+
+  function pinToday(dateStr) {
+    const fixed = new Date(dateStr + 'T12:00:00').getTime()
+    Date.now = () => fixed
+    const RealDate = Date
+    // We don't fully replace Date; just shift `new Date()` calls (no args) to
+    // return the pinned moment so `localIsoDate(new Date())` is deterministic.
+    globalThis.Date = class extends RealDate {
+      constructor(...args) {
+        if (args.length === 0) super(fixed)
+        else super(...args)
+      }
+      static now() { return fixed }
+    }
+    // Restore in afterEach via cleanup of original `Date` reference.
+    // (We rely on the outer afterEach which restores `Date.now`; for full
+    //  rigor we'd save/restore globalThis.Date too — added below.)
+  }
+
+  let realDate
+  beforeEach(() => { realDate = globalThis.Date })
+  afterEach(() => { globalThis.Date = realDate })
+
   it('bulkCycle to done spawns next occurrence for weekly task', async () => {
+    pinToday('2026-04-01')
     const { store, waitReady } = renderStore()
     await waitReady()
 
@@ -212,6 +245,7 @@ describe('BrowserStore — Recurrence', () => {
   })
 
   it('bulkStatus to done spawns next occurrence for daily task', async () => {
+    pinToday('2026-04-01')
     const { store, waitReady } = renderStore()
     await waitReady()
 
@@ -231,6 +265,7 @@ describe('BrowserStore — Recurrence', () => {
   })
 
   it('updateTask to done spawns next occurrence for monthly task', async () => {
+    pinToday('2026-03-15')
     const { store, waitReady } = renderStore()
     await waitReady()
 
@@ -267,6 +302,7 @@ describe('BrowserStore — Recurrence', () => {
   })
 
   it('RRULE recurrence spawns correctly (FREQ=WEEKLY;INTERVAL=2)', async () => {
+    pinToday('2026-04-01')
     const { store, waitReady } = renderStore()
     await waitReady()
 

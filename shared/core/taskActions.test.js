@@ -4,7 +4,7 @@
  * Uses an in-memory adapter to test storage-agnostic logic
  * without any real DB (SQLite or IndexedDB).
  */
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import {
   FULL_CYCLE, BLOCKED_CYCLE,
   computeNextCycleStatus,
@@ -12,6 +12,12 @@ import {
   handleTaskDone,
   isTaskBlocked,
 } from './taskActions.js'
+
+// Pin "today" to a fixed date so buildNextOccurrence's today-anchored output
+// stays deterministic. Each test that needs a different baseline calls
+// vi.setSystemTime(...) explicitly.
+beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-04-01T12:00:00')) })
+afterEach(() => { vi.useRealTimers() })
 
 // ─── In-memory storage adapter ─────────────────────────────────────────────
 
@@ -116,6 +122,7 @@ describe('buildNextOccurrence', () => {
   })
 
   it('spawns monthly recurrence', () => {
+    vi.setSystemTime(new Date('2026-03-15T12:00:00'))
     const task = { id: '1', title: 'Monthly report', recurrence: 'monthly', due: '2026-03-15' }
     const next = buildNextOccurrence(task, testId, 1, 'dev1')
     expect(next.due).toBe('2026-04-15')
@@ -125,6 +132,29 @@ describe('buildNextOccurrence', () => {
     const task = { id: '1', title: 'Biweekly', recurrence: 'FREQ=WEEKLY;INTERVAL=2', due: '2026-04-01' }
     const next = buildNextOccurrence(task, testId, 1, 'dev1')
     expect(next.due).toBe('2026-04-15')
+  })
+
+  it('anchors next due to today, not task.due — early completion (forgiveness)', () => {
+    vi.setSystemTime(new Date('2026-04-27T12:00:00'))
+    // Task scheduled for tomorrow (Apr 28), user does it a day early.
+    const task = { id: '1', title: 'Daily mindful', recurrence: 'daily', due: '2026-04-28' }
+    const next = buildNextOccurrence(task, testId, 1, 'dev1')
+    expect(next.due).toBe('2026-04-28') // not Apr 29
+  })
+
+  it('anchors next due to today, not task.due — late completion (skip catch-up)', () => {
+    vi.setSystemTime(new Date('2026-04-28T12:00:00'))
+    // Task overdue by 3 days; user finally does it today.
+    const task = { id: '1', title: 'Daily mindful', recurrence: 'daily', due: '2026-04-25' }
+    const next = buildNextOccurrence(task, testId, 1, 'dev1')
+    expect(next.due).toBe('2026-04-29') // not Apr 26
+  })
+
+  it('forgives weekly misses too', () => {
+    vi.setSystemTime(new Date('2026-04-28T12:00:00'))
+    const task = { id: '1', title: 'Weekly review', recurrence: 'weekly', due: '2026-04-14' }
+    const next = buildNextOccurrence(task, testId, 1, 'dev1')
+    expect(next.due).toBe('2026-05-05') // today + 7d, not the missed Apr 21
   })
 
   it('handles SQL row field names (snake_case)', () => {
