@@ -96,6 +96,45 @@ export function useSync(
     prevTasksRef.current = tasks;
   }, [tasks, triggerAutoSync]);
 
+  // Focus-based auto-sync: trigger when the window regains focus or visibility.
+  // Independent from the change-debounced auto-sync — controlled by the
+  // `auto_sync_on_focus` meta key (string 'true'/'false', default true).
+  // Throttled to one sync per FOCUS_SYNC_THROTTLE_MS, with a separate
+  // cooldown for failed attempts to avoid hammering the API while offline.
+  const FOCUS_SYNC_THROTTLE_MS = 5 * 60 * 1000;
+  const FOCUS_SYNC_ERROR_COOLDOWN_MS = 30 * 1000;
+  const lastFailedAttemptMsRef = useRef<number>(0);
+  const focusSyncEnabled = store.metaSettings?.auto_sync_on_focus !== 'false';
+  const lastSync: string | null = store.metaSettings?.last_sync || null;
+  useEffect(() => {
+    if (!focusSyncEnabled || !handleSyncNow || !gdriveConnected) return;
+
+    const tryFocusSync = async () => {
+      if (syncInProgressRef.current) return;
+      const now = Date.now();
+      const lastSuccessMs = lastSync ? new Date(lastSync).getTime() : 0;
+      if (now - lastSuccessMs < FOCUS_SYNC_THROTTLE_MS) return;
+      if (now - lastFailedAttemptMsRef.current < FOCUS_SYNC_ERROR_COOLDOWN_MS) return;
+      syncInProgressRef.current = true;
+      setAutoSyncing(true);
+      try { await handleSyncNow(); }
+      catch { lastFailedAttemptMsRef.current = Date.now(); }
+      finally {
+        syncInProgressRef.current = false;
+        setAutoSyncing(false);
+      }
+    };
+
+    const onVisibility = () => { if (document.visibilityState === 'visible') tryFocusSync(); };
+    const onFocus = () => tryFocusSync();
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [focusSyncEnabled, gdriveConnected, handleSyncNow, lastSync]);
+
   return {
     gdriveConnected, gdriveLog, setGdriveLog, addGdriveLog,
     wrappedSyncNow, autoSyncing, autoSyncTimerRef,

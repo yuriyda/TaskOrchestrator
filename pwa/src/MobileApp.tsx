@@ -81,6 +81,7 @@ export default function MobileApp({ store }: MobileAppProps) {
     handleSyncNow,
   } = useMobileSync(store, t, locale)
   const autoSyncEnabled = store.metaSettings?.pwa_auto_sync !== 'false'
+  const autoSyncOnFocusEnabled = store.metaSettings?.auto_sync_on_focus !== 'false'
   const { undoAction, showUndo, clearUndo } = useMobileUndo()
   const [updateMsg, setUpdateMsg] = useMobileUpdateCheck(locale)
 
@@ -218,6 +219,7 @@ export default function MobileApp({ store }: MobileAppProps) {
         store={store}
         gdriveConnected={gdriveConnected}
         autoSyncEnabled={autoSyncEnabled}
+        autoSyncOnFocusEnabled={autoSyncOnFocusEnabled}
         updateMsg={updateMsg}
         onClose={() => setShowSettings(false)}
       />
@@ -276,7 +278,8 @@ export default function MobileApp({ store }: MobileAppProps) {
         undoAction={undoAction} clearUndo={clearUndo} />
 
       <button onClick={() => setShowAdd(true)} data-testid="fab-add"
-        className="fixed bottom-6 right-6 w-14 h-14 rounded-2xl bg-sky-600 text-white flex items-center justify-center shadow-xl shadow-sky-600/30 active:bg-sky-500 active:scale-95 transition-all z-20">
+        style={{ backgroundColor: 'rgba(2, 132, 199, 0.1)' }}
+        className="fixed bottom-6 right-6 w-14 h-14 rounded-2xl text-white flex items-center justify-center shadow-xl shadow-sky-600/30 backdrop-blur-sm active:scale-95 transition-all z-20">
         <Plus size={26} />
       </button>
 

@@ -16,6 +16,7 @@ interface Props {
   store: any
   gdriveConnected: boolean
   autoSyncEnabled: boolean
+  autoSyncOnFocusEnabled: boolean
   updateMsg: { text: string; ok: boolean } | null
   onClose: () => void
 }
@@ -63,7 +64,7 @@ function MobileDiagnostics({ L }: { L: (ru: string, en: string) => string }) {
   )
 }
 
-export function MobileSettingsScreen({ locale, setLocale, store, gdriveConnected, autoSyncEnabled, updateMsg, onClose }: Props) {
+export function MobileSettingsScreen({ locale, setLocale, store, gdriveConnected, autoSyncEnabled, autoSyncOnFocusEnabled, updateMsg, onClose }: Props) {
   const [clearConfirmText, setClearConfirmText] = useState('')
   const [cleanupMsg, setCleanupMsg] = useState<string | null>(null)
   const [cleaning, setCleaning] = useState(false)
@@ -92,11 +93,11 @@ export function MobileSettingsScreen({ locale, setLocale, store, gdriveConnected
           </div>
         </div>
 
-        {/* Auto-sync toggle */}
+        {/* Auto-sync toggles */}
         {gdriveConnected && (
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 mb-3">{L('Синхронизация', 'Sync')}</div>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-4">
               <div>
                 <div className="text-sm text-gray-200">{L('Автосинхронизация', 'Auto-sync')}</div>
                 <div className="text-xs text-gray-500">{L('После каждого изменения (3 сек)', 'After every change (3 sec)')}</div>
@@ -105,6 +106,17 @@ export function MobileSettingsScreen({ locale, setLocale, store, gdriveConnected
                 onClick={() => store.saveMeta('pwa_auto_sync', autoSyncEnabled ? 'false' : 'true')}
                 className={`relative w-11 h-6 rounded-full transition-colors ${autoSyncEnabled ? 'bg-sky-600' : 'bg-gray-600'}`}>
                 <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${autoSyncEnabled ? 'left-[22px]' : 'left-0.5'}`} />
+              </button>
+            </div>
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm text-gray-200">{L('Синхронизация при возвращении', 'Sync on return')}</div>
+                <div className="text-xs text-gray-500">{L('При возвращении в приложение (не чаще 1 раза в 5 мин)', 'When the app regains focus (max once per 5 min)')}</div>
+              </div>
+              <button
+                onClick={() => store.saveMeta('auto_sync_on_focus', autoSyncOnFocusEnabled ? 'false' : 'true')}
+                className={`relative w-11 h-6 rounded-full transition-colors ${autoSyncOnFocusEnabled ? 'bg-sky-600' : 'bg-gray-600'}`}>
+                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-transform ${autoSyncOnFocusEnabled ? 'left-[22px]' : 'left-0.5'}`} />
               </button>
             </div>
           </div>

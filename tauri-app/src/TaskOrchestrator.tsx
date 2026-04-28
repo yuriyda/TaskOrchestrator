@@ -311,6 +311,8 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     flows:    store.flows,
     flowMeta: store.flowMeta || {},
     personas: store.personas || [],
+    metaSettings: store.metaSettings || {},
+    saveMeta: store.saveMeta || (() => {}),
     openUrl:  store.openUrl || ((url) => window.open(url, "_blank")),
   };
 

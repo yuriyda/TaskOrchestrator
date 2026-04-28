@@ -47,7 +47,11 @@ export function useMobileSync(store: any, t: (key: string) => string, locale: st
   const [showGdriveSetup, setShowGdriveSetup] = useState(false)
   const [gdriveClientId, setGdriveClientId] = useState('')
   const [gdriveClientSecret, setGdriveClientSecret] = useState('')
-  const [lastSync, setLastSync] = useState<string | null>(null)
+  // Initialize from store.metaSettings synchronously so the focus-sync
+  // throttle has a real baseline before the first event fires — otherwise
+  // a focus arriving during initial mount would see lastSync=null and
+  // trigger an immediate sync regardless of how recent the previous run was.
+  const [lastSync, setLastSync] = useState<string | null>(() => store.metaSettings?.last_sync || null)
   const [autoSyncing, setAutoSyncing] = useState(false)
   const [manualSyncing, setManualSyncing] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
@@ -55,6 +59,7 @@ export function useMobileSync(store: any, t: (key: string) => string, locale: st
   const autoSyncTimerRef = useRef<any>(null)
   const syncInProgressRef = useRef(false)
   const prevTasksRef = useRef<any>(null)
+  const lastFailedAttemptMsRef = useRef<number>(0)
 
   const addSyncLog = useCallback((msg: string) => {
     const ts = new Date().toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-US',
@@ -119,6 +124,46 @@ export function useMobileSync(store: any, t: (key: string) => string, locale: st
     }
     prevTasksRef.current = store.tasks
   }, [store.tasks, autoSyncEnabled, gdriveConnected, handleSyncNow, store.gdriveSyncNow])
+
+  // Focus-based auto-sync: trigger when the app regains visibility (tab switch,
+  // window focus, return from background). Independent from the change-debounced
+  // auto-sync above — controlled by the `auto_sync_on_focus` meta key.
+  // Throttled to one sync per FOCUS_SYNC_THROTTLE_MS, with a separate cooldown
+  // for failed attempts so we don't hammer the API while offline.
+  const FOCUS_SYNC_THROTTLE_MS = 5 * 60 * 1000 // 5 minutes
+  const FOCUS_SYNC_ERROR_COOLDOWN_MS = 30 * 1000 // 30 seconds
+  const focusSyncEnabled = store.metaSettings?.auto_sync_on_focus !== 'false'
+  useEffect(() => {
+    if (!focusSyncEnabled || !gdriveConnected || !store.gdriveSyncNow) return
+
+    const tryFocusSync = async () => {
+      if (syncInProgressRef.current) return
+      const now = Date.now()
+      const lastSuccessMs = lastSync ? new Date(lastSync).getTime() : 0
+      if (now - lastSuccessMs < FOCUS_SYNC_THROTTLE_MS) return
+      if (now - lastFailedAttemptMsRef.current < FOCUS_SYNC_ERROR_COOLDOWN_MS) return
+      syncInProgressRef.current = true
+      setAutoSyncing(true)
+      try { await handleSyncNow() }
+      catch { lastFailedAttemptMsRef.current = Date.now() }
+      finally {
+        syncInProgressRef.current = false
+        setAutoSyncing(false)
+      }
+    }
+
+    const onVisibility = () => { if (document.visibilityState === 'visible') tryFocusSync() }
+    const onFocus = () => tryFocusSync()
+    const onPageShow = () => tryFocusSync()
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [focusSyncEnabled, gdriveConnected, store.gdriveSyncNow, handleSyncNow, lastSync])
 
   return {
     gdriveConnected, setGdriveConnected,

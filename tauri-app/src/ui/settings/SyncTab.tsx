@@ -48,7 +48,8 @@ export function SyncTab({
   onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveReadSyncFile,
   gdriveLog, onGdriveLog,
 }: SyncTabProps) {
-  const { t, locale, TC, settings, updateSetting } = useApp();
+  const { t, locale, TC, settings, updateSetting, metaSettings, saveMeta } = useApp();
+  const autoSyncOnFocusEnabled = metaSettings?.auto_sync_on_focus !== 'false';
 
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
   const [syncInput, setSyncInput] = useState("");
@@ -246,6 +247,17 @@ export function SyncTab({
           onClick={() => updateSetting("autoSync", !settings.autoSync)}
           className={`relative w-10 h-5 rounded-full transition-colors ${settings.autoSync !== false ? "bg-sky-600" : "bg-gray-600"}`}>
           <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${settings.autoSync !== false ? "left-5" : "left-0.5"}`} />
+        </button>
+      </SettingRow>
+
+      {/* Auto-sync on focus toggle */}
+      <SettingRow
+        label={locale === "ru" ? "Синхронизация при возвращении" : "Sync on return"}
+        description={locale === "ru" ? "При возвращении в приложение (не чаще 1 раза в 5 мин)" : "When the app regains focus (max once per 5 min)"}>
+        <button
+          onClick={() => saveMeta('auto_sync_on_focus', autoSyncOnFocusEnabled ? 'false' : 'true')}
+          className={`relative w-10 h-5 rounded-full transition-colors ${autoSyncOnFocusEnabled ? "bg-sky-600" : "bg-gray-600"}`}>
+          <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${autoSyncOnFocusEnabled ? "left-5" : "left-0.5"}`} />
         </button>
       </SettingRow>
 

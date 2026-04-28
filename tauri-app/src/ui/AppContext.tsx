@@ -23,6 +23,8 @@ export interface AppContextValue {
   flows: string[];
   flowMeta: Record<string, FlowMeta>;
   personas: string[];
+  metaSettings: Record<string, string>;
+  saveMeta: (key: string, value: string) => void;
   openUrl: (url: string) => void;
 }
 
