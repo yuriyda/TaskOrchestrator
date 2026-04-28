@@ -84,6 +84,11 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
     <div className={`flex items-center gap-2 px-4 py-1 text-[10px] flex-shrink-0 border-t select-none overflow-hidden whitespace-nowrap min-h-0 ${TC.borderClass} ${TC.textMuted}`}>
       {/* Left section — shrinks when space is tight */}
       <div className="flex items-center gap-2 min-w-0 overflow-hidden">
+        {/* App version */}
+        <span className="opacity-40 flex-shrink-0 tabular-nums">v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '?'}</span>
+
+        <span className="opacity-30 flex-shrink-0">|</span>
+
         {/* DB path */}
         <span title={dbPath || "tasks.db"} className="flex items-center gap-1 opacity-50 flex-shrink-0">
           <HardDrive size={10} className="flex-shrink-0" />
