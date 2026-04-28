@@ -243,6 +243,19 @@ export default function MobileApp({ store }: MobileAppProps) {
         gdriveConnected={gdriveConnected}
         syncEnabledOnStore={!!store.gdriveSyncNow} lastSync={lastSync} />
 
+      {/* Sync error banner — surfaces when GDrive is connected, an actual sync
+          failure was recorded, and the user hasn't turned auto-sync off. If
+          they disabled auto-sync, they don't want passive nags — they'll see
+          the red icon in the header on manual attempts. */}
+      {syncError && gdriveConnected && autoSyncEnabled && (
+        <div className="px-4 py-2 bg-red-500/15 border-b border-red-500/30 flex items-center gap-2 text-[15px] text-red-300">
+          <AlertTriangle size={17} className="flex-shrink-0" />
+          <div className="flex-1 min-w-0 font-medium truncate">
+            {locale === 'ru' ? 'Ошибка синхронизации' : 'Sync failed'}
+          </div>
+        </div>
+      )}
+
       {(searchVisible || searchQuery) && (
         <SearchBar query={searchQuery} onChange={v => { setSearchQuery(v); if (!v) setSearchVisible(false) }} t={t} />
       )}
