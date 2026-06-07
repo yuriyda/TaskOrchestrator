@@ -72,6 +72,7 @@ export function useMobileSync(store: any, t: (key: string) => string, locale: st
     store.gdriveGetConfig?.().then((cfg: any) => {
       if (cfg?.hasToken) setGdriveConnected(true)
       if (cfg?.clientId) setGdriveClientId(cfg.clientId)
+      if (cfg?.clientSecret) setGdriveClientSecret(cfg.clientSecret)
     })
     if (store.metaSettings?.last_sync) setLastSync(store.metaSettings.last_sync)
   }, [store, store.metaSettings])

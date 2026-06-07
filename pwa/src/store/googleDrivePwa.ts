@@ -33,12 +33,8 @@ async function loadTokens(db) {
 }
 
 async function clearTokens(db) {
-  const tx = db.transaction('meta', 'readwrite')
-  const all = await tx.store.getAll()
-  for (const row of all) {
-    if (row.key.startsWith('gdrive_')) await tx.store.delete(row.key)
-  }
-  await tx.done
+  await db.delete('meta', 'gdrive_access_token')
+  await db.delete('meta', 'gdrive_refresh_token')
 }
 
 // ─── OAuth2 (browser redirect flow) ─────────────────────────────────────────
