@@ -172,7 +172,14 @@ export const MIGRATIONS_V12: readonly string[] = [
   `ALTER TABLE notes ADD COLUMN lamport_ts INTEGER NOT NULL DEFAULT 0`,
 ]
 
-export const LATEST_SCHEMA_VERSION: number = 12
+// v13: index for recurring-series lookups + duplicate cleanup. The postMigrate
+// hook in openDb() soft-deletes duplicate active instances of recurring RTM
+// series (accumulated from the RTM import and from pre-2.6.0 double-completion bugs).
+export const MIGRATIONS_V13: readonly string[] = [
+  `CREATE INDEX IF NOT EXISTS idx_tasks_rtm_series ON tasks(rtm_series_id)`,
+]
+
+export const LATEST_SCHEMA_VERSION: number = 13
 
 /** Ordered migration map: version → SQL statements.
  *  Used by openDb() to run migrations in a loop instead of repeating the same pattern. */
@@ -188,4 +195,5 @@ export const VERSIONED_MIGRATIONS: Record<number, readonly string[]> = {
   10: MIGRATIONS_V10,
   11: MIGRATIONS_V11,
   12: MIGRATIONS_V12,
+  13: MIGRATIONS_V13,
 }

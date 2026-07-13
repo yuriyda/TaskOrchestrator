@@ -4,6 +4,9 @@ node_modules/
 # Internal project docs — never commit
 do_not_commit/
 docs/
+
+# Local copy of a real user database (contains OAuth tokens) — never commit
+issued database/
 CLAUDE.md
 claude.md
 memory.md

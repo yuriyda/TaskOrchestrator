@@ -216,5 +216,28 @@ export function buildSqlOps(db: DB, logChangeFn?: typeof logChange) {
         await logChangeFn(db, 'tasks', id, 'update', { status: 'active' }, lts, did)
       }
     },
+    softDeleteTask: async (id: string, lts: number, did: string) => {
+      const now = new Date().toISOString()
+      await db.execute(
+        'UPDATE tasks SET deleted_at = ?, updated_at = ?, lamport_ts = ?, device_id = ? WHERE id = ?',
+        [now, now, lts || 0, did || null, id]
+      )
+      if (lts && did && logChangeFn) {
+        await logChangeFn(db, 'tasks', id, 'update', { deletedAt: now }, lts, did)
+      }
+    },
+    resurrectTask: async (task: any) => {
+      // Overwrite the previously soft-deleted spawn row (same deterministic id)
+      // with freshly computed fields; taskToRow order matches TASK_COLUMNS.
+      const cols = TASK_COLUMNS.filter(c => c !== 'id')
+      const vals = taskToRow(task).slice(1)
+      await db.execute(
+        `UPDATE tasks SET ${cols.map(c => `${c} = ?`).join(', ')} WHERE id = ?`,
+        [...vals, task.id]
+      )
+      if (task.lamportTs && task.deviceId && logChangeFn) {
+        await logChangeFn(db, 'tasks', task.id, 'update', task, task.lamportTs, task.deviceId)
+      }
+    },
   }
 }

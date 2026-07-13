@@ -10,6 +10,9 @@ import {
   computeNextCycleStatus,
   buildNextOccurrence,
   handleTaskDone,
+  handleTaskUndone,
+  spawnIdFor,
+  findRecurringDuplicates,
   isTaskBlocked,
 } from './taskActions.js'
 
@@ -48,6 +51,18 @@ function createMemoryAdapter(initialTasks = []) {
         t.deviceId = did
       }
     },
+
+    softDeleteTask: async (id, lts, did) => {
+      const t = tasks.get(id)
+      if (!t) return
+      const now = new Date().toISOString()
+      t.deletedAt = now
+      t.updatedAt = now
+      t.lamportTs = lts
+      t.deviceId = did
+    },
+
+    resurrectTask: async (task) => { tasks.set(task.id, { ...task }) },
   }
 }
 
@@ -192,10 +207,17 @@ describe('buildNextOccurrence', () => {
     expect(tags).toEqual(['a', 'b']) // original unchanged
   })
 
-  it('generates unique IDs via generateId', () => {
-    const task = { id: '1', title: 'T', recurrence: 'daily', due: '2026-04-01' }
+  it('spawn id is deterministic — same parent always yields the same id', () => {
+    const task = { id: 'PARENT-1', title: 'T', recurrence: 'daily', due: '2026-04-01' }
     const a = buildNextOccurrence(task, testId, 1, 'dev1')
-    const b = buildNextOccurrence(task, testId, 1, 'dev1')
+    const b = buildNextOccurrence(task, testId, 2, 'dev2')
+    expect(a.id).toBe(b.id)
+    expect(a.id).toBe(spawnIdFor('PARENT-1'))
+  })
+
+  it('spawn ids differ for different parents', () => {
+    const a = buildNextOccurrence({ id: 'P1', title: 'T', recurrence: 'daily', due: null }, testId, 1, 'dev1')
+    const b = buildNextOccurrence({ id: 'P2', title: 'T', recurrence: 'daily', due: null }, testId, 1, 'dev1')
     expect(a.id).not.toBe(b.id)
   })
 
@@ -316,6 +338,161 @@ describe('handleTaskDone', () => {
     // (handleTaskDone won't find T2 via findInboxDependents('T1') since T1 isn't the completed task here,
     // but isTaskBlocked should return false for T2)
     expect(await ops.isBlockerActive('T1')).toBe(false)
+  })
+
+  it('does NOT respawn when the task was already done (done → done update)', async () => {
+    const ops = createMemoryAdapter([
+      { id: 'T1', title: 'Weekly', status: 'done', recurrence: 'weekly', due: '2026-04-01', tags: [], personas: [] },
+    ])
+    const first = await handleTaskDone(ops, 'T1', testId, 10, 'dev1', 'active')
+    expect(first.spawned).not.toBeNull()
+    // Second update re-sends status='done' (edit-dialog save, redo, repeated "Done")
+    const second = await handleTaskDone(ops, 'T1', testId, 11, 'dev1', 'done')
+    expect(second.spawned).toBeNull()
+    expect(second.activated).toHaveLength(0)
+    expect(ops.tasks.size).toBe(2) // T1 + one spawn, no duplicates
+  })
+
+  it('does NOT duplicate when a live spawn already exists (double-complete across devices)', async () => {
+    const ops = createMemoryAdapter([
+      { id: 'T1', title: 'Yearly', status: 'done', recurrence: 'FREQ=YEARLY;INTERVAL=1', due: '2026-04-01', tags: [], personas: [] },
+    ])
+    // Device A completes; the spawn syncs over to device B, which completes too.
+    const a = await handleTaskDone(ops, 'T1', testId, 10, 'devA', 'active')
+    expect(a.spawned).not.toBeNull()
+    const b = await handleTaskDone(ops, 'T1', testId, 11, 'devB', 'active')
+    expect(b.spawned).toBeNull() // same deterministic id already present and alive
+    expect(ops.tasks.size).toBe(2)
+  })
+
+  it('resurrects a soft-deleted spawn on re-completion', async () => {
+    vi.setSystemTime(new Date('2026-04-01T12:00:00'))
+    const ops = createMemoryAdapter([
+      { id: 'T1', title: 'Daily', status: 'done', recurrence: 'daily', due: '2026-04-01', tags: [], personas: [] },
+    ])
+    const first = await handleTaskDone(ops, 'T1', testId, 10, 'dev1', 'active')
+    const spawnId = first.spawned.id
+    // Revert the completion — spawn gets soft-deleted
+    await handleTaskUndone(ops, 'T1', 11, 'dev1')
+    expect(ops.tasks.get(spawnId).deletedAt).toBeTruthy()
+    // Re-complete a day later — the same row comes back with a fresh due
+    vi.setSystemTime(new Date('2026-04-02T12:00:00'))
+    const again = await handleTaskDone(ops, 'T1', testId, 12, 'dev1', 'active')
+    expect(again.spawned.id).toBe(spawnId)
+    expect(again.resurrected).toBe(true)
+    const row = ops.tasks.get(spawnId)
+    expect(row.deletedAt).toBeNull()
+    expect(row.due).toBe('2026-04-03')
+    expect(ops.tasks.size).toBe(2)
+  })
+})
+
+// ─── handleTaskUndone ──────────────────────────────────────────────────────
+
+describe('handleTaskUndone', () => {
+  async function completeThen(opsTasks) {
+    const ops = createMemoryAdapter(opsTasks)
+    const done = await handleTaskDone(ops, 'T1', testId, 10, 'dev1', 'active')
+    return { ops, spawnId: done.spawned?.id }
+  }
+
+  it('soft-deletes the untouched spawn on completion revert', async () => {
+    const { ops, spawnId } = await completeThen([
+      { id: 'T1', title: 'Weekly', status: 'done', recurrence: 'weekly', due: '2026-04-01', tags: [], personas: [] },
+    ])
+    const result = await handleTaskUndone(ops, 'T1', 11, 'dev1')
+    expect(result.removedSpawn).toBe(spawnId)
+    expect(ops.tasks.get(spawnId).deletedAt).toBeTruthy()
+  })
+
+  it('keeps a spawn the user already edited (updatedAt ≠ createdAt)', async () => {
+    const { ops, spawnId } = await completeThen([
+      { id: 'T1', title: 'Weekly', status: 'done', recurrence: 'weekly', due: '2026-04-01', tags: [], personas: [] },
+    ])
+    const spawn = ops.tasks.get(spawnId)
+    spawn.updatedAt = '2026-04-02T00:00:00.000Z' // simulated user edit
+    const result = await handleTaskUndone(ops, 'T1', 11, 'dev1')
+    expect(result.removedSpawn).toBeNull()
+    expect(ops.tasks.get(spawnId).deletedAt).toBeFalsy()
+  })
+
+  it('keeps a spawn that was already completed itself', async () => {
+    const { ops, spawnId } = await completeThen([
+      { id: 'T1', title: 'Weekly', status: 'done', recurrence: 'weekly', due: '2026-04-01', tags: [], personas: [] },
+    ])
+    ops.tasks.get(spawnId).status = 'done'
+    const result = await handleTaskUndone(ops, 'T1', 11, 'dev1')
+    expect(result.removedSpawn).toBeNull()
+  })
+
+  it('is a no-op for non-recurring tasks and missing spawns', async () => {
+    const ops = createMemoryAdapter([
+      { id: 'T1', title: 'One-off', status: 'done', recurrence: null },
+      { id: 'T2', title: 'Recurring, never completed', status: 'active', recurrence: 'daily', tags: [], personas: [] },
+    ])
+    expect((await handleTaskUndone(ops, 'T1', 11, 'dev1')).removedSpawn).toBeNull()
+    expect((await handleTaskUndone(ops, 'T2', 11, 'dev1')).removedSpawn).toBeNull()
+    expect(ops.tasks.size).toBe(2)
+  })
+})
+
+// ─── spawnIdFor ────────────────────────────────────────────────────────────
+
+describe('spawnIdFor', () => {
+  it('produces a 26-char Crockford Base32 id (ULID shape)', () => {
+    // Input is the example ULID from the ULID spec README
+    const id = spawnIdFor('01ARZ3NDEKTSV4RRFFQ69G5FAV')
+    expect(id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/)
+  })
+
+  it('is stable across calls and differs between parents', () => {
+    expect(spawnIdFor('A')).toBe(spawnIdFor('A'))
+    expect(spawnIdFor('A')).not.toBe(spawnIdFor('B'))
+    // A spawn chain keeps producing fresh ids
+    const first = spawnIdFor('P')
+    const second = spawnIdFor(first)
+    expect(second).not.toBe(first)
+  })
+})
+
+// ─── findRecurringDuplicates ───────────────────────────────────────────────
+
+describe('findRecurringDuplicates', () => {
+  it('keeps the newest instance per series and returns the rest', () => {
+    const dups = findRecurringDuplicates([
+      { id: 'OLD', rtmSeriesId: 'S1', recurrence: 'yearly', status: 'active', createdAt: '2023-01-15T00:00:00.000Z' },
+      { id: 'NEW', rtmSeriesId: 'S1', recurrence: 'yearly', status: 'active', createdAt: '2026-01-15T00:00:00.000Z' },
+    ])
+    expect(dups).toEqual(['OLD'])
+  })
+
+  it('handles snake_case SQLite rows', () => {
+    const dups = findRecurringDuplicates([
+      { id: 'A', rtm_series_id: 'S1', recurrence: 'yearly', status: 'active', created_at: '2026-01-01T00:00:00.000Z' },
+      { id: 'B', rtm_series_id: 'S1', recurrence: 'yearly', status: 'active', created_at: '2026-02-01T00:00:00.000Z' },
+      { id: 'C', rtm_series_id: 'S1', recurrence: 'yearly', status: 'active', created_at: '2026-03-01T00:00:00.000Z' },
+    ])
+    expect(dups.sort()).toEqual(['A', 'B'])
+  })
+
+  it('breaks createdAt ties by id (deterministic across devices)', () => {
+    const dups = findRecurringDuplicates([
+      { id: 'AAA', rtmSeriesId: 'S1', recurrence: 'daily', status: 'active', createdAt: '2026-01-01T00:00:00.000Z' },
+      { id: 'ZZZ', rtmSeriesId: 'S1', recurrence: 'daily', status: 'active', createdAt: '2026-01-01T00:00:00.000Z' },
+    ])
+    expect(dups).toEqual(['AAA']) // ZZZ wins the tie
+  })
+
+  it('ignores done, deleted, non-recurring and series-less tasks', () => {
+    const dups = findRecurringDuplicates([
+      { id: 'A', rtmSeriesId: 'S1', recurrence: 'yearly', status: 'active', createdAt: '2026-01-01' },
+      { id: 'B', rtmSeriesId: 'S1', recurrence: 'yearly', status: 'done',   createdAt: '2026-02-01' },
+      { id: 'C', rtmSeriesId: 'S1', recurrence: 'yearly', status: 'active', createdAt: '2026-03-01', deletedAt: '2026-04-01' },
+      { id: 'D', rtmSeriesId: 'S1', recurrence: null,     status: 'active', createdAt: '2026-04-01' },
+      { id: 'E', rtmSeriesId: null, recurrence: 'yearly',  status: 'active', createdAt: '2026-05-01' },
+      { id: 'F', rtmSeriesId: 'S2', recurrence: 'yearly', status: 'active', createdAt: '2026-06-01' },
+    ])
+    expect(dups).toEqual([]) // only one live active per series remains
   })
 })
 

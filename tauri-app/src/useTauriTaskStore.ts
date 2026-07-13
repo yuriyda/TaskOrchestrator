@@ -10,7 +10,7 @@ import { appDataDir, join } from '@tauri-apps/api/path'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ulid } from './ulid.js'
 import { safeIsoDate, localDateStr, localIsoDate } from './core/date.js'
-import { handleTaskDone, isTaskBlocked, computeNextCycleStatus } from './core/taskActions.js'
+import { handleTaskDone, handleTaskUndone, isTaskBlocked, computeNextCycleStatus, findRecurringDuplicates } from './core/taskActions.js'
 import { MIGRATIONS_V1, VERSIONED_MIGRATIONS, LATEST_SCHEMA_VERSION } from './store/migrations.js'
 import { TASK_INSERT, TASK_INSERT_IGN, taskToRow, touchUpdatedAt, shiftDue, fetchAll, buildSqlOps, logChange, nextLamport } from './store/helpers.js'
 import { DB_PATH_KEY, resolveDbPath, backupBeforeMigration } from './store/backup.js'
@@ -62,6 +62,31 @@ async function openDb() {
       const [devRow] = await _db.select("SELECT value FROM meta WHERE key='device_id'")
       if (devRow) await _db.execute('INSERT OR IGNORE INTO vector_clock (device_id, counter) VALUES (?, 0)', [devRow.value])
       try { await _db.execute("UPDATE tasks SET lamport_ts = rowid WHERE lamport_ts = 0") } catch {}
+    },
+    13: async () => {
+      // One-shot data fix: soft-delete duplicate active instances of recurring
+      // RTM series (RTM import artifacts + pre-2.6.0 double-completion spawns).
+      // Soft-delete (not hard) so the cleanup propagates to other devices via sync.
+      try {
+        const rows = await _db.select('SELECT id, rtm_series_id, recurrence, status, created_at, deleted_at FROM tasks')
+        const dupIds = findRecurringDuplicates(rows)
+        if (!dupIds.length) return
+        const [devRow] = await _db.select("SELECT value FROM meta WHERE key='device_id'")
+        const did = devRow?.value
+        if (!did) return // fresh DB without device_id — nothing accumulated yet
+        const lts = await nextLamport(_db, did)
+        const now = new Date().toISOString()
+        for (const id of dupIds) {
+          await _db.execute(
+            'UPDATE tasks SET deleted_at=?, updated_at=?, lamport_ts=?, device_id=? WHERE id=?',
+            [now, now, lts, did, id]
+          )
+          await logChange(_db, 'tasks', id, 'update', { deletedAt: now }, lts, did)
+        }
+        console.log(`[migration v13] soft-deleted ${dupIds.length} duplicate recurring instance(s)`)
+      } catch (err) {
+        console.warn('[migration v13] dedupe failed:', err)
+      }
     },
   }
 
@@ -251,25 +276,37 @@ export function useTauriTaskStore() {
       if (status === 'active' || status === 'done') {
         for (const id of [...ids]) {
           if (await isTaskBlocked(ops, id)) { skippedBlocked++; continue }
+          const [prevRow] = await db.select('SELECT status FROM tasks WHERE id=?', [id])
+          const prevStatus = prevRow?.status ?? null
           await db.execute('UPDATE tasks SET status=?, lamport_ts=?, device_id=? WHERE id=?', [status, lts, did, id])
           changedIds.push(id)
           if (status === 'done') {
-            await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [new Date().toISOString(), id])
-            const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
-            if (doneResult.spawned) {
+            // Keep the original completion time when re-marking an already-done task
+            if (prevStatus !== 'done') {
+              await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [new Date().toISOString(), id])
+            }
+            const doneResult = await handleTaskDone(ops, id, ulid, lts, did, prevStatus)
+            if (doneResult.spawned && !doneResult.resurrected) {
               await logChange(db, 'tasks', doneResult.spawned.id, 'insert', doneResult.spawned, lts, did)
             }
             activatedNames.push(...doneResult.activated.map(a => a.title))
           } else {
             await db.execute('UPDATE tasks SET completed_at=NULL WHERE id=?', [id])
+            // Completion revert — remove the spawned occurrence while untouched
+            if (prevStatus === 'done') await handleTaskUndone(ops, id, lts, did)
           }
           await logChange(db, 'tasks', id, 'update', { status }, lts, did)
         }
       } else {
         const ph = [...ids].map(() => '?').join(',')
+        const doneRows = await db.select(`SELECT id FROM tasks WHERE status='done' AND id IN (${ph})`, [...ids])
         await db.execute(`UPDATE tasks SET status=?, lamport_ts=?, device_id=? WHERE id IN (${ph})`, [status, lts, did, ...[...ids]])
         await db.execute(`UPDATE tasks SET completed_at=NULL WHERE id IN (${ph})`, [...ids])
         changedIds.push(...ids)
+        // done → inbox/cancelled is also a completion revert
+        for (const row of doneRows) {
+          await handleTaskUndone(ops, row.id, lts, did)
+        }
         for (const id of changedIds) {
           await logChange(db, 'tasks', id, 'update', { status }, lts, did)
         }
@@ -293,11 +330,14 @@ export function useTauriTaskStore() {
         await db.execute('UPDATE tasks SET status=?, lamport_ts=?, device_id=? WHERE id=?', [next, lts, did, id])
         await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [next === 'done' ? new Date().toISOString() : null, id])
         if (next === 'done') {
-          const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
-          if (doneResult.spawned) {
+          const doneResult = await handleTaskDone(ops, id, ulid, lts, did, row.status)
+          if (doneResult.spawned && !doneResult.resurrected) {
             await logChange(db, 'tasks', doneResult.spawned.id, 'insert', doneResult.spawned, lts, did)
           }
           activatedNames.push(...doneResult.activated.map(a => a.title))
+        } else if (row.status === 'done') {
+          // Cycled away from done — completion revert, drop the untouched spawn
+          await handleTaskUndone(ops, id, lts, did)
         }
         await logChange(db, 'tasks', id, 'update', { status: next }, lts, did)
       }
@@ -391,9 +431,13 @@ export function useTauriTaskStore() {
   const bulkAssignToday = useCallback((ids, cur) => mutate(cur, async db => {
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
+    const ops = buildSqlOps(db, logChange)
     const today = localIsoDate(new Date())
     for (const id of ids) {
+      const [prevRow] = await db.select('SELECT status FROM tasks WHERE id=?', [id])
       await db.execute("UPDATE tasks SET status='active', due=?, lamport_ts=?, device_id=? WHERE id=?", [today, lts, did, id])
+      // done → active is a completion revert — drop the untouched spawn
+      if (prevRow?.status === 'done') await handleTaskUndone(ops, id, lts, did)
       await logChange(db, 'tasks', id, 'update', { status: 'active', due: today }, lts, did)
     }
     await touchUpdatedAt(db, ids)
@@ -405,6 +449,10 @@ export function useTauriTaskStore() {
     const promise = mutate(cur, async db => {
     const did = deviceIdRef.current
     const lts = await nextLamport(db, did)
+    // Previous status — completion side-effects (spawn / revert cleanup) must
+    // only fire on actual transitions, not on saves that re-send status='done'.
+    const [prevRow] = await db.select('SELECT status FROM tasks WHERE id=?', [id])
+    const prevStatus = prevRow?.status ?? null
     const COL = {
       title: 'title', status: 'status', priority: 'priority',
       list: 'list_name', due: 'due', recurrence: 'recurrence',
@@ -438,8 +486,8 @@ export function useTauriTaskStore() {
       values.push(id)
       await db.execute(`UPDATE tasks SET ${setClauses.join(', ')} WHERE id = ?`, values)
     }
-    // Auto-set completed_at when status changes
-    if (changes.status === 'done') {
+    // Auto-set completed_at when status changes (keep original time on done → done)
+    if (changes.status === 'done' && prevStatus !== 'done') {
       try { await db.execute('UPDATE tasks SET completed_at=? WHERE id=?', [new Date().toISOString(), id]) } catch (_) {}
     } else if (changes.status && changes.status !== 'done') {
       try { await db.execute('UPDATE tasks SET completed_at=NULL WHERE id=?', [id]) } catch (_) {}
@@ -450,11 +498,16 @@ export function useTauriTaskStore() {
     if (changes.flowId)   await db.execute('INSERT OR IGNORE INTO flows VALUES (?)', [changes.flowId])
     if (changes.status === 'done') {
       const ops = buildSqlOps(db, logChange)
-      const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
-      if (doneResult.spawned) {
+      const doneResult = await handleTaskDone(ops, id, ulid, lts, did, prevStatus)
+      if (doneResult.spawned && !doneResult.resurrected) {
         await logChange(db, 'tasks', doneResult.spawned.id, 'insert', doneResult.spawned, lts, did)
       }
       activatedNames.push(...doneResult.activated.map(a => a.title))
+    } else if (prevStatus === 'done' && changes.status && changes.status !== 'done') {
+      // Completion revert (checkbox uncheck / edit-dialog save with stale
+      // status) — drop the occurrence spawned by the completion while untouched.
+      const ops = buildSqlOps(db, logChange)
+      await handleTaskUndone(ops, id, lts, did)
     }
     // Note sync — delegated to shared/core/saveNotes.ts via SQLite adapter.
     // Pass outer lts/did so all rows (task UPDATE + notes) share a single

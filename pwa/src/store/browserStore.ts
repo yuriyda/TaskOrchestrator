@@ -18,7 +18,8 @@ import {
   getConfig as gdriveGetConfig, startOAuthRedirect, extractAuthCode,
 } from './googleDrivePwa.js'
 import {
-  handleTaskDone, isTaskBlocked, computeNextCycleStatus,
+  handleTaskDone, handleTaskUndone, isTaskBlocked, computeNextCycleStatus,
+  findRecurringDuplicates,
 } from '@shared/core/taskActions.js'
 import { localIsoDate } from '@shared/core/date.js'
 import { runLookupGc } from '@shared/core/lookup'
@@ -92,6 +93,35 @@ async function nextLamport(db, deviceId) {
   return counter
 }
 
+// One-shot data fix (mirrors desktop schema migration v13): soft-delete
+// duplicate active instances of recurring RTM series. Guarded by a meta flag
+// so it runs once per device; the rule is deterministic, so devices that both
+// run it converge on the same survivors.
+async function dedupeRecurringOnce(db, deviceId) {
+  const FLAG = 'dedupe_recurring_v1'
+  if (await db.get('meta', FLAG)) return
+  try {
+    const dupIds = findRecurringDuplicates(await db.getAll('tasks'))
+    if (dupIds.length) {
+      const lts = await nextLamport(db, deviceId)
+      const now = new Date().toISOString()
+      for (const id of dupIds) {
+        const t = await db.get('tasks', id)
+        if (!t) continue
+        t.deletedAt = now
+        t.updatedAt = now
+        t.lamportTs = lts
+        t.deviceId = deviceId
+        await db.put('tasks', t)
+      }
+      console.log(`[dedupe] soft-deleted ${dupIds.length} duplicate recurring instance(s)`)
+    }
+    await db.put('meta', { key: FLAG, value: new Date().toISOString() })
+  } catch (e) {
+    console.warn('[dedupe] failed:', e)
+  }
+}
+
 // Build IDB storage adapter for use with core/taskActions.js functions.
 function buildIdbOps(db) {
   return {
@@ -119,6 +149,21 @@ function buildIdbOps(db) {
         await db.put('tasks', t)
       }
     },
+
+    softDeleteTask: async (id, lts, did) => {
+      const t = await db.get('tasks', id)
+      if (!t) return
+      const now = new Date().toISOString()
+      t.deletedAt = now
+      t.updatedAt = now
+      t.lamportTs = lts
+      t.deviceId = did
+      await db.put('tasks', t)
+    },
+
+    // Overwrite a previously soft-deleted spawn row (same deterministic id)
+    // with freshly computed fields, clearing deletedAt.
+    resurrectTask: async (task) => { await db.put('tasks', task) },
   }
 }
 
@@ -192,6 +237,8 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     initDB(dbName).then(async db => {
       dbRef.current = db
       deviceIdRef.current = await getOrCreateDeviceId(db)
+      // One-shot cleanup of duplicate recurring instances (see dedupeRecurringOnce)
+      await dedupeRecurringOnce(db, deviceIdRef.current)
       // GC orphaned lookup entries before first render — lookup tables are derived
       // state per device; this catches anything left over from previous versions
       // (where lookup was part of sync) or from sync packages imported before this
@@ -256,6 +303,7 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const lts = await nextLamport(db, did)
     const task = await db.get('tasks', id)
     if (!task) return []
+    const prevStatus = task.status
     const activatedNames = []
     const updated = {
       ...task,
@@ -274,11 +322,15 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     if (updated.tags) for (const t of updated.tags) await db.put('tags', { name: t })
     if (updated.personas) for (const p of updated.personas) await db.put('personas', { name: p })
     if (updated.flowId) await db.put('flows', { name: updated.flowId })
-    // Handle completion side-effects: spawn next occurrence, activate dependents
+    // Handle completion side-effects: spawn next occurrence, activate dependents.
+    // prevStatus guard: saves that re-send status='done' must not spawn again.
     if (changes.status === 'done') {
       const ops = buildIdbOps(db)
-      const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+      const doneResult = await handleTaskDone(ops, id, ulid, lts, did, prevStatus)
       activatedNames.push(...doneResult.activated.map(a => a.title))
+    } else if (prevStatus === 'done' && changes.status && changes.status !== 'done') {
+      // Completion revert — drop the spawned occurrence while untouched
+      await handleTaskUndone(buildIdbOps(db), id, lts, did)
     }
     // Incremental lookup GC — if the update removed the last reference to any
     // list/tag/persona/flow, it is orphaned and should disappear from drawers.
@@ -323,15 +375,20 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
         skippedBlocked++
         continue
       }
+      const prevStatus = task.status
       task.status = status
       task.updatedAt = now
       task.deviceId = did
       task.lamportTs = lts
-      task.completedAt = status === 'done' ? now : null
+      // Keep the original completion time when re-marking an already-done task
+      task.completedAt = status === 'done' ? (prevStatus === 'done' && task.completedAt ? task.completedAt : now) : null
       await db.put('tasks', task)
       if (status === 'done') {
-        const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+        const doneResult = await handleTaskDone(ops, id, ulid, lts, did, prevStatus)
         activatedNames.push(...doneResult.activated.map(a => a.title))
+      } else if (prevStatus === 'done') {
+        // Completion revert — drop the spawned occurrence while untouched
+        await handleTaskUndone(ops, id, lts, did)
       }
     }
     await refresh()
@@ -350,7 +407,8 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       const task = await db.get('tasks', id)
       if (!task) continue
       const blocked = await isTaskBlocked(ops, id)
-      const next = computeNextCycleStatus(task.status, blocked)
+      const prevStatus = task.status
+      const next = computeNextCycleStatus(prevStatus, blocked)
       task.status = next
       task.updatedAt = now
       task.deviceId = did
@@ -358,8 +416,11 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
       task.completedAt = next === 'done' ? now : null
       await db.put('tasks', task)
       if (next === 'done') {
-        const doneResult = await handleTaskDone(ops, id, ulid, lts, did)
+        const doneResult = await handleTaskDone(ops, id, ulid, lts, did, prevStatus)
         activatedNames.push(...doneResult.activated.map(a => a.title))
+      } else if (prevStatus === 'done') {
+        // Cycled away from done — completion revert, drop the untouched spawn
+        await handleTaskUndone(ops, id, lts, did)
       }
     }
     await refresh()
@@ -458,15 +519,19 @@ export function useBrowserTaskStore(dbName = DB_NAME) {
     const lts = await nextLamport(db, did)
     const now = new Date().toISOString()
     const today = localIsoDate(new Date())
+    const ops = buildIdbOps(db)
     for (const id of ids) {
       const task = await db.get('tasks', id)
       if (!task) continue
+      const prevStatus = task.status
       task.status = 'active'
       task.due = today
       task.updatedAt = now
       task.deviceId = did
       task.lamportTs = lts
       await db.put('tasks', task)
+      // done → active is a completion revert — drop the untouched spawn
+      if (prevStatus === 'done') await handleTaskUndone(ops, id, lts, did)
     }
     await refresh()
   }, [refresh])
