@@ -171,7 +171,7 @@ export function useTauriTaskStore() {
 
       // Load persisted app settings from meta table
       const metaRows = await db.select(
-        "SELECT key, value FROM meta WHERE key IN ('to_locale', 'to_theme', 'to_settings', 'to_guide_completed')"
+        "SELECT key, value FROM meta WHERE key IN ('to_locale', 'to_theme', 'to_settings', 'to_guide_completed', 'focus_state_v1')"
       )
       const meta = {}
       for (const row of metaRows) meta[row.key] = row.value
@@ -865,7 +865,7 @@ export function useTauriTaskStore() {
     openUrl: createSafeOpenUrl(openUrl),
     // Day Planner
     dayPlanSlots: planner.dayPlanSlots, currentPlan: planner.currentPlan, plannedTaskIds: planner.plannedTaskIds,
-    plannerLoadDay: planner.plannerLoadDay, plannerRefreshSlots: planner.plannerRefreshSlots,
+    plannerLoadDay: planner.plannerLoadDay, plannerRefreshSlots: planner.plannerRefreshSlots, plannerGetSlotsByDate: planner.plannerGetSlotsByDate,
     plannerAddTaskSlot: planner.plannerAddTaskSlot, plannerAddBlockedSlot: planner.plannerAddBlockedSlot,
     plannerMoveSlot: planner.plannerMoveSlot, plannerResizeSlot: planner.plannerResizeSlot, plannerRemoveSlot: planner.plannerRemoveSlot,
     plannerUpdateSlotTitle: planner.plannerUpdateSlotTitle, plannerUpdateSlotRecurrence: planner.plannerUpdateSlotRecurrence, plannerUpdateHours: planner.plannerUpdateHours,

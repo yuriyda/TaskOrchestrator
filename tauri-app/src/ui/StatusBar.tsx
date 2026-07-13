@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from "react";
-import { HardDrive, RefreshCw, Clock, ScrollText } from "lucide-react";
+import { HardDrive, RefreshCw, Clock, ScrollText, Timer } from "lucide-react";
 import { useApp } from "./AppContext";
 import { PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, TOAST_DURATION_MS } from "../core/constants";
 import { fmtDate, localIsoDate } from "../core/date";
@@ -32,6 +32,8 @@ interface StatusBarProps {
   plannerDayEnd?: number;
   syncActivityVisible?: boolean;
   onToggleSyncActivity?: () => void;
+  focusBarOn?: boolean;
+  onToggleFocusBar?: () => void;
 }
 
 function timeToMinutes(t: string): number {
@@ -39,7 +41,7 @@ function timeToMinutes(t: string): number {
   return h * 60 + m;
 }
 
-export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings, plannerSlots = [], plannerDayStart, plannerDayEnd, syncActivityVisible, onToggleSyncActivity }: StatusBarProps) {
+export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat, dbPath, lastSync, onSyncNow, autoSyncing, onOpenSyncSettings, plannerSlots = [], plannerDayStart, plannerDayEnd, syncActivityVisible, onToggleSyncActivity, focusBarOn, onToggleFocusBar }: StatusBarProps) {
   const { t, TC, locale } = useApp();
   const [now, setNow] = useState(new Date());
   const [syncing, setSyncing] = useState(false);
@@ -147,6 +149,17 @@ export function StatusBar({ tasks, lastAction, canUndo, clockFormat, dateFormat,
       )}
       {canUndo && (
         <span className="opacity-50 text-sky-400 flex-shrink-0">Ctrl+Z — Undo</span>
+      )}
+
+      {/* Focus bar toggle */}
+      {onToggleFocusBar && (
+        <button
+          title={t("focus.toggleBar")}
+          onClick={onToggleFocusBar}
+          className={`flex-shrink-0 px-1 py-0.5 rounded transition-colors cursor-pointer ${focusBarOn ? "opacity-100 text-red-400" : "hover:opacity-100 opacity-40"}`}
+        >
+          <Timer size={10} />
+        </button>
       )}
 
       {/* Sync activity log toggle */}

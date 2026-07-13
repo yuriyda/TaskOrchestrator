@@ -12,7 +12,7 @@ import { useState, useCallback } from 'react'
 import type { MutableRefObject } from 'react'
 import { PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT } from '../core/constants.js'
 import {
-  getOrCreatePlan, getEffectiveSlots,
+  getOrCreatePlan, getEffectiveSlots, getSlotsByDate,
   addTaskSlot, addBlockedSlot, moveSlot, resizeSlot, removeSlot,
   updateSlotTitle, updateSlotRecurrence, updatePlanHours, getPlannedTaskIds,
 } from './dayPlanner.js'
@@ -124,6 +124,14 @@ export function usePlannerOps({ dbRef, deviceIdRef, pushHistory }: UsePlannerOps
     setDayPlanSlots(prev => prev.map(s => s.id === slotId ? { ...s, recurrence } : s))
   }, [])
 
+  /** Read-only slot lookup for a date — used by the Focus Bar. Unlike
+   *  plannerLoadDay it never creates a plan and doesn't touch planner state. */
+  const plannerGetSlotsByDate = useCallback(async (date: string) => {
+    const db = dbRef.current
+    if (!db) return []
+    return getSlotsByDate(db, date)
+  }, [])
+
   const plannerUpdateHours = useCallback(async (dayStartHour: number, dayEndHour: number) => {
     const db = dbRef.current
     if (!db || !currentPlan) return
@@ -139,7 +147,7 @@ export function usePlannerOps({ dbRef, deviceIdRef, pushHistory }: UsePlannerOps
     setDayPlanSlots, setPlannedTaskIds,
     // Actions
     refreshPlannedTaskIds,
-    plannerLoadDay, plannerRefreshSlots,
+    plannerLoadDay, plannerRefreshSlots, plannerGetSlotsByDate,
     plannerAddTaskSlot, plannerAddBlockedSlot,
     plannerMoveSlot, plannerResizeSlot, plannerRemoveSlot,
     plannerUpdateSlotTitle, plannerUpdateSlotRecurrence, plannerUpdateHours,

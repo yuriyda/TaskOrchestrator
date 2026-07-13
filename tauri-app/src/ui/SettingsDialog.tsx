@@ -8,7 +8,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { useApp } from "./AppContext";
 import {
   Settings, Sun, Upload, Download,
-  Info, HardDrive, X, Zap, AlertTriangle, RefreshCw,
+  Info, HardDrive, X, Zap, AlertTriangle, RefreshCw, Timer,
 } from "lucide-react";
 import { Combobox } from "./Combobox";
 import { FONTS, DATE_FORMATS, PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, PLANNER_SLOT_STEP_DEFAULT } from "../core/constants";
@@ -19,6 +19,8 @@ import { ExportTab } from "./settings/ExportTab";
 import { SyncTab } from "./settings/SyncTab";
 import { MaintenanceTab } from "./settings/MaintenanceTab";
 import { DangerTab } from "./settings/DangerTab";
+import { FocusTab } from "./settings/FocusTab";
+import { isTauriRuntime } from "../core/focusConfig";
 import type { Task, BackupInfo } from "../types";
 
 interface SettingRowProps {
@@ -91,6 +93,8 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
   const tabs = [
     { key: "general",    label: t("settings.tab.general"),    Icon: Settings,       danger: false },
     { key: "appearance", label: t("settings.tab.appearance"), Icon: Sun,            danger: false },
+    // Focus Bar is a desktop-only feature (docked AppBar window)
+    ...(isTauriRuntime() ? [{ key: "focus", label: t("settings.tab.focus"), Icon: Timer, danger: false }] : []),
     { key: "ai",         label: t("settings.tab.ai"),         Icon: Zap,            danger: false },
     { key: "import",     label: t("settings.tab.import"),     Icon: Upload,         danger: false },
     { key: "export",     label: t("settings.tab.export"),     Icon: Download,       danger: false },
@@ -347,6 +351,7 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
     switch (activeTab) {
       case "general":    return renderGeneral();
       case "appearance": return renderAppearance();
+      case "focus":      return <FocusTab />;
       case "ai":         return renderAI();
       case "import":     return renderImport();
       case "export":     return <ExportTab tasks={tasks} filteredTasks={filteredTasks} hasActiveFilter={hasActiveFilter} />;

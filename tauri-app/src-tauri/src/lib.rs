@@ -1,13 +1,14 @@
 // ─── Tauri application entry point ───────────────────────────────────────────
 // Database operations are handled on the JS side via @tauri-apps/plugin-sql.
-// Custom commands: OAuth loopback listener for Google Drive sync.
+// Custom commands: OAuth loopback listener for Google Drive sync,
+// AppBar docking for the Focus Bar window (see appbar.rs).
+
+mod appbar;
 
 use std::io::{BufRead, BufReader, Write};
 use std::net::TcpListener;
 use std::sync::Mutex;
-#[cfg(not(debug_assertions))]
-use tauri::Manager;
-use tauri::State;
+use tauri::{Manager, State};
 
 struct OAuthListener(Mutex<Option<TcpListener>>);
 
@@ -91,7 +92,34 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_http::init())
-        .invoke_handler(tauri::generate_handler![oauth_start, oauth_await_code]);
+        .invoke_handler(tauri::generate_handler![
+            oauth_start,
+            oauth_await_code,
+            appbar::appbar_dock,
+            appbar::appbar_undock
+        ])
+        // Window lifecycle glue for the Focus Bar:
+        // - focusbar closing → release the reserved AppBar strip;
+        // - main window closing → close the focusbar with it (it's a satellite;
+        //   otherwise the app would keep running with only the bar alive).
+        .on_window_event(|window, event| {
+            if !matches!(
+                event,
+                tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed
+            ) {
+                return;
+            }
+            match window.label() {
+                "focusbar" => appbar::cleanup_all(),
+                "main" => {
+                    appbar::cleanup_all();
+                    if let Some(bar) = window.app_handle().get_webview_window("focusbar") {
+                        let _ = bar.close();
+                    }
+                }
+                _ => {}
+            }
+        });
 
     // Single-instance only in release builds (dev and release use the same identifier,
     // so the plugin would block dev when release is running)

@@ -19,6 +19,7 @@ interface ContextMenuProps {
   selectedIds: Set<TaskId>;
   onClose: () => void;
   onOpen: (taskId: TaskId) => void;
+  onFocusTask?: (taskId: TaskId) => void;
   onSnooze: (ids: Set<TaskId>, days: number, months: number) => void;
   onAssignToday: (ids: Set<TaskId>) => void;
   onSetStatus: (ids: Set<TaskId>, status: TaskStatus) => void;
@@ -27,7 +28,7 @@ interface ContextMenuProps {
   onDelete: (ids: Set<TaskId>) => void;
 }
 
-export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onSnooze, onAssignToday, onSetStatus, onMarkDone, onDuplicate, onDelete }: ContextMenuProps) {
+export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onFocusTask, onSnooze, onAssignToday, onSetStatus, onMarkDone, onDuplicate, onDelete }: ContextMenuProps) {
   const { t, TC } = useApp();
   const ref = useRef(null);
   const isMulti = selectedIds.size > 1 && selectedIds.has(task.id);
@@ -128,6 +129,7 @@ export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onSnooze
         })}
       </SubMenu>
       {!isMulti && <Item label={t("ctx.open")}      onClick={() => onOpen(task.id)} />}
+      {!isMulti && onFocusTask && <Item label={t("ctx.focus")} onClick={() => onFocusTask(task.id)} />}
       <Sep id="s1" />
       <Item label={t("bulk.today")}   onClick={() => onAssignToday(ids)} />
       <Item label={t("ctx.snooze1d")} onClick={() => onSnooze(ids, 1, 0)} />

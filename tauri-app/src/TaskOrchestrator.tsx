@@ -39,6 +39,8 @@ import { useDayPlanner } from "./hooks/useDayPlanner";
 import { useKeyboard } from "./hooks/useKeyboard";
 import { useTaskActions } from "./hooks/useTaskActions";
 import { useFilteredTasks } from "./hooks/useFilteredTasks";
+import { useFocusController } from "./hooks/useFocusController";
+import { isTauriRuntime } from "./core/focusConfig";
 
 // ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -293,6 +295,11 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     clearFilter, settings, pendingSlotTimeRef,
     setRtmImportData, rtmImportData, setImportProgress,
     handleUpdate,
+  });
+
+  // ── Focus Bar (docked AppBar window; desktop only) ────────────────────────
+  const { focusTaskById, toggleBar: toggleFocusBar, barEnabled: focusBarOn } = useFocusController({
+    store, tasks, settings, updateSetting, locale, t, addToast, setEditTaskId,
   });
 
   const activeFlowName = filters.flow || null;
@@ -813,7 +820,8 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
         </div>
 
         <StatusBar tasks={tasks} lastAction={lastAction} canUndo={store.canUndo} clockFormat={settings.clockFormat} dateFormat={settings.dateFormat} dbPath={store.dbPath} lastSync={store.metaSettings?.last_sync} onSyncNow={gdriveConnected ? syncWithActivityPanel : undefined} autoSyncing={autoSyncing} onOpenSyncSettings={() => setShowSettings("sync")} plannerSlots={showPlanner ? (store.dayPlanSlots || []) : []} plannerDayStart={settings.plannerDayStart} plannerDayEnd={settings.plannerDayEnd}
-          syncActivityVisible={syncActivityVisible} onToggleSyncActivity={() => { setSyncActivityVisible(v => !v); if (!syncActivityVisible) refreshSyncActivity(); }} />
+          syncActivityVisible={syncActivityVisible} onToggleSyncActivity={() => { setSyncActivityVisible(v => !v); if (!syncActivityVisible) refreshSyncActivity(); }}
+          focusBarOn={focusBarOn} onToggleFocusBar={isTauriRuntime() ? toggleFocusBar : undefined} />
 
         <ToastContainer toasts={toasts} />
 
@@ -826,6 +834,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
             selectedIds={selected}
             onClose={() => setContextMenu(null)}
             onOpen={handleCtxOpen}
+            onFocusTask={isTauriRuntime() ? ((id) => { setContextMenu(null); focusTaskById(id); addToast(t("focus.focusedToast")); }) : undefined}
             onAssignToday={handleCtxAssignToday}
             onSnooze={handleCtxSnooze}
             onSetStatus={handleCtxSetStatus}
