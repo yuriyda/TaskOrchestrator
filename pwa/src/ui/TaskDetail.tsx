@@ -115,7 +115,7 @@ function TaskDetail({ task, store, onBack, onToast, locale, t }: TaskDetailProps
             </div>
             <div>
               <label className="text-[10px] uppercase tracking-wider text-gray-500 mb-1 block">{t('detail.recurrence') || 'Recurrence'}</label>
-              <input value={recurrence} onChange={e => setRecurrence(e.target.value)} placeholder="e.g. weekly, monthly, every 3 days"
+              <input value={recurrence} onChange={e => setRecurrence(e.target.value)} placeholder="e.g. daily, weekly, monthly, yearly"
                 className={inputCls} />
             </div>
             <div>

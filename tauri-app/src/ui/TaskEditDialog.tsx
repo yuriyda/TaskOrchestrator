@@ -287,7 +287,7 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
                 className={inputCls}
                 value={form.recurrence}
                 onChange={v => set("recurrence", v)}
-                options={["daily","weekly","monthly","FREQ=DAILY","FREQ=WEEKLY;INTERVAL=1","FREQ=MONTHLY;INTERVAL=1","FREQ=YEARLY;INTERVAL=1"]}
+                options={["daily","weekly","monthly","yearly","FREQ=DAILY","FREQ=WEEKLY;INTERVAL=1","FREQ=MONTHLY;INTERVAL=1","FREQ=YEARLY;INTERVAL=1"]}
                 placeholder="daily / weekly / FREQ=..."
               />
             </div>

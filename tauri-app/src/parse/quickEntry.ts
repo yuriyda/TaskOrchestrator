@@ -76,7 +76,7 @@ export function getSuggestions(input, { lists = [], tags = [], flows = [], perso
     }
     return results;
   }
-  if (last.startsWith("*"))  return ["*daily","*weekly","*monthly"].filter(s => s.startsWith(last)).map(s => ({ type: "recurrence", label: s, replace: s }));
+  if (last.startsWith("*"))  return ["*daily","*weekly","*monthly","*yearly"].filter(s => s.startsWith(last)).map(s => ({ type: "recurrence", label: s, replace: s }));
   return [];
 }
 
