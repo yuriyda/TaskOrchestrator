@@ -3,14 +3,14 @@
  * Shared presentational components used across the task management UI.
  * TokenChip / ChipPill — quick-entry token display and editable pill with remove button.
  * SectionDivider — labeled horizontal rule for overdue/section breaks.
- * ConfirmDialog — modal yes/cancel dialog with keyboard shortcuts (Enter / Escape).
+ * ConfirmDialog — yes/cancel dialog on the native <dialog> Modal primitive.
  * BulkBar — floating toolbar for bulk-actions on selected tasks.
  * ToastContainer — stacked notification toasts anchored to bottom-right.
  */
-import { useEffect } from "react";
 import { X, AlertTriangle } from "lucide-react";
 import { CHIP_STYLE } from "../parse/quickEntry.js";
 import { useApp } from "./AppContext.jsx";
+import { Modal } from "./Modal.jsx";
 
 interface TokenChipProps {
   token: { type: string; value: string };
@@ -77,39 +77,24 @@ interface ConfirmDialogProps {
 
 export function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogProps) {
   const { t, TC } = useApp();
-  useEffect(() => {
-    const handler = (e) => {
-      if (e.key === "Enter") { e.preventDefault(); onConfirm(); }
-      if (e.key === "Escape") { e.preventDefault(); onCancel(); }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onConfirm, onCancel]);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
-         style={{ background: "rgba(0,0,0,0.55)" }}
-         onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
-         onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; onCancel(); } }}>
-      <div className={`border rounded-xl shadow-2xl p-6 w-72 ${TC.surface} ${TC.borderClass}`}
-           onClick={e => e.stopPropagation()}>
-        <p className={`text-sm font-medium text-center mb-5 ${TC.text}`}>{message}</p>
-        <div className="flex gap-3 justify-center">
-          {/* autoFocus pulls focus off the task list so native key activation
-              (Space on the last-clicked checkbox) can't reach elements under
-              the dialog. Space now presses this button instead. */}
-          <button onClick={onConfirm} autoFocus
-            className="px-5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
-            {t("confirm.yes")}
-            <kbd className="text-xs bg-sky-500/40 text-white/80 px-1 py-0.5 rounded font-mono leading-none">↵</kbd>
-          </button>
-          <button onClick={onCancel}
-            className={`px-5 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${TC.elevated} ${TC.textSec}`}>
-            {t("confirm.cancel")}
-            <kbd className={`text-xs px-1 py-0.5 rounded font-mono leading-none opacity-60 ${TC.surface}`}>Esc</kbd>
-          </button>
-        </div>
+    <Modal onClose={onCancel} className="p-6 w-72">
+      <p className={`text-sm font-medium text-center mb-5 ${TC.text}`}>{message}</p>
+      <div className="flex gap-3 justify-center">
+        {/* autoFocus: Enter and Space activate the primary action natively;
+            Esc arrives as the dialog's cancel event. */}
+        <button onClick={onConfirm} autoFocus
+          className="px-5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
+          {t("confirm.yes")}
+          <kbd className="text-xs bg-sky-500/40 text-white/80 px-1 py-0.5 rounded font-mono leading-none">↵</kbd>
+        </button>
+        <button onClick={onCancel}
+          className={`px-5 py-1.5 text-sm font-medium rounded-lg transition-colors flex items-center gap-2 ${TC.elevated} ${TC.textSec}`}>
+          {t("confirm.cancel")}
+          <kbd className={`text-xs px-1 py-0.5 rounded font-mono leading-none opacity-60 ${TC.surface}`}>Esc</kbd>
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 

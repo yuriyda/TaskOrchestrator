@@ -1,1 +1,6 @@
 @import "tailwindcss";
+
+/* Backdrop for native modal dialogs (src/ui/Modal.tsx) */
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.55);
+}

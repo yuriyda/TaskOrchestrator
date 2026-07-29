@@ -6,6 +6,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Clock, ChevronLeft, ChevronRight, Plus, Lock, Check, Play, Repeat, GripVertical, Trash2, Edit3, X } from "lucide-react";
 import { useApp } from "./AppContext.jsx";
+import { Modal } from "./Modal.jsx";
 import { PRIORITY_COLORS, PLANNER_DAY_START_DEFAULT, PLANNER_DAY_END_DEFAULT, Z } from "../core/constants.js";
 import { getWeekDates, timeToMinutes, minutesToTime, snapToGrid } from "../store/dayPlanner.js";
 import { localIsoDate } from "../core/date.js";
@@ -677,11 +678,7 @@ export function DayPlanner({
 
       {/* Inline editor for blocked slots (title + recurrence) */}
       {editingTitle && (
-        <div className="fixed inset-0 flex items-center justify-center bg-black/30"
-             style={{ zIndex: Z.PLANNER_EDITOR }}
-             onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
-             onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; setEditingTitle(null); } }}>
-          <div className={`rounded-lg p-4 shadow-xl ${TC.surface} border ${TC.borderClass}`} onClick={e => e.stopPropagation()}>
+        <Modal onClose={() => setEditingTitle(null)} className="p-4">
             <input
               autoFocus
               className={`w-60 px-3 py-1.5 rounded border text-sm ${TC.input} ${TC.borderClass}`}
@@ -691,8 +688,6 @@ export function DayPlanner({
                 if (e.key === "Enter") {
                   onUpdateSlotTitle(editingTitle, titleDraft);
                   if (recurrenceDraft !== undefined) onUpdateSlotRecurrence(editingTitle, recurrenceDraft);
-                  setEditingTitle(null);
-                } else if (e.key === "Escape") {
                   setEditingTitle(null);
                 }
               }}
@@ -726,8 +721,7 @@ export function DayPlanner({
                 setEditingTitle(null);
               }} className="text-xs px-2 py-1 rounded bg-sky-500/20 text-sky-400">OK</button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
