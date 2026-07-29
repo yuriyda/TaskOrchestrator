@@ -25,11 +25,9 @@ Sync uses your personal Google Drive to store a sync file. The app only has acce
 3. Click **Save**
 4. Go to **Audience** (left menu)
 5. Select **External** → **Save**
-6. At the bottom in **Test users**, click **Add users**
-7. Enter the email of your Google account (the one you'll sync with)
-8. Click **Save**
+6. On the same **Audience** page, under **Publishing status**, click **Publish app** and confirm
 
-> **Important:** Add every Google account that will use sync to Test users. Up to 100 users can be added.
+> **Important:** The **In production** status is what makes sign-in permanent. While the app stays in **Testing**, Google expires the authorization every 7 days and you have to sign in again. Publishing requires no verification: the app uses only the non-sensitive `drive.appdata` scope, so there is no review process, no "unverified app" warning, and no user limit.
 
 ## Step 4. Create OAuth Client ID
 
@@ -88,7 +86,10 @@ Yes, completely. Google Drive API is free for personal use.
 No. It uses the `drive.appdata` scope — access only to files created by the app. Your documents, photos, and other files are invisible.
 
 **"Access blocked" error on sign-in?**
-Make sure your email is added to Test users (Step 3, items 6-8).
+Make sure the app is published (Step 3, item 6). While the project is in **Testing** status, only accounts listed as test users can sign in.
+
+**Sync asks me to sign in again every week?**
+Your Google Cloud project is still in **Testing** status — Google expires its tokens after 7 days. Go to [Google Cloud Console](https://console.cloud.google.com/) → **Google Auth Platform** → **Audience** → **Publish app**, then reconnect once in the app (**Disconnect** → **Connect**). Tokens issued before publishing keep their 7-day expiry; the new one is permanent.
 
 **Can I use it on multiple devices?**
 Yes. One Client ID/Secret for all platforms. Sign in with the same Google account on all devices.
@@ -131,11 +132,9 @@ Settings → Sync → Google Drive → **Disconnect**. Tokens will be deleted. T
 3. Нажмите **Save**
 4. Перейдите в **Audience** (левое меню)
 5. Выберите **External** → **Save**
-6. Внизу в разделе **Test users** нажмите **Add users**
-7. Введите email вашего Google-аккаунта (тот, с которым будете синхронизировать)
-8. Нажмите **Save**
+6. На той же странице **Audience** в разделе **Publishing status** нажмите **Publish app** и подтвердите
 
-> **Важно:** Добавьте в Test users каждый Google-аккаунт, с которого будете использовать синхронизацию. Можно добавить до 100 пользователей.
+> **Важно:** Именно статус **In production** делает вход постоянным. Пока приложение остаётся в статусе **Testing**, Google сбрасывает авторизацию каждые 7 дней и приходится входить заново. Верификация для публикации не нужна: приложение использует только non-sensitive scope `drive.appdata`, поэтому не будет ни проверки, ни экрана «unverified app», ни лимита пользователей.
 
 ## Шаг 4. Создайте OAuth Client ID
 
@@ -194,7 +193,10 @@ Settings → Sync → Google Drive → **Disconnect**. Tokens will be deleted. T
 Нет. Используется scope `drive.appdata` — доступ только к файлам, созданным приложением. Ваши документы, фото и другие файлы невидимы.
 
 **При входе показывается "Access blocked"?**
-Убедитесь, что ваш email добавлен в Test users (Шаг 3, пункт 6-8).
+Убедитесь, что приложение опубликовано (Шаг 3, пункт 6). Пока проект в статусе **Testing**, войти могут только аккаунты из списка Test users.
+
+**Синхронизация просит войти заново каждую неделю?**
+Ваш проект в Google Cloud всё ещё в статусе **Testing** — Google сбрасывает его токены через 7 дней. Откройте [Google Cloud Console](https://console.cloud.google.com/) → **Google Auth Platform** → **Audience** → **Publish app**, затем один раз переподключитесь в приложении (**Отключить** → **Подключить**). Токены, выданные до публикации, сохраняют 7-дневный срок; новый токен — бессрочный.
 
 **Можно ли использовать на нескольких устройствах?**
 Да. Один Client ID/Secret для всех платформ. Войдите в тот же Google-аккаунт на всех устройствах.
