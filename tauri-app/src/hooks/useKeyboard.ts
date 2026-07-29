@@ -128,6 +128,19 @@ export function useKeyboard(params: UseKeyboardParams) {
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
       if (showSettings) return;
+
+      // Modal layers (confirm dialog, context menu, edit dialog) own the
+      // keyboard — nothing may reach the task list underneath. Escape still
+      // dismisses the top layer; the rest is handled by the layer itself.
+      if (confirmPending || contextMenu || editTaskId) {
+        if (e.key === "Escape") {
+          if (confirmPending)   setConfirmPending(null);
+          else if (contextMenu) setContextMenu(null);
+          else                  setEditTaskId(null);
+        }
+        return;
+      }
+
       const tag = (e.target as HTMLElement).tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
 
@@ -226,12 +239,8 @@ export function useKeyboard(params: UseKeyboardParams) {
         const target = displayFiltered[cursor] ?? (selected.size === 1 ? tasks.find(x => selected.has(x.id)) : null);
         if (target) setEditTaskId(target.id);
 
-      // ── Escape: cascading dismiss ───────────────────────────────────────
+      // ── Escape: cascading dismiss (modal layers handled above) ─────────
       } else if (e.key === "Escape") {
-        if (confirmPending)    { setConfirmPending(null); return; }
-        if (showSettings)      { setShowSettings(false); return; }
-        if (contextMenu)       { setContextMenu(null); return; }
-        if (editTaskId)        { setEditTaskId(null); return; }
         if (selected.size > 0) setSelected(new Set());
         else if (searchQuery)  setSearchQuery("");
         else                   clearAllFilters();
@@ -239,7 +248,7 @@ export function useKeyboard(params: UseKeyboardParams) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [filtered, cursor, selected, lastIdx, store.canUndo, tasks, searchQuery, locale, editTaskId, renamingTaskId, contextMenu, showSettings]);
+  }, [filtered, cursor, selected, lastIdx, store.canUndo, tasks, searchQuery, locale, editTaskId, renamingTaskId, contextMenu, showSettings, confirmPending]);
 
   // ── Suppress browser context menu everywhere ──────────────────────────────
   useEffect(() => {

@@ -94,7 +94,10 @@ export function ConfirmDialog({ message, onConfirm, onCancel }: ConfirmDialogPro
            onClick={e => e.stopPropagation()}>
         <p className={`text-sm font-medium text-center mb-5 ${TC.text}`}>{message}</p>
         <div className="flex gap-3 justify-center">
-          <button onClick={onConfirm}
+          {/* autoFocus pulls focus off the task list so native key activation
+              (Space on the last-clicked checkbox) can't reach elements under
+              the dialog. Space now presses this button instead. */}
+          <button onClick={onConfirm} autoFocus
             className="px-5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium rounded-lg transition-colors flex items-center gap-2">
             {t("confirm.yes")}
             <kbd className="text-xs bg-sky-500/40 text-white/80 px-1 py-0.5 rounded font-mono leading-none">↵</kbd>
