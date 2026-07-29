@@ -36,7 +36,9 @@ export function DatePicker({ value, onChange, onClose, anchorRef }: DatePickerPr
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    // preventDefault keeps an enclosing <dialog> from also closing on the
+    // same Esc — this popover consumes it.
+    const onKey = (e) => { if (e.key === "Escape") { e.preventDefault(); onClose(); } };
     const onClick = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
     document.addEventListener("keydown", onKey);
     document.addEventListener("mousedown", onClick);

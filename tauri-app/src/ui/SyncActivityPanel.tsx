@@ -11,6 +11,7 @@
 import { useState, useEffect, useRef } from "react";
 import { AlertTriangle, Plus, Trash2, Edit3, X } from "lucide-react";
 import { useApp } from "./AppContext";
+import { Modal } from "./Modal";
 import type { SyncActivityEntry } from "../store/syncActivityLog";
 interface SyncActivityPanelProps {
   entries: SyncActivityEntry[];
@@ -119,13 +120,7 @@ export function SyncActivityPanel({ entries, visible, height, onResizeStart }: S
 
       {/* JSON detail modal */}
       {jsonModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-             onClick={() => setJsonModal(null)}
-             onKeyDown={e => { if (e.key === 'Escape') setJsonModal(null); }}
-             tabIndex={-1}
-             ref={el => el?.focus()}>
-          <div className={`relative rounded-lg shadow-2xl border p-4 max-w-lg w-full max-h-[70vh] flex flex-col ${TC.surface} ${TC.borderClass}`}
-               onClick={e => e.stopPropagation()}>
+        <Modal onClose={() => setJsonModal(null)} className="w-[32rem] max-h-[70vh] p-4 flex flex-col">
             <div className="flex items-center justify-between mb-3">
               <span className={`text-sm font-semibold ${TC.text}`}>
                 {jsonModal.entry.taskTitle} — {labels[jsonModal.entry.action]}
@@ -140,8 +135,7 @@ export function SyncActivityPanel({ entries, visible, height, onResizeStart }: S
             <pre className={`flex-1 overflow-auto text-[11px] p-3 rounded border ${TC.borderClass} ${TC.textSec}`} style={{ fontFamily: "monospace", whiteSpace: "pre-wrap" }}>
               {JSON.stringify(jsonModal.entry.incomingData || { id: jsonModal.entry.taskId, _noData: true }, null, 2)}
             </pre>
-          </div>
-        </div>
+        </Modal>
       )}
     </div>
   );

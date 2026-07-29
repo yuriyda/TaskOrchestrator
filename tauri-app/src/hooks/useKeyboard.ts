@@ -28,16 +28,11 @@ interface UseKeyboardParams {
   searchExpanded: boolean;
   setSearchExpanded: (v: boolean) => void;
   searchInputRef: MutableRefObject<HTMLInputElement | null>;
-  showSettings: false | string;
-  setShowSettings: (v: false | string) => void;
-  editTaskId: TaskId | null;
   setEditTaskId: (id: TaskId | null) => void;
   renamingTaskId: TaskId | null;
   setRenamingTaskId: (id: TaskId | null) => void;
   contextMenu: any;
   setContextMenu: (v: any) => void;
-  confirmPending: any;
-  setConfirmPending: (v: any) => void;
   clearAllFilters: () => void;
   autoSyncTimerRef: MutableRefObject<ReturnType<typeof setTimeout> | null>;
   setShowPlanner: Dispatch<SetStateAction<boolean>>;
@@ -52,7 +47,7 @@ export function useKeyboard(params: UseKeyboardParams) {
     store, tasks, displayFiltered, cursor, setCursor, selected, setSelected,
     lastIdx, setLastIdx, blockedIds, addToast, showFlowToasts, t, locale,
     searchQuery, setSearchQuery, searchExpanded, setSearchExpanded, searchInputRef,
-    showSettings, setShowSettings, editTaskId, setEditTaskId,
+    setEditTaskId,
     renamingTaskId, setRenamingTaskId,
     contextMenu, setContextMenu,
     clearAllFilters, autoSyncTimerRef, setShowPlanner, setShowDbSwitched,
@@ -127,18 +122,13 @@ export function useKeyboard(params: UseKeyboardParams) {
   // ── Keyboard handler ──────────────────────────────────────────────────────
   useEffect(() => {
     const onKey = async (e: KeyboardEvent) => {
-      if (showSettings) return;
-
       // Native modal dialogs (ui/Modal.tsx) own the keyboard entirely — the
       // platform makes everything else inert, and Esc arrives as the dialog's
-      // own `cancel` event. Legacy div overlays keep explicit flags below
-      // until they migrate to <Modal>.
+      // own `cancel` event. The context menu is a popover (deliberately not
+      // modal), so it keeps an explicit flag.
       if (document.querySelector("dialog[open]")) return;
-      if (contextMenu || editTaskId) {
-        if (e.key === "Escape") {
-          if (contextMenu) setContextMenu(null);
-          else             setEditTaskId(null);
-        }
+      if (contextMenu) {
+        if (e.key === "Escape") setContextMenu(null);
         return;
       }
 
@@ -249,7 +239,7 @@ export function useKeyboard(params: UseKeyboardParams) {
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [filtered, cursor, selected, lastIdx, store.canUndo, tasks, searchQuery, locale, editTaskId, renamingTaskId, contextMenu, showSettings]);
+  }, [filtered, cursor, selected, lastIdx, store.canUndo, tasks, searchQuery, locale, renamingTaskId, contextMenu]);
 
   // ── Suppress browser context menu everywhere ──────────────────────────────
   useEffect(() => {

@@ -57,11 +57,12 @@ export const PLANNER_SLOT_STEP_DEFAULT = 30;
 export const DEFAULT_TASK_ESTIMATE_MIN = 60;
 
 // ─── Z-index layers (ordered low → high) ──────────────────────────────────
+// Modal dialogs are absent here on purpose: they render in the browser top
+// layer via <dialog>.showModal() (tauri-app/src/ui/Modal.tsx) and sit above
+// any z-index. Only non-modal popovers and overlays need stacking values.
 export const Z = {
-  DIALOG: 50,          // modal dialogs (Settings, TaskEdit, RtmImport)
   DATE_PICKER: 200,    // date picker dropdown
   CONTEXT_MENU: 999,   // right-click context menu
-  PLANNER_EDITOR: 9998, // planner inline editor overlay
   OVERLAY: 9999,       // drag selection, planner context menu
   GUIDE: 10000,        // onboarding guide
   DRAG_GHOST: 99999,   // drag ghost element (always on top)

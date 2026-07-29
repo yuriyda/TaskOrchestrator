@@ -4,8 +4,9 @@
  * Includes General, Appearance, AI, Import, Export, About, Maintenance, and Danger tabs.
  */
 
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useApp } from "./AppContext";
+import { Modal } from "./Modal";
 import {
   Settings, Sun, Upload, Download,
   Info, HardDrive, X, Zap, AlertTriangle, RefreshCw, Timer,
@@ -45,7 +46,7 @@ export function SettingRow({ label, description, children }: SettingRowProps) {
 interface SettingsDialogProps {
   initialTab?: string;
   onClose: () => void;
-  onTriggerRtmImport: () => void;
+  onRtmFileSelect: (e: any) => void;
   tasks: Task[];
   filteredTasks: Task[];
   hasActiveFilter: boolean;
@@ -78,17 +79,12 @@ interface SettingsDialogProps {
   onGdriveLog: (msg: string) => void;
 }
 
-export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks, filteredTasks, hasActiveFilter, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onCleanupLookups, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }: SettingsDialogProps) {
+export function SettingsDialog({ initialTab, onClose, onRtmFileSelect, tasks, filteredTasks, hasActiveFilter, onClearAll, dbPath, onRevealDb, onOpenDb, onCreateNewDb, onMoveDb, onRestartGuide, onCreateBackup, onListBackups, onRestoreBackup, onCleanupLookups, onExportSyncRequest, onHandleSyncRequest, onImportSyncClipboard, onGetSyncLog, onGetSyncStats, onClearSyncData, onGdriveCheckConnection, onGdriveConnect, onGdriveDisconnect, onGdriveSyncNow, onGdriveGetConfig, onGdriveCheckSyncFile, onGdrivePurgeSyncFile, onGdriveReadSyncFile, gdriveLog, onGdriveLog }: SettingsDialogProps) {
   const { t, locale, setLocale, theme, setTheme, TC, settings, updateSetting } = useApp();
   const [activeTab, setActiveTab] = useState(initialTab || "general");
   // gdriveConnected is shared between SyncTab and DangerTab — kept in parent
   const [gdriveConnected, setGdriveConnected] = useState(false);
-
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const rtmInputRef = useRef<HTMLInputElement>(null);
 
   const tabs = [
     { key: "general",    label: t("settings.tab.general"),    Icon: Settings,       danger: false },
@@ -312,8 +308,19 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
       <div className={`rounded-lg border p-4 ${TC.borderClass}`}>
         <div className={`font-medium text-sm mb-1 ${TC.text}`}>{t("settings.import.rtm")}</div>
         <div className={`text-xs mb-4 ${TC.textMuted}`}>{t("settings.import.rtmDesc")}</div>
+        {/* The hidden file input lives INSIDE the dialog: outside it would sit
+            in the inert zone while Settings is open, and opening the OS picker
+            from an inert input closes the dialog underneath. With top-layer
+            stacking the import flow now runs above Settings, not instead of it. */}
+        <input
+          ref={rtmInputRef}
+          type="file"
+          accept=".json,application/json"
+          style={{ display: "none" }}
+          onChange={onRtmFileSelect}
+        />
         <button
-          onClick={() => { onClose(); setTimeout(onTriggerRtmImport, 100); }}
+          onClick={() => rtmInputRef.current?.click()}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white text-sm transition-colors">
           <Upload size={14} />{t("settings.import.rtmBtn")}
         </button>
@@ -376,12 +383,7 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
   const dangerTabs  = tabs.filter(t => t.danger);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"
-           onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
-           onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; onClose(); } }} />
-      <div className={`relative z-10 flex rounded-xl shadow-2xl border overflow-hidden ${TC.surface} ${TC.borderClass}`}
-           style={{ width: 720, maxHeight: "85vh" }}>
+    <Modal onClose={onClose} className="relative flex overflow-hidden w-[720px] max-h-[85vh]">
 
         {/* ── Left navigation ── */}
         <div className={`w-48 flex-shrink-0 border-r flex flex-col ${TC.borderClass} ${TC.surfaceAlt}`}>
@@ -420,7 +422,6 @@ export function SettingsDialog({ initialTab, onClose, onTriggerRtmImport, tasks,
           className={`absolute top-3 right-3 p-1.5 rounded transition-colors ${TC.textMuted} ${TC.hoverBg} hover:text-gray-200`}>
           <X size={16} />
         </button>
-      </div>
-    </div>
+    </Modal>
   );
 }

@@ -70,6 +70,9 @@ export function Combobox({
       return;
     }
     if (e.key === "Escape" && open) {
+      // preventDefault keeps an enclosing <dialog> from treating this Esc as
+      // its own close request (stopPropagation alone doesn't stop `cancel`).
+      e.preventDefault();
       e.stopPropagation();
       setOpen(false);
       setActiveIdx(-1);

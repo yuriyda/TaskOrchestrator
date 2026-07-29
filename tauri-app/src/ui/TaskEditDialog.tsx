@@ -8,6 +8,7 @@
 import { useState } from "react";
 import { X, Plus, User } from "lucide-react";
 import { useApp } from "./AppContext";
+import { Modal } from "./Modal";
 import { ulid } from "../ulid";
 import { Combobox } from "./Combobox";
 import { DateField } from "./DatePicker";
@@ -153,17 +154,12 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
   const sectionCls = `grid gap-3 mb-4`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
-         onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
-         onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; onCancel(); } }}>
-      <div className={`w-[520px] max-h-[90vh] flex flex-col rounded-xl shadow-2xl border ${TC.surface} ${TC.borderClass}`}
-           onClick={e => e.stopPropagation()}
-           onKeyDown={e => {
-             if (e.key === "Escape") { e.stopPropagation(); onCancel(); }
-             else if (e.key === "Enter" && !["TEXTAREA","SELECT","BUTTON"].includes(e.target.tagName)) {
-               e.preventDefault(); e.stopPropagation(); handleSave();
-             }
-           }}>
+    <Modal onClose={onCancel} className="w-[520px] max-h-[90vh] flex flex-col"
+         onKeyDown={e => {
+           if (e.key === "Enter" && !["TEXTAREA","SELECT","BUTTON"].includes((e.target as HTMLElement).tagName)) {
+             e.preventDefault(); handleSave();
+           }
+         }}>
 
         {/* Header */}
         <div className={`flex items-center justify-between px-6 py-4 border-b flex-shrink-0 ${TC.borderClass}`}>
@@ -442,7 +438,6 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
             <kbd className="text-xs bg-sky-500/40 text-white/80 px-1 py-0.5 rounded font-mono leading-none">↵</kbd>
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

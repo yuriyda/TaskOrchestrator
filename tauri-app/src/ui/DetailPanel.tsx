@@ -9,6 +9,7 @@ import {
   CornerDownRight, Link, Clock, CheckCircle2, FileText, Edit3, X,
 } from "lucide-react";
 import { useApp } from "./AppContext";
+import { Modal } from "./Modal";
 import { StatusBadge, PriorityBadge } from "./badges";
 import { Combobox } from "./Combobox";
 import { DatePickerAnchor } from "./DatePicker";
@@ -309,13 +310,7 @@ export function DetailPanel({ selected, tasks, onUpdate, onEditFull }: DetailPan
 
       {/* Note edit modal */}
       {noteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-             onMouseDown={e => { if (e.target === e.currentTarget) e.currentTarget.dataset.bd = "1"; }}
-             onClick={e => { if (e.currentTarget.dataset.bd) { delete e.currentTarget.dataset.bd; setNoteModal(null); } }}>
-          <div
-            className={`w-full max-w-lg mx-4 rounded-xl shadow-2xl border ${TC.surface} ${TC.borderClass} flex flex-col`}
-            onClick={e => e.stopPropagation()}
-          >
+        <Modal onClose={() => setNoteModal(null)} className="w-[32rem] flex flex-col">
             <div className={`flex items-center justify-between px-4 py-3 border-b ${TC.borderClass}`}>
               <div className="flex items-center gap-2">
                 <FileText size={14} className={TC.textMuted} />
@@ -330,7 +325,6 @@ export function DetailPanel({ selected, tasks, onUpdate, onEditFull }: DetailPan
                 value={noteModalContent}
                 onChange={e => setNoteModalContent(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === "Escape") { e.stopPropagation(); setNoteModal(null); }
                   if (e.key === "Enter" && e.ctrlKey) {
                     e.preventDefault();
                     if (!noteModalContent.trim()) return;
@@ -367,8 +361,7 @@ export function DetailPanel({ selected, tasks, onUpdate, onEditFull }: DetailPan
                 <kbd className="text-xs px-1.5 py-0.5 rounded border border-white/30 opacity-70 font-mono">{"Ctrl+\u21b5"}</kbd>
               </button>
             </div>
-          </div>
-        </div>
+        </Modal>
       )}
     </aside>
   );

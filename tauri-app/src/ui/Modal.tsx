@@ -21,7 +21,7 @@
  * the dialog treats it as a close request — stopPropagation() is not
  * enough, `cancel` is not driven by event bubbling.
  */
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, type KeyboardEventHandler, type ReactNode } from "react";
 import { useApp } from "./AppContext.jsx";
 
 interface ModalProps {
@@ -31,10 +31,12 @@ interface ModalProps {
   dismissible?: boolean;
   /** Panel size/padding classes; surface, border and shadow are built-in. */
   className?: string;
+  /** Dialog-wide key handling (e.g. Enter-to-save); Esc is NOT routed here. */
+  onKeyDown?: KeyboardEventHandler<HTMLDialogElement>;
   children: ReactNode;
 }
 
-export function Modal({ onClose, dismissible = true, className = "", children }: ModalProps) {
+export function Modal({ onClose, dismissible = true, className = "", onKeyDown, children }: ModalProps) {
   const { TC } = useApp();
   const ref = useRef<HTMLDialogElement>(null);
   const onCloseRef = useRef(onClose);
@@ -70,6 +72,7 @@ export function Modal({ onClose, dismissible = true, className = "", children }:
     <dialog
       ref={ref}
       className="m-auto bg-transparent p-0 outline-none"
+      onKeyDown={onKeyDown}
       onMouseDown={e => { pressOnBackdrop.current = e.target === ref.current; }}
       onClick={e => {
         const onBackdrop = pressOnBackdrop.current && e.target === ref.current;

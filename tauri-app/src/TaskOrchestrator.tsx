@@ -16,6 +16,7 @@ import { AppContext, useApp } from "./ui/AppContext.jsx";
 import { PanelLeftIcon, PanelRightIcon, AutoThemeIcon, themeOptions } from "./ui/icons.jsx";
 import { PriorityBadge, StatusBadge } from "./ui/badges.jsx";
 import { TokenChip, ChipPill, SectionDivider, ConfirmDialog, BulkBar, ToastContainer } from "./ui/common.jsx";
+import { Modal } from "./ui/Modal.jsx";
 import { ContextMenu } from "./ui/ContextMenu.jsx";
 import { QuickEntry } from "./ui/QuickEntry.jsx";
 import { TaskRow } from "./ui/TaskRow.jsx";
@@ -169,7 +170,6 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
   const [contextMenu,      setContextMenu]      = useState(null); // null | { x, y, task }
   const [showDemoConfirm,  setShowDemoConfirm]  = useState(false);
   const [showDbSwitched,   setShowDbSwitched]   = useState(false);
-  const rtmFileRef = useRef(null);
   const [sort, setSortRaw] = useState(() => {
     try { const s = localStorage.getItem("taskSort"); if (s) return JSON.parse(s); } catch {}
     return null;
@@ -272,9 +272,9 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     store, tasks, displayFiltered, cursor, setCursor, selected, setSelected,
     lastIdx, setLastIdx, blockedIds, addToast, showFlowToasts, t, locale,
     searchQuery, setSearchQuery, searchExpanded, setSearchExpanded, searchInputRef,
-    showSettings, setShowSettings, editTaskId, setEditTaskId,
+    setEditTaskId,
     renamingTaskId, setRenamingTaskId,
-    contextMenu, setContextMenu, confirmPending, setConfirmPending,
+    contextMenu, setContextMenu,
     clearAllFilters, autoSyncTimerRef, setShowPlanner, setShowDbSwitched,
     dragStartRef, didDragRef, setDragRect, filtered,
   });
@@ -901,7 +901,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
           <SettingsDialog
             initialTab={typeof showSettings === "string" ? showSettings : undefined}
             onClose={() => setShowSettings(false)}
-            onTriggerRtmImport={() => rtmFileRef.current?.click()}
+            onRtmFileSelect={handleRtmFileSelect}
             tasks={tasks}
             filteredTasks={filtered}
             hasActiveFilter={hasAnyFilter || !!calendarFilter}
@@ -950,8 +950,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
 
         {/* Demo data confirmation dialog */}
         {showDemoConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className={`rounded-xl border p-6 max-w-sm w-full mx-4 shadow-2xl ${TC.surface} ${TC.borderClass}`}>
+          <Modal onClose={() => setShowDemoConfirm(false)} className="w-96 p-6">
               <h3 className={`font-semibold text-base mb-2 ${TC.text}`}>{t("demo.title")}</h3>
               <p className={`text-sm mb-5 leading-relaxed ${TC.textSec}`}>{t("demo.desc")}</p>
               <div className="flex gap-2 justify-end">
@@ -967,14 +966,12 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                   {t("demo.confirm")}
                 </button>
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
 
         {/* DB switched info dialog */}
         {showDbSwitched && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-            <div className={`rounded-xl border p-6 max-w-sm w-full mx-4 shadow-2xl ${TC.surface} ${TC.borderClass}`}>
+          <Modal onClose={() => setShowDbSwitched(false)} className="w-96 p-6">
               <h3 className={`font-semibold text-base mb-2 ${TC.text}`}>{t("db.switched.title")}</h3>
               <p className={`text-sm mb-1 leading-relaxed ${TC.textSec}`}>{t("db.switched.desc")}</p>
               <p className={`text-xs mb-5 font-mono break-all ${TC.textMuted}`}>{store.dbPath}</p>
@@ -984,18 +981,9 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
                   OK
                 </button>
               </div>
-            </div>
-          </div>
+          </Modal>
         )}
 
-        {/* Hidden file input for RTM JSON import */}
-        <input
-          ref={rtmFileRef}
-          type="file"
-          accept=".json,application/json"
-          style={{ display: "none" }}
-          onChange={handleRtmFileSelect}
-        />
       </div>
 
       {/* UI Guide overlay */}

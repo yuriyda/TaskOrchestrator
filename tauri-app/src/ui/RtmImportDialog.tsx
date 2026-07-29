@@ -7,6 +7,7 @@
 
 import { useState } from "react";
 import { useApp } from "./AppContext";
+import { Modal } from "./Modal";
 
 interface RtmImportData {
   tasks?: any[];
@@ -39,8 +40,7 @@ export function RtmImportDialog({ data, onConfirm, onCancel }: RtmImportDialogPr
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className={`w-96 rounded-xl p-6 shadow-2xl border ${TC.surface} ${TC.borderClass}`}>
+    <Modal onClose={onCancel} className="w-96 p-6">
         <h2 className={`text-base font-semibold mb-4 ${TC.text}`}>{t("rtm.dialogTitle")}</h2>
 
         {/* Summary */}
@@ -74,8 +74,7 @@ export function RtmImportDialog({ data, onConfirm, onCancel }: RtmImportDialogPr
             {t("rtm.doImport")} {toImportCount} {t("rtm.records")}
           </button>
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -90,8 +89,7 @@ export function ImportProgressOverlay({ current, total }: ImportProgressOverlayP
   const { t, TC } = useApp();
   const pct = total > 0 ? Math.round((current / total) * 100) : 0;
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm">
-      <div className={`w-80 rounded-xl p-6 shadow-2xl border ${TC.surface} ${TC.borderClass}`}>
+    <Modal onClose={() => {}} dismissible={false} className="w-80 p-6">
         <div className={`text-sm font-semibold mb-4 text-center ${TC.text}`}>
           {t("rtm.importing")}
         </div>
@@ -110,7 +108,6 @@ export function ImportProgressOverlay({ current, total }: ImportProgressOverlayP
         <div className={`text-xs text-center opacity-50 ${TC.textMuted}`}>
           {t("rtm.importPleaseWait")}
         </div>
-      </div>
-    </div>
+    </Modal>
   );
 }
