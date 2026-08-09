@@ -1,0 +1,8 @@
+# Per-machine agent identity — every machine must generate its own
+state.json
+# Machine-specific config overrides (custom DB path etc.)
+config.local.json
+# Operation journal with before-images of the local database
+journal/
+# Build artifact — rebuilt automatically from the repo sources
+dist/

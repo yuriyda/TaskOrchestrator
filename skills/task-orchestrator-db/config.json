@@ -1,0 +1,7 @@
+{
+  "dbPath": "auto",
+  "repoPath": "auto",
+  "backupKeep": 15,
+  "maxBatchOps": 200,
+  "massDeleteThreshold": 20
+}

@@ -38,3 +38,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+
+# Claude Code local session settings — personal, never publish
+.claude/settings.local.json

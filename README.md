@@ -131,6 +131,16 @@ Optional cross-device sync using your own Google Drive account. No third-party s
 
 **Setup guide:** [GOOGLE_DRIVE_SETUP.md](GOOGLE_DRIVE_SETUP.md) (English + Russian)
 
+## AI Agent Integration
+
+An agent skill lets a command-line AI agent (Claude Code or any agent with
+shell access) manage your tasks directly in the SQLite database — create,
+update, complete, batch-edit and roll back — with guardrails: transactional
+batches, automatic backups, invariant checks, sync-correct writes and a
+journaled rollback. Reads work anytime; writes only while the app is closed.
+
+**Guide:** [skills/task-orchestrator-db](skills/task-orchestrator-db/README.md) (English + Russian)
+
 ## Installation
 
 Download the latest installer from [Releases](../../releases).
