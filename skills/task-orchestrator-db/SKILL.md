@@ -26,19 +26,27 @@ node <skill-dir>/bin/to-db.mjs <command> [args]
 - Exit codes: 0 ok · 2 validation/usage · 3 schema mismatch · 4 app running or
   locked · 5 invariant failure (auto-rolled-back) · 6 rollback conflict · 7 internal.
 - For complex input write a JSON file and pass `--file` — safer than shell-quoting `--json`.
-- DB location is auto-detected (the app's default path for this OS). If the
-  user moved their DB via app Settings, set it in `<skill-dir>/config.local.json`:
-  `{"dbPath": "D:/path/tasks.db"}` — or the `TO_DB_PATH` env var. `status`
-  shows the resolved path; if counts look empty/wrong, ask the user where their
-  DB lives instead of writing into the wrong file.
+- DB location resolution, in order: `TO_DB_PATH` env → `config.local.json` →
+  **the database a running app instance has open** (the app registers it, incl.
+  custom paths from its Settings) → the default per-OS path. `status` shows the
+  resolved path and its source (`dbPathSource`). If two running instances use
+  different databases and no explicit path is set, the CLI refuses (exit 2) —
+  ask the user which DB to target. If counts look empty/wrong, ask the user
+  where their DB lives instead of writing into the wrong file.
 
 ## Hard rules
 
 1. **Reads are safe anytime.** `status`, `list`, `get`, `verify`, `journal`, `backups` — run freely.
-2. **Write only while the app is closed.** The CLI refuses otherwise (exit 4).
-   If the app is running, ask the user to close it (or to explicitly approve
-   `--force-app-open`, understanding the app won't see changes until restart and
-   its Undo could hard-delete freshly created tasks). Never add
+2. **Writing while the app is running — the CLI decides automatically, per
+   database.** App 2.8+ registers each running instance (which DB it has open +
+   a heartbeat): if the target DB is open in such an instance, concurrent
+   writes are safe — the UI picks changes up within ~3 seconds and its Undo is
+   protected. If running instances use other DBs, the target counts as closed.
+   If an app process exists that is NOT registered (old pre-2.8 version, or
+   still starting), the CLI refuses (exit 4) — ask the user to close or update
+   the app, or wait a few seconds and retry (or explicitly approve
+   `--force-app-open`, understanding the app won't see changes until restart
+   and its Undo could hard-delete freshly created tasks). Never add
    `--force-app-open` on your own initiative.
 3. **Never delete permanently.** `delete` is a soft delete (tombstone) — that is
    the only correct form; hard deletes would resurrect on sync. There is no
@@ -129,7 +137,9 @@ Write (all accept `--dry-run`, `--batch-id <id>` for idempotent retries):
   you just received; `rollback` with no args targets the most recent op).
 - Exit 3 (schema): the app migrated (or DB is older than the skill). Tell the
   user; if the app is newer, the skill needs updating — do NOT write.
-- Exit 4: app running or another agent op holds the lock — wait or ask the user.
+- Exit 4: an unregistered app process is running (pre-2.8 version or one still
+  starting up), or another agent op holds the lock — ask the user to
+  close/update the app, or wait a few seconds and retry.
 - Exit 5: your ops would have broken an invariant; nothing was changed. Read the
   error, fix the ops.
 - Catastrophe (DB corrupted, bad state you cannot compensate): `backups`, then

@@ -239,6 +239,13 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     setTimeout(() => setToasts(ts => ts.filter(x => x.id !== id)), TOAST_DURATION_MS);
   };
 
+  // External DB writes (agent CLI / MCP): the store live-refreshes itself and
+  // signals here — surface a toast so the change doesn't look like a glitch.
+  useEffect(() => {
+    if (!store.externalNotice) return;
+    addToast(t(store.externalNotice.kind === "undoBlocked" ? "toast.undoExternalBlocked" : "toast.externalRefresh"));
+  }, [store.externalNotice]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Show toasts for flow auto-activation / blocked-skip results
   const showFlowToasts = (result) => {
     if (!result) return;

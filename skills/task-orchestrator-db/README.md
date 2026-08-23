@@ -38,17 +38,59 @@ journaled, sync-safe rollback.
 **Any other agent:** point it at `SKILL.md` (the operating manual) and let it
 run `node <skill-dir>/bin/to-db.mjs ...`. Output is JSON on stdout.
 
-**Custom DB location** (if you moved your DB via app Settings): add
-`"dbPath": "D:/path/tasks.db"` to `config.local.json`, or set the `TO_DB_PATH`
-environment variable. By default the skill finds the DB at the app's standard
-per-OS location. Never edit `config.json` for machine-specific paths —
-`config.local.json` is gitignored for exactly that.
+**Which database does the agent use?** Resolution order: `TO_DB_PATH` env →
+`config.local.json` → **the database a running app instance has open** → the
+app's default per-OS location. A running app (2.8+) registers which DB it has
+open — custom paths chosen in its Settings included — so the agent follows the
+app automatically. To pin a specific file regardless, add
+`"dbPath": "D:/path/tasks.db"` to `config.local.json` or set `TO_DB_PATH`.
+Never edit `config.json` for machine-specific paths — `config.local.json` is
+gitignored for exactly that.
+
+## Claude Desktop / Claude Cowork (MCP)
+
+Claude Cowork runs its commands inside a sandboxed VM and cannot execute the
+CLI on your machine — for it (and any other MCP client) the skill ships an MCP
+server that bridges to the same guarded CLI. One-time setup:
+
+```bash
+cd skills/task-orchestrator-db/mcp
+npm install
+```
+
+Then add to `%APPDATA%\Claude\claude_desktop_config.json` (create the file if
+missing) and fully restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "task-orchestrator": {
+      "command": "node",
+      "args": ["C:/path/to/TaskOrchestrator/skills/task-orchestrator-db/mcp/server.mjs"]
+    }
+  }
+}
+```
+
+Claude Desktop starts the server on the host and bridges it into Cowork
+sessions automatically. Tools exposed: `create_task`, `create_tasks_batch`
+(atomic, idempotent via batchId, max 50), `list_tasks`, `get_task`,
+`update_task`, `complete_tasks`, `reopen_task`, `delete_task` (soft),
+`rollback_operation`, `db_status`. Dangerous operations (backup restore, guard
+overrides, mass deletes) are not exposed at all. A custom DB path can be passed
+via an `"env": {"TO_DB_PATH": "..."}` entry in the server config.
 
 ## Safety model
 
-- **Reads anytime; writes only while the app is closed** — the CLI detects a
-  running Task Orchestrator and refuses (the app caches state in memory and
-  would not see external changes; its Undo could even hard-delete them).
+- **Reads anytime; writes are guarded per database** — each running app
+  instance (2.8+) registers which DB it has open (validated against its live
+  process id, so a minimized window or a crash can't confuse the check).
+  Target DB open in such an instance → concurrent writes are safe: the app
+  live-refreshes within ~3 seconds and clears its Undo history so a stale undo
+  can never wipe agent changes. Instances running on other DBs don't block
+  writes. An app process with no registration (an old pre-2.8 version) → the
+  CLI refuses to write (the old app caches state in memory and its Undo could
+  hard-delete external tasks).
 - **Backup before every write**: a `VACUUM INTO` snapshot goes to
   `agent-backups/` next to the DB (rotated, default 15).
 - **Atomic batches**: up to 200 operations in one transaction, all-or-nothing,
@@ -125,18 +167,60 @@ the selftest.
 возможность запускать `node <папка-скилла>/bin/to-db.mjs ...`. Вывод — JSON в
 stdout.
 
-**Нестандартный путь к базе** (если вы переносили её через настройки
-приложения): добавьте `"dbPath": "D:/путь/tasks.db"` в `config.local.json` или
-задайте переменную окружения `TO_DB_PATH`. По умолчанию скилл находит базу в
-стандартном месте для вашей ОС. Не вписывайте машинные пути в `config.json` —
-для этого есть гитигнорируемый `config.local.json`.
+**С какой базой работает агент?** Порядок разрешения: переменная `TO_DB_PATH`
+→ `config.local.json` → **база, открытая в запущенном приложении** →
+стандартный путь для вашей ОС. Запущенное приложение (2.8+) само публикует,
+какая база у него открыта — включая нестандартные пути из его настроек, —
+поэтому агент автоматически следует за приложением. Чтобы жёстко указать
+конкретный файл, добавьте `"dbPath": "D:/путь/tasks.db"` в `config.local.json`
+или задайте `TO_DB_PATH`. Не вписывайте машинные пути в `config.json` — для
+этого есть гитигнорируемый `config.local.json`.
+
+## Claude Desktop / Claude Cowork (MCP)
+
+Claude Cowork выполняет команды в изолированной VM и не может запускать CLI на
+вашей машине — для него (и любого другого MCP-клиента) в скилле есть
+MCP-сервер, работающий поверх того же защищённого CLI. Разовая настройка:
+
+```bash
+cd skills/task-orchestrator-db/mcp
+npm install
+```
+
+Затем добавьте в `%APPDATA%\Claude\claude_desktop_config.json` (создайте файл,
+если его нет) и полностью перезапустите Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "task-orchestrator": {
+      "command": "node",
+      "args": ["C:/путь/к/TaskOrchestrator/skills/task-orchestrator-db/mcp/server.mjs"]
+    }
+  }
+}
+```
+
+Claude Desktop запускает сервер на хосте и автоматически пробрасывает его в
+сессии Cowork. Инструменты: `create_task`, `create_tasks_batch` (атомарно,
+идемпотентность по batchId, до 50), `list_tasks`, `get_task`, `update_task`,
+`complete_tasks`, `reopen_task`, `delete_task` (мягкое), `rollback_operation`,
+`db_status`. Опасные операции (восстановление бэкапа, обход защит, массовые
+удаления) не экспонируются вовсе. Нестандартный путь к базе передаётся через
+`"env": {"TO_DB_PATH": "..."}` в конфиге сервера.
 
 ## Модель безопасности
 
-- **Чтение — всегда; запись — только при закрытом приложении.** CLI сам
-  обнаруживает запущенный Task Orchestrator и отказывает (приложение держит
-  состояние в памяти, не увидит внешних изменений, а его Undo может их даже
-  жёстко удалить).
+- **Чтение — всегда; запись — под защитой на уровне конкретной базы.** Каждый
+  запущенный инстанс приложения (2.8+) регистрирует, какая база у него
+  открыта (регистрация валидируется по живому PID процесса — свёрнутое окно
+  или крэш не собьют проверку). Целевая база открыта в таком инстансе →
+  параллельная запись безопасна: приложение подхватывает изменения за ~3
+  секунды и сбрасывает историю Undo, чтобы устаревшая отмена не стёрла
+  изменения агента. Инстансы на других базах запись не блокируют. Процесс
+  приложения без регистрации (старая версия до 2.8) → CLI откажет в записи
+  (старое приложение держит состояние в памяти, а его Undo может жёстко
+  удалить внешние задачи).
 - **Бэкап перед каждой записью**: снапшот `VACUUM INTO` в `agent-backups/`
   рядом с базой (ротация, по умолчанию 15).
 - **Атомарные пакеты**: до 200 операций в одной транзакции, всё-или-ничего,

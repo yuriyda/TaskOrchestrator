@@ -137,7 +137,11 @@ An agent skill lets a command-line AI agent (Claude Code or any agent with
 shell access) manage your tasks directly in the SQLite database — create,
 update, complete, batch-edit and roll back — with guardrails: transactional
 batches, automatic backups, invariant checks, sync-correct writes and a
-journaled rollback. Reads work anytime; writes only while the app is closed.
+journaled rollback. The app live-refreshes external changes within seconds,
+so agents can work while it is open.
+
+The skill also ships an MCP server, so Claude Desktop and Claude Cowork can
+create tasks from documents and meeting notes through the same guarded engine.
 
 **Guide:** [skills/task-orchestrator-db](skills/task-orchestrator-db/README.md) (English + Russian)
 

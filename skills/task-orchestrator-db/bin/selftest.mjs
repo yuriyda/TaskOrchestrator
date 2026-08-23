@@ -16,42 +16,17 @@
  * flag overrides it), just not allowed to block the suite.
  */
 import { spawnSync } from 'node:child_process'
-import { rmSync, mkdtempSync, writeFileSync, existsSync } from 'node:fs'
+import { writeFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-import { tmpdir } from 'node:os'
-import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 import { DatabaseSync } from 'node:sqlite'
-import { skillRoot } from '../lib/paths.mjs'
+import { buildFixture, writeRegistryRow } from '../lib/fixture.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const CLI = join(here, 'to-db.mjs')
 
-// ── Ensure the domain bundle exists (migrations live in it) ────────────────
-{
-  const r = spawnSync(process.execPath, [join(here, 'build-domain.mjs')], { encoding: 'utf8' })
-  if (r.status !== 0) { console.error('bundle build failed:', r.stderr || r.stdout); process.exit(7) }
-}
-const domain = await import(pathToFileURL(join(skillRoot, 'dist', 'domain.mjs')).href)
-
-// ── Fixture DB from the repo's own migrations ──────────────────────────────
-const workDir = mkdtempSync(join(tmpdir(), 'to-selftest-'))
-const TEST_DB = join(workDir, 'tasks.db')
-{
-  const db = new DatabaseSync(TEST_DB)
-  db.exec('PRAGMA journal_mode = WAL')
-  for (const sql of domain.MIGRATIONS_V1) db.exec(sql)
-  for (let v = 2; v <= domain.LATEST_SCHEMA_VERSION; v++) {
-    for (const sql of domain.VERSIONED_MIGRATIONS[v] || []) {
-      try { db.exec(sql) } catch (e) { if (!/duplicate|already exists/.test(e.message)) throw e }
-    }
-  }
-  const appDevice = domain.ulid()
-  db.prepare("INSERT OR REPLACE INTO meta VALUES ('schema_version', ?)").run(String(domain.LATEST_SCHEMA_VERSION))
-  db.prepare("INSERT OR REPLACE INTO meta VALUES ('device_id', ?)").run(appDevice)
-  db.prepare('INSERT OR IGNORE INTO vector_clock (device_id, counter) VALUES (?, 1)').run(appDevice)
-  db.close()
-}
+const fixture = await buildFixture()
+const { workDir, dbPath: TEST_DB, domain } = fixture
 
 // ── Harness ────────────────────────────────────────────────────────────────
 let passed = 0, failed = 0
@@ -61,10 +36,11 @@ function check(name, cond, detail) {
   else { failed++; failures.push(name); console.log(`FAIL ${name}${detail ? ' — ' + JSON.stringify(detail).slice(0, 400) : ''}`) }
 }
 const MUTATING = new Set(['add', 'update', 'complete', 'reopen', 'delete', 'restore', 'batch', 'rollback', 'set-status'])
-function run(args, { expectFail } = {}) {
-  const full = MUTATING.has(args[0]) ? [...args, '--force-app-open'] : args
+function run(args, { expectFail, env = {}, noForce } = {}) {
+  const full = MUTATING.has(args[0]) && !noForce ? [...args, '--force-app-open'] : args
   const r = spawnSync(process.execPath, [CLI, ...full], {
-    encoding: 'utf8', env: { ...process.env, TO_DB_PATH: TEST_DB },
+    // TO_REGISTRY_PATH isolates the test from real app instances on this machine.
+    encoding: 'utf8', env: { ...process.env, TO_DB_PATH: TEST_DB, TO_REGISTRY_PATH: fixture.registryPath, ...env },
   })
   let json = null
   try { json = JSON.parse(r.stdout) } catch {}
@@ -197,6 +173,15 @@ r = run(['batch', '--file', batchFile])
 check('same batch-id is idempotent (not applied twice)', r.json?.ok && r.json.idempotent === true)
 check('idempotent run created no duplicate', dbq("SELECT COUNT(*) c FROM tasks WHERE title='AGENT-TEST batch-A'")[0].c === 1)
 
+// same batch-id with DIFFERENT content must be an error, not a silent skip
+const batchFileAltered = join(workDir, 'batch-altered.json')
+writeFileSync(batchFileAltered, JSON.stringify({
+  batchId: 'selftest-batch-001',
+  ops: [{ action: 'add', task: { title: 'AGENT-TEST batch-C (different!)' } }],
+}))
+r = run(['batch', '--file', batchFileAltered], { expectFail: true })
+check('batch-id reuse with different content -> error', r.code === 2 && /DIFFERENT content/.test(r.json?.error || ''), r.json)
+
 const badBatch = join(workDir, 'batch-bad.json')
 writeFileSync(badBatch, JSON.stringify([
   { action: 'update', id: alphaId, changes: { priority: 4 } },
@@ -228,16 +213,75 @@ check('journal lists ops', r.json?.ok && r.json.entries.length >= 8)
 r = run(['backups'])
 check('backups exist (one per mutation)', r.json?.ok && r.json.backups.length >= 5)
 
-// ── 11. final verify: nothing broken ───────────────────────────────────────
+// journal rotation: with a tiny cap, an append halves the entry count
+r = run(['journal', '--limit', '100'])
+const journalCountBefore = r.json?.entries?.length ?? 0
+r = run(['update', alphaId, '--json', '{"postponed":1}'], { env: { TO_DB_JOURNAL_MAX: '400' } })
+check('rotation-trigger update ok', r.json?.ok)
+r = run(['journal', '--limit', '100'])
+check('journal rotated at cap (entries halved)', r.json?.ok && r.json.entries.length < journalCountBefore + 1,
+  { before: journalCountBefore, after: r.json?.entries?.length })
+
+// ── 11. app-running guard (instance registry, pid-validated) ────────────────
+const FAKE = { TO_DB_TEST_FAKE_APP: '1' }   // one fake app process, pid 0
+const FAKE2 = { TO_DB_TEST_FAKE_APP: '2' }  // two fake app processes, pids 0 and 1
+// (a) app process, no registered instance -> old version or starting -> refuse
+r = run(['add', '--title', 'AGENT-TEST guard'], { expectFail: true, noForce: true, env: FAKE })
+check('process without registered instance -> refused (exit 4)', r.code === 4 && /not registered as a live instance/.test(r.json?.error || ''), r.json)
+// (b) instance on the SAME db, pid alive -> live mode, write allowed
+writeRegistryRow(fixture.registryPath, TEST_DB)
+r = run(['add', '--title', 'AGENT-TEST guard-live'], { noForce: true, env: FAKE })
+check('live instance on target DB -> write allowed (live-refresh)', r.json?.ok && (r.json.warnings || []).some(w => /live-refresh active/.test(w)), r.json)
+// (c) stale heartbeat but pid ALIVE -> still valid (throttled minimized window)
+writeRegistryRow(fixture.registryPath, TEST_DB, { stale: true })
+r = run(['add', '--title', 'AGENT-TEST guard-throttled'], { noForce: true, env: FAKE })
+check('stale heartbeat + live pid -> still allowed (timer throttling)', r.json?.ok && (r.json.warnings || []).some(w => /live-refresh active/.test(w)), r.json)
+// (c2) dead pid -> row invalid (crash leftover) -> refuse
+writeRegistryRow(fixture.registryPath, TEST_DB, { pid: 12345 })
+r = run(['add', '--title', 'AGENT-TEST guard-deadpid'], { expectFail: true, noForce: true, env: FAKE })
+check('dead pid -> instance ignored -> refused', r.code === 4, r.json)
+// (c3) no pid recorded -> heartbeat-freshness fallback still works
+writeRegistryRow(fixture.registryPath, TEST_DB, { pid: null })
+r = run(['add', '--title', 'AGENT-TEST guard-pidless'], { noForce: true, env: FAKE })
+check('pidless row + fresh heartbeat -> allowed (fallback)', r.json?.ok && (r.json.warnings || []).some(w => /live-refresh active/.test(w)), r.json)
+// (d) instance on ANOTHER db, process accounted for by pid -> target DB is closed -> allowed
+writeRegistryRow(fixture.registryPath, join(workDir, 'other.db'))
+r = run(['add', '--title', 'AGENT-TEST guard-other'], { noForce: true, env: FAKE })
+check('instance on different DB -> target treated as closed', r.json?.ok && (r.json.warnings || []).some(w => /different database/.test(w)), r.json)
+// (d2) two processes but only one registered -> the other may be an old version -> refuse
+r = run(['add', '--title', 'AGENT-TEST guard-mixed'], { expectFail: true, noForce: true, env: FAKE2 })
+check('unregistered second process -> refused', r.code === 4, r.json)
+// (e) status reports instances + path source
+r = run(['status'], { env: FAKE })
+check('status reports appInstances', r.json?.ok && r.json.appInstances?.length === 1 && r.json.appInstances[0].onThisDb === false)
+check('status reports dbPathSource=env under test', r.json?.dbPathSource === 'env')
+// (f) auto-resolution follows a single live instance; two distinct DBs -> explicit path required
+writeRegistryRow(fixture.registryPath, TEST_DB) // back to: one instance, on TEST_DB
+const bare = (env) => {
+  const rr = spawnSync(process.execPath, [CLI, 'status'], { encoding: 'utf8', env: { ...process.env, TO_REGISTRY_PATH: fixture.registryPath, ...env } })
+  let rj = null; try { rj = JSON.parse(rr.stdout) } catch {}
+  return { code: rr.status, json: rj }
+}
+r = bare(FAKE)
+check('no explicit path -> follows the running instance', r.json?.ok && r.json.dbPathSource === 'app-instance' && /to-selftest/.test(r.json.dbPath.toLowerCase()), r.json)
+writeRegistryRow(fixture.registryPath, join(workDir, 'second.db'), { sessionId: 'second-session', pid: 1 })
+r = bare(FAKE2)
+check('two instances on different DBs without explicit path -> exit 2', r.code === 2 && /Set the target explicitly/.test(r.json?.error || ''), r.json)
+// restore single-target registry for the remaining checks
+{
+  const db = new DatabaseSync(fixture.registryPath)
+  db.prepare("DELETE FROM instances WHERE session_id != 'test-session'").run()
+  db.close()
+}
+writeRegistryRow(fixture.registryPath, TEST_DB)
+
+// ── 12. final verify: nothing broken ───────────────────────────────────────
 r = run(['verify'])
 check('no invariant errors after all ops', r.json?.ok && r.json.errors.length === 0, r.json)
 const appDev = dbq("SELECT value FROM meta WHERE key='device_id'")[0].value
 check('app device_id untouched and distinct from agent', appDev && appDev !== agentDid)
 
-// ── Cleanup: fixture dir + this fixture's journal file ─────────────────────
-rmSync(workDir, { recursive: true, force: true })
-const dbKey = createHash('sha1').update(TEST_DB.toLowerCase().replace(/\\/g, '/')).digest('hex').slice(0, 12)
-rmSync(join(skillRoot, 'journal', `ops-${dbKey}.jsonl`), { force: true })
+fixture.cleanup()
 
 console.log(`\n${passed} passed, ${failed} failed${failed ? ' — ' + failures.join(', ') : ''}`)
 process.exit(failed ? 1 : 0)

@@ -26,9 +26,12 @@ interface UseSyncOpsParams {
   setTasks: (tasks: any) => void
   setMetaSettings: (fn: any) => void
   refreshRef: () => Promise<void>
+  /** Sync imports legitimately raise other devices' vector-clock counters —
+   *  re-baseline the external-write detector so it doesn't misfire. */
+  refreshExternalBaseline?: () => Promise<void>
 }
 
-export function useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refreshRef }: UseSyncOpsParams) {
+export function useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refreshRef, refreshExternalBaseline }: UseSyncOpsParams) {
 
   // ── Sync stats / log ────────────────────────────────────────────────────
 
@@ -133,6 +136,7 @@ export function useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refr
     const { stats: result } = await importSyncPackage(db, pkg)
     setTasks(await fetchAll(db))
     await refreshRef()
+    await refreshExternalBaseline?.()
     return result
   }, [refreshRef])
 
@@ -164,6 +168,7 @@ export function useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refr
     await db.execute("INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)", ['last_sync', new Date().toISOString()])
     setTasks(await fetchAll(db))
     await refreshRef()
+    await refreshExternalBaseline?.()
     return { ...stats, responseCount: response.tasks.length }
   }, [refreshRef])
 
@@ -196,6 +201,7 @@ export function useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refr
     setMetaSettings(prev => ({ ...prev, last_sync: isoNow }))
     setTasks(await fetchAll(db))
     await refreshRef()
+    await refreshExternalBaseline?.()
     return result
   }, [refreshRef])
 

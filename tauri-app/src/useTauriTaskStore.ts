@@ -7,6 +7,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Database from '@tauri-apps/plugin-sql'
 import { appDataDir, join } from '@tauri-apps/api/path'
+import { getVersion } from '@tauri-apps/api/app'
+import { invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 import { ulid } from './ulid.js'
 import { safeIsoDate, localDateStr, localIsoDate } from './core/date.js'
@@ -108,6 +110,61 @@ async function openDb() {
   return _db
 }
 
+// ─── Instance registry ────────────────────────────────────────────────────────
+// A tiny SQLite file at the FIXED appDataDir (independent of the tasks-DB
+// location, which can be custom): each running app instance keeps a row
+// {session_id, db_path, app_version, heartbeat_at} fresh so external agents
+// (skills/task-orchestrator-db) can discover which database each instance has
+// open and that this version live-refreshes external changes. Heartbeat every
+// 10s; agents treat rows older than ~30s as crashed leftovers and ignore them.
+
+const SESSION_ID = ulid()
+let _registryDb = null
+let _appVersion = null
+let _pid = null
+
+async function openRegistry() {
+  if (_registryDb) return _registryDb
+  _registryDb = await Database.load('sqlite:instances.db')
+  await _registryDb.execute(`CREATE TABLE IF NOT EXISTS instances (
+    session_id TEXT PRIMARY KEY, db_path TEXT NOT NULL,
+    app_version TEXT, heartbeat_at TEXT NOT NULL, pid INTEGER)`)
+  // Upgrade a registry created before the pid column existed
+  try { await _registryDb.execute('ALTER TABLE instances ADD COLUMN pid INTEGER') } catch {}
+  return _registryDb
+}
+
+async function registryUpsert(dbPath) {
+  try {
+    const reg = await openRegistry()
+    if (!_appVersion) { try { _appVersion = await getVersion() } catch { _appVersion = 'unknown' } }
+    // The pid lets agents validate this row against the live process list —
+    // heartbeats alone go stale when the window is minimized (timer throttling).
+    if (_pid === null) { try { _pid = await invoke('get_pid') } catch { _pid = null } }
+    // GC rows left behind by crashed instances (generous window: heartbeats
+    // are throttled in background windows; agents key on pid anyway)
+    await reg.execute('DELETE FROM instances WHERE heartbeat_at < ?', [new Date(Date.now() - 24 * 3600_000).toISOString()])
+    await reg.execute(
+      'INSERT OR REPLACE INTO instances (session_id, db_path, app_version, heartbeat_at, pid) VALUES (?,?,?,?,?)',
+      [SESSION_ID, dbPath, _appVersion, new Date().toISOString(), _pid]
+    )
+  } catch (e) { console.warn('[registry] upsert failed:', e) }
+}
+
+async function registryRemove() {
+  try {
+    const reg = await openRegistry()
+    await reg.execute('DELETE FROM instances WHERE session_id = ?', [SESSION_ID])
+  } catch {}
+}
+
+// Sum of vector_clock counters of all OTHER devices — grows only when an
+// external writer (agent CLI / MCP) or a sync import commits. Cheap (~6 rows).
+async function readForeignClock(db, did) {
+  const [row] = await db.select('SELECT TOTAL(counter) AS t FROM vector_clock WHERE device_id != ?', [did || ''])
+  return Number(row?.t) || 0
+}
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useTauriTaskStore() {
@@ -121,14 +178,23 @@ export function useTauriTaskStore() {
   const [metaSettings, setMetaSettings] = useState(null)
   const [dbPath,       setDbPath]       = useState('')
   const [dbKey,        setDbKey]        = useState(0)
+  // External-change signal for the UI (toast): {kind:'refresh'|'undoBlocked', ts}
+  const [externalNotice, setExternalNotice] = useState(null)
   const dbRef = useRef(null)
   const deviceIdRef = useRef(null)
   const slotsRef = useRef([])
   const currentPlanIdRef = useRef(null)
   const plannerRef = useRef(null)
+  // Baseline for external-write detection: TOTAL(counter) over vector_clock rows
+  // of OTHER devices. Our own mutations bump only our own device's counter, so
+  // any growth here means an external agent wrote (or a sync import ran — those
+  // call refreshExternalBaseline themselves). null = baseline not set yet.
+  const externalClockRef = useRef(null)
+  const heartbeatRef = useRef(null)
 
   // ── Init ───────────────────────────────────────────────────────────────────
   useEffect(() => {
+    externalClockRef.current = null // reset baseline on DB switch
     openDb().then(async db => {
       dbRef.current = db
 
@@ -136,20 +202,29 @@ export function useTauriTaskStore() {
       const [devRow] = await db.select("SELECT value FROM meta WHERE key='device_id'")
       deviceIdRef.current = devRow?.value || null
 
+      // Hygiene: drop the short-lived pre-release capability flag — superseded
+      // by the instance registry (registryUpsert below), which is per-instance
+      // and can't go stale after a downgrade.
+      try { await db.execute("DELETE FROM meta WHERE key='external_writes_safe'") } catch {}
+
       // GC orphaned lookup entries before first render — lookups are derived per device.
       // See shared/core/lookup.ts for rules (flow_meta keeps a flow name alive).
       try { await runLookupGc(createSqliteLookupAdapter(db)) } catch (e) { console.warn('[lookup gc] init failed', e) }
 
       // Resolve and expose the current DB path
-      const customPath = localStorage.getItem(DB_PATH_KEY)
-      if (customPath) {
-        setDbPath(customPath)
-      } else {
+      let resolvedDbPath = localStorage.getItem(DB_PATH_KEY)
+      if (!resolvedDbPath) {
         try {
           const dir = await appDataDir()
-          setDbPath(await join(dir, 'tasks.db'))
-        } catch { setDbPath('tasks.db') }
+          resolvedDbPath = await join(dir, 'tasks.db')
+        } catch { resolvedDbPath = 'tasks.db' }
       }
+      setDbPath(resolvedDbPath)
+
+      // Announce this instance (and which DB it has open) to external agents.
+      await registryUpsert(resolvedDbPath)
+      clearInterval(heartbeatRef.current)
+      heartbeatRef.current = setInterval(() => { registryUpsert(resolvedDbPath) }, 10_000)
 
       const [taskRows, listRows, tagRows, flowRows, personaRows, flowMetaRows] = await Promise.all([
         fetchAll(db),
@@ -176,8 +251,20 @@ export function useTauriTaskStore() {
       const meta = {}
       for (const row of metaRows) meta[row.key] = row.value
       setMetaSettings(meta)
+
+      // Baseline for external-write detection (see externalClockRef).
+      try { externalClockRef.current = await readForeignClock(db, deviceIdRef.current) } catch {}
     }).catch(console.error)
+    return () => clearInterval(heartbeatRef.current)
   }, [dbKey])
+
+  // Deregister this instance on window close (best effort — a crashed process
+  // leaves a row behind, which agents ignore once its heartbeat goes stale).
+  useEffect(() => {
+    const bye = () => { registryRemove() }
+    window.addEventListener('beforeunload', bye)
+    return () => window.removeEventListener('beforeunload', bye)
+  }, [])
 
   // WAL checkpoint happens in _closeDb() which is called on DB switch/move.
   // beforeunload is unreliable for async operations in Tauri WebView.
@@ -211,13 +298,70 @@ export function useTauriTaskStore() {
     setFlowMeta(fm)
   }, [])
 
+  // ── External writes (agent CLI / MCP): detection & live refresh ───────────
+  // Called after sync imports: they legitimately raise foreign counters, so the
+  // detector must re-baseline — and the undo history must go, because undoing
+  // across freshly imported (or concurrently agent-written) rows would restore
+  // a stale snapshot and hard-delete tasks the snapshot has never seen.
+  const refreshExternalBaseline = useCallback(async () => {
+    const db = dbRef.current
+    if (!db) return
+    try { externalClockRef.current = await readForeignClock(db, deviceIdRef.current) } catch {}
+    setHistory([])
+  }, [])
+
+  const applyExternalRefresh = useCallback(async (db, kind) => {
+    setTasks(await fetchAll(db))
+    await refreshRef()
+    const p = plannerRef.current
+    if (p) { await p.plannerRefreshSlots(); await p.refreshPlannedTaskIds() }
+    // Undo across external changes would restore a stale snapshot and
+    // hard-delete rows it has never seen — drop the history instead.
+    setHistory([])
+    setExternalNotice({ kind, ts: Date.now() })
+  }, [refreshRef])
+
+  const checkInFlightRef = useRef(false)
+  const checkExternalChanges = useCallback(async () => {
+    // Interval + focus + visibility can fire together — one check at a time.
+    if (checkInFlightRef.current) return false
+    checkInFlightRef.current = true
+    try {
+      const db = dbRef.current
+      if (!db) return false
+      let t
+      try { t = await readForeignClock(db, deviceIdRef.current) } catch { return false }
+      if (externalClockRef.current === null) { externalClockRef.current = t; return false }
+      if (t <= externalClockRef.current) return false
+      externalClockRef.current = t
+      await applyExternalRefresh(db, 'refresh')
+      return true
+    } finally { checkInFlightRef.current = false }
+  }, [applyExternalRefresh])
+
+  // Poll every 3s + re-check on window focus/visibility — fast feedback when
+  // the user switches back from the agent's window. Same wake-up pattern as
+  // the midnight date rollover in TaskOrchestrator.tsx.
+  useEffect(() => {
+    const iv = setInterval(() => { checkExternalChanges() }, 3000)
+    const onFocus = () => { checkExternalChanges() }
+    const onVisibility = () => { if (document.visibilityState === 'visible') checkExternalChanges() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => {
+      clearInterval(iv)
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisibility)
+    }
+  }, [checkExternalChanges])
+
   // ── Sub-hooks (must be before inline code that uses their state/setters) ──
   const pushHistory = useCallback((currentTasks) => {
     setHistory(h => [...h.slice(-HISTORY_LIMIT), { tasks: currentTasks, slots: slotsRef.current, planId: currentPlanIdRef.current }])
   }, [])
 
   const planner = usePlannerOps({ dbRef, deviceIdRef, pushHistory })
-  const syncOps = useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refreshRef })
+  const syncOps = useSyncOps({ dbRef, deviceIdRef, setTasks, setMetaSettings, refreshRef, refreshExternalBaseline })
 
   // Keep refs in sync with planner state — used by pushHistory/undo for slot-level history
   useEffect(() => { slotsRef.current = planner.dayPlanSlots }, [planner.dayPlanSlots])
@@ -745,6 +889,25 @@ export function useTauriTaskStore() {
 
   // ── Undo ───────────────────────────────────────────────────────────────────
   const undo = useCallback((onDone) => {
+    ;(async () => {
+      // External-change guard: the snapshot predates writes made by an external
+      // agent (or a sync import) — restoring it would clobber those rows and
+      // hard-delete tasks it has never seen. Refresh instead and drop history.
+      const db = dbRef.current
+      if (db && externalClockRef.current !== null) {
+        let t = null
+        try { t = await readForeignClock(db, deviceIdRef.current) } catch {}
+        if (t !== null && t > externalClockRef.current) {
+          externalClockRef.current = t
+          await applyExternalRefresh(db, 'undoBlocked')
+          return
+        }
+      }
+      doUndo(onDone)
+    })()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const doUndo = useCallback((onDone) => {
     setHistory(h => {
       if (h.length === 0) return h
       const entry = h[h.length - 1]
@@ -857,6 +1020,7 @@ export function useTauriTaskStore() {
     updateFlow, deleteFlow,
     importRtm, clearAll, loadDemoData,
     undo, canUndo: history.length > 0,
+    externalNotice,
     metaSettings, saveMeta,
     dbPath, revealDb, openNewDb, createNewDb, moveCurrentDb,
     createBackup, listBackups, restoreBackup,

@@ -22,7 +22,7 @@
  * locked · 5 invariant/verify failure · 6 rollback conflict · 7 internal.
  */
 import { DatabaseSync } from 'node:sqlite'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import {
   readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync,
   statSync, readdirSync, unlinkSync, copyFileSync, rmSync,
@@ -33,10 +33,15 @@ import { createHash } from 'node:crypto'
 
 // ─── Paths & config ─────────────────────────────────────────────────────────
 
-import { resolvePaths, skillRoot } from '../lib/paths.mjs'
+import { resolvePaths, readAppInstances, normalizeDbPath, appProcesses, skillRoot } from '../lib/paths.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const { config, dbPath: DB_PATH } = resolvePaths()
+let _paths
+try { _paths = resolvePaths({ DatabaseSync }) } catch (e) {
+  if (e.code === 'AMBIGUOUS_DB') { console.log(JSON.stringify({ ok: false, code: 2, error: e.message }, null, 2)); process.exit(2) }
+  throw e
+}
+const { config, dbPath: DB_PATH, dbPathSource } = _paths
 const BACKUP_DIR = join(dirname(DB_PATH), 'agent-backups')
 const JOURNAL_DIR = join(skillRoot, 'journal')
 // Journal is keyed by DB path — rollback entries from one database must never
@@ -152,31 +157,7 @@ function preflightSchema(db) {
   if (nMissing.length) fail(3, `notes table columns drifted`, { missing: nMissing })
 }
 
-// ─── App process detection & lock ───────────────────────────────────────────
-
-// Matches "Task Orchestrator.exe", "task-orchestrator" and the 15-char
-// truncated comm on Linux ("task-orchestrat").
-const APP_PROC_RE = /task[ ._-]orchestrat/i
-
-function appProcesses() {
-  try {
-    const found = []
-    if (process.platform === 'win32') {
-      const csv = execFileSync('tasklist', ['/FO', 'CSV', '/NH'], { encoding: 'utf8', windowsHide: true })
-      for (const line of csv.split('\n')) {
-        const m = line.match(/^"([^"]+)","(\d+)"/)
-        if (m && APP_PROC_RE.test(m[1])) found.push({ name: m[1], pid: parseInt(m[2]) })
-      }
-    } else {
-      const ps = execFileSync('ps', ['-Ao', 'pid=,comm='], { encoding: 'utf8' })
-      for (const line of ps.split('\n')) {
-        const m = line.trim().match(/^(\d+)\s+(.+)$/)
-        if (m && APP_PROC_RE.test(m[2])) found.push({ name: m[2].trim(), pid: parseInt(m[1]) })
-      }
-    }
-    return found
-  } catch { return [] } // process listing unavailable — treat as unknown, not fatal
-}
+// ─── App guard & lock (process detection lives in lib/paths.mjs) ────────────
 
 function acquireLock(cmd) {
   const payload = JSON.stringify({ pid: process.pid, cmd, startedAt: new Date().toISOString() })
@@ -197,9 +178,36 @@ function acquireLock(cmd) {
 }
 function releaseLock() { try { unlinkSync(LOCK_FILE) } catch {} }
 
+/**
+ * Per-database write guard, driven by the instance registry (see lib/paths.mjs):
+ * - an app instance (2.8+) has the TARGET DB open → its heartbeat proves it
+ *   live-refreshes external changes and protects its Undo → writes are safe;
+ * - running instances all use OTHER DBs → the target DB is effectively closed;
+ * - app processes exist that no registry row accounts for → an old (pre-2.8)
+ *   version or a still-starting instance may have the target DB open → refuse.
+ */
 function guardAppClosed(flags, { dryRun }) {
   const procs = appProcesses()
   if (!procs.length) return { appOpen: false, warnings: [] }
+  const instances = readAppInstances({ DatabaseSync })
+  const target = normalizeDbPath(DB_PATH)
+  const onTarget = instances.filter(i => normalizeDbPath(i.dbPath) === target)
+  if (onTarget.length) {
+    return { appOpen: true, liveRefresh: true, warnings: [
+      `Task Orchestrator is running with this database open (live-refresh active) — changes will appear in the app within a few seconds.`,
+    ] }
+  }
+  // Precise accounting: a process is fine iff a registered instance claims its
+  // pid (rows without pid can't vouch for a specific process — those instances
+  // are counted, conservatively, only when nothing is left unaccounted).
+  const claimedPids = new Set(instances.filter(i => i.pid !== null).map(i => Number(i.pid)))
+  const unaccounted = procs.filter(p => !claimedPids.has(p.pid))
+  const pidlessRows = instances.filter(i => i.pid === null).length
+  if (unaccounted.length <= pidlessRows) {
+    return { appOpen: false, warnings: [
+      `Task Orchestrator is running, but on a different database (${instances.map(i => i.dbPath).join(' | ')}) — the target DB is not open in any app.`,
+    ] }
+  }
   if (dryRun) return { appOpen: true, warnings: [`Task Orchestrator is RUNNING (${procs.map(p => p.name).join(', ')}) — dry-run is safe, but a real write would be refused.`] }
   if (flags['force-app-open']) {
     return { appOpen: true, warnings: [
@@ -207,8 +215,9 @@ function guardAppClosed(flags, { dryRun }) {
       `its Undo may HARD-DELETE tasks created now; an open edit dialog may overwrite these fields on save.`,
     ] }
   }
-  fail(4, `Task Orchestrator is running (${procs.map(p => `${p.name} pid ${p.pid}`).join(', ')}). ` +
-    `Close the app before writing, or re-run with --force-app-open ONLY with the user's explicit consent. Reads are always safe.`)
+  fail(4, `A Task Orchestrator process is running (${procs.map(p => `${p.name} pid ${p.pid}`).join(', ')}) that is not registered as a live instance — ` +
+    `an old app version (pre-2.8, no live refresh) or one still starting up. It may have the target database open. ` +
+    `Close or update the app, wait a few seconds and retry, or re-run with --force-app-open ONLY with the user's explicit consent. Reads are always safe.`)
 }
 
 // ─── Lamport & sync_log ─────────────────────────────────────────────────────
@@ -698,6 +707,16 @@ function makeBackup(db, label) {
 function journalAppend(entry) {
   mkdirSync(JOURNAL_DIR, { recursive: true })
   appendFileSync(JOURNAL_FILE, JSON.stringify(entry) + '\n')
+  // Rotation: before-images make the journal grow — when it exceeds the cap,
+  // keep the newest half of the entries. Rolling back an op older than that is
+  // rare; the file backups in agent-backups/ remain the deep safety net.
+  const maxBytes = parseInt(process.env.TO_DB_JOURNAL_MAX || '') || config.journalMaxBytes || 5_000_000
+  try {
+    if (statSync(JOURNAL_FILE).size > maxBytes) {
+      const lines = readFileSync(JOURNAL_FILE, 'utf8').split('\n').filter(Boolean)
+      writeFileSync(JOURNAL_FILE, lines.slice(Math.ceil(lines.length / 2)).join('\n') + '\n')
+    }
+  } catch {}
 }
 function journalRead() {
   if (!existsSync(JOURNAL_FILE)) return []
@@ -706,18 +725,27 @@ function journalRead() {
 
 // ─── Mutating command wrapper ───────────────────────────────────────────────
 
-async function runMutation(cmd, flags, argvRaw, body) {
+async function runMutation(cmd, flags, argvRaw, body, { contentHash = null } = {}) {
   const domain = await loadDomain()
   const dryRun = !!flags['dry-run']
   const db = openDb({ readonly: false })
   preflightSchema(db)
   const guard = guardAppClosed(flags, { dryRun })
 
-  // Idempotency: a batch that already succeeded is not applied twice.
+  // Idempotency: a batch that already succeeded is not applied twice. A reused
+  // batch-id with DIFFERENT content is an error, not a silent skip.
   const batchId = flags['batch-id'] || null
   if (batchId && !dryRun) {
     const prior = journalRead().find(e => e.batchId === batchId && e.ok)
-    if (prior) { out({ ok: true, idempotent: true, opId: prior.opId, note: `batch-id "${batchId}" already applied at ${prior.ts}` }); return }
+    if (prior) {
+      if (prior.contentHash && contentHash && prior.contentHash !== contentHash) {
+        db.close()
+        fail(2, `batch-id "${batchId}" was already applied at ${prior.ts} with DIFFERENT content — use a new batch-id for new operations.`)
+      }
+      out({ ok: true, idempotent: true, opId: prior.opId, note: `batch-id "${batchId}" already applied at ${prior.ts}` })
+      db.close()
+      return
+    }
   }
 
   acquireLock(cmd)
@@ -756,7 +784,7 @@ async function runMutation(cmd, flags, argvRaw, body) {
     if (committed) {
       if (!guard.appOpen) { try { db.exec('PRAGMA wal_checkpoint(TRUNCATE)') } catch {} }
       journalAppend({
-        ok: true, opId: ctx.opId, batchId, ts: ctx.now, cmd, argv: argvRaw,
+        ok: true, opId: ctx.opId, batchId, contentHash, ts: ctx.now, cmd, argv: argvRaw,
         lamport: ctx.lamport, agentDeviceId: ctx.agentId, backupFile,
         ...ctx.journalExtra,
         tasksBefore: [...ctx.before.entries()].map(([id, row]) => row ?? { id, __absent: true }),
@@ -925,9 +953,12 @@ function cmdStatus() {
   const lastOp = journal.length ? journal[journal.length - 1] : null
   let backups = []
   try { backups = readdirSync(BACKUP_DIR).filter(f => f.endsWith('.db')).sort().reverse().slice(0, 3) } catch {}
+  const instances = readAppInstances({ DatabaseSync })
+  const target = normalizeDbPath(DB_PATH)
   out({
-    ok: true, dbPath: DB_PATH, schemaVersion, schemaOk,
+    ok: true, dbPath: DB_PATH, dbPathSource, schemaVersion, schemaOk,
     appRunning: appProcesses(), lockPresent: existsSync(LOCK_FILE),
+    appInstances: instances.map(i => ({ ...i, onThisDb: normalizeDbPath(i.dbPath) === target })),
     counts, vectorClock: vc, appDeviceId, agentDeviceId: state.agentDeviceId || '(created on first write)',
     googleDriveConnected: gdrive, lastSync, integrity: qc,
     lastAgentOp: lastOp ? { opId: lastOp.opId, cmd: lastOp.cmd, ts: lastOp.ts } : null,
@@ -1133,7 +1164,8 @@ async function main() {
       if (!json) fail(2, 'usage: batch --file ops.json | --json "..." (object {batchId?, ops:[...]} or bare array)')
       const ops = Array.isArray(json) ? json : json.ops
       if (json.batchId && !f['batch-id']) f['batch-id'] = json.batchId
-      return runMutation('batch', f, process.argv.slice(2), async ctx => applyOps(ctx, ops, f))
+      const contentHash = createHash('sha1').update(JSON.stringify(ops)).digest('hex')
+      return runMutation('batch', f, process.argv.slice(2), async ctx => applyOps(ctx, ops, f), { contentHash })
     }
     case 'rollback': return cmdRollback(f, process.argv.slice(2))
     case 'backup': return cmdBackup(f)

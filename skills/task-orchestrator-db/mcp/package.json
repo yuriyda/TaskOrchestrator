@@ -1,0 +1,11 @@
+{
+  "name": "task-orchestrator-mcp",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "MCP server exposing safe Task Orchestrator task management (bridges Claude Desktop / Cowork to the task-orchestrator-db skill CLI)",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.24.0"
+  }
+}

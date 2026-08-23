@@ -107,6 +107,8 @@ export const LOCALES = {
     "toast.undone": "Action undone",
     "toast.noNumericDue": "No tasks with a numeric due date",
     "toast.deleted": "Deleted",
+    "toast.externalRefresh": "Tasks updated by an external agent",
+    "toast.undoExternalBlocked": "Undo unavailable — tasks were changed externally",
     // empty state
     "empty.msg": "No tasks. Add your first one using Quick Entry!",
     "empty.msgBefore": "No tasks. Add your first one using Quick Entry or ",
@@ -520,6 +522,8 @@ export const LOCALES = {
     "toast.undone": "Действие отменено",
     "toast.noNumericDue": "Нет задач с числовым дедлайном",
     "toast.deleted": "Удалено",
+    "toast.externalRefresh": "Задачи обновлены внешним агентом",
+    "toast.undoExternalBlocked": "Отмена недоступна — задачи изменены извне",
     "empty.msg": "Нет задач. Добавьте первую через Quick Entry!",
     "empty.msgBefore": "Нет задач. Добавьте первую через Quick Entry или ",
     "empty.msgLink":   "заполните демо-данными",

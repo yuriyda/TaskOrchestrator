@@ -96,11 +96,36 @@ connect). Consequences:
 
 ## App runtime behaviors that constrain the agent
 
-- The app loads all tasks into React state at start and re-reads **only after
-  its own mutations** — it never watches the DB file. External writes while the
-  app is open are invisible to it until restart (and its stale edit-dialog saves
-  or Undo can clobber them; Undo restores full snapshots and HARD-deletes tasks
-  it didn't see before). Hence: write only while the app is closed.
+- The app loads all tasks into React state at start. **Since 2.8 it also
+  watches for external commits**: every ~3s (and on window focus) it reads
+  `TOTAL(counter)` over foreign `vector_clock` rows — growth means an external
+  writer committed → it refetches everything, clears its Undo history (a stale
+  undo would restore an old snapshot and HARD-delete rows it never saw) and
+  shows a toast. Undo additionally re-checks the counter right before running.
+- **Instance registry** (`instances.db` in the app's FIXED per-OS appDataDir,
+  next to the default `tasks.db` — regardless of where the actual tasks DB
+  lives): each running 2.8+ instance upserts a row `{session_id, db_path,
+  app_version, heartbeat_at, pid}` on startup and every 10s, and deletes it on
+  clean exit. **Row validity is pid-based**: a row counts iff its pid belongs
+  to a live Task Orchestrator process — robust against JS timer throttling in
+  minimized windows (heartbeats can lag by minutes there) and against crashes
+  (a dead pid invalidates the row instantly). Rows without a pid fall back to
+  heartbeat freshness (~2 min). Invalid rows are GC'd by the CLI; the app also
+  GCs rows older than 24h. The CLI (lib/paths.mjs) uses the registry twice: to
+  RESOLVE the target DB (follow the single running instance when no explicit
+  path is configured; refuse with exit 2 when several instances use different
+  DBs) and to GUARD writes per database (target open in a registered instance
+  → live-refresh guaranteed → allow; an app process whose pid no row claims →
+  pre-2.8 or still starting → refuse, exit 4).
+- The app also clears its Undo history after every sync import — undoing across
+  imported rows would restore a stale snapshot and hard-delete them.
+- Known limitations (accepted): a task being edited in the app's open edit
+  dialog can clobber a concurrent agent edit of THAT SAME task on save (rare);
+  two app instances opened on the SAME database share one `device_id` and are
+  mutually invisible to each other's live-refresh — don't run two copies on one
+  DB; if the user switches databases in the app at the exact moment an agent
+  write is in flight, that write lands in the previously open DB (data is
+  intact, just in the other file).
 - The app keeps its SQLite connection open with WAL; readers never block.
 - App backups: `tasks.backup-v{schema}-{date}.db` next to the DB, rotated to 5,
   created before migrations and on manual "Create backup". Agent backups live in

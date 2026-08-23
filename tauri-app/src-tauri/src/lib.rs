@@ -17,6 +17,15 @@ struct OAuthListener(Mutex<Option<TcpListener>>);
 /// JS uses this port to build redirect_uri, then calls oauth_await_code.
 const OAUTH_PORT: u16 = 19284;
 
+/// Process id of this app instance — written into the instance registry
+/// (instances.db) so external agents can validate registrations against the
+/// live process list instead of relying on heartbeat freshness alone
+/// (JS timers are throttled in minimized windows).
+#[tauri::command]
+fn get_pid() -> u32 {
+    std::process::id()
+}
+
 #[tauri::command]
 fn oauth_start(state: State<'_, OAuthListener>) -> Result<u16, String> {
     // Drop any previous listener to release the port
@@ -95,6 +104,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             oauth_start,
             oauth_await_code,
+            get_pid,
             appbar::appbar_dock,
             appbar::appbar_undock
         ])
