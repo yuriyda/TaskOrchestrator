@@ -58,6 +58,11 @@ Smart date parsing with live preview:
 | `Ctrl+O` | Open another database |
 | `Esc` | Clear selection / search / filters |
 
+### Undo
+- `Ctrl+Z` steps back through the last 5 changes — edits, status changes, deletions, Day Planner moves
+- History is deliberately short-lived: it exists only in memory for the current run and each step expires after 12 hours, so undo never surprises you by reverting to another day's state
+- It is also cleared whenever tasks change from the outside — a sync import or an [AI agent](#ai-agent-integration) write — so a stale undo can never wipe changes it has not seen
+
 ### Organization
 - **Statuses** — Inbox, Active, Done, Cancelled with cycle and direct set
 - **Priorities** — 4 levels with color coding

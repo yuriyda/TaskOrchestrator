@@ -118,7 +118,9 @@ connect). Consequences:
   → live-refresh guaranteed → allow; an app process whose pid no row claims →
   pre-2.8 or still starting → refuse, exit 4).
 - The app also clears its Undo history after every sync import — undoing across
-  imported rows would restore a stale snapshot and hard-delete them.
+  imported rows would restore a stale snapshot and hard-delete them. Undo
+  snapshots additionally expire after 12 hours (the app can stay open for days;
+  a cross-day undo would surprise the user) and never survive an app restart.
 - Known limitations (accepted): a task being edited in the app's open edit
   dialog can clobber a concurrent agent edit of THAT SAME task on save (rare);
   two app instances opened on the SAME database share one `device_id` and are

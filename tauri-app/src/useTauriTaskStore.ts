@@ -28,6 +28,11 @@ import { createSqliteNoteAdapter } from './store/noteAdapter'
 // ─── DB singleton ─────────────────────────────────────────────────────────────
 
 const HISTORY_LIMIT = 5
+// Undo snapshots expire: the app can stay open (or minimized) for days, and
+// restoring a snapshot from another day would silently revert work the user
+// no longer associates with Ctrl+Z. Entries without a timestamp count as stale.
+const HISTORY_TTL_MS = 12 * 60 * 60 * 1000
+const historyFresh = (e) => !Array.isArray(e) && typeof e.at === 'number' && Date.now() - e.at <= HISTORY_TTL_MS
 
 let _db = null
 
@@ -273,7 +278,7 @@ export function useTauriTaskStore() {
   const mutate = useCallback(async (currentTasks, fn) => {
     const db = dbRef.current
     if (!db) return
-    setHistory(h => [...h.slice(-HISTORY_LIMIT), { tasks: currentTasks, slots: slotsRef.current, planId: currentPlanIdRef.current }])
+    setHistory(h => [...h.filter(historyFresh).slice(-HISTORY_LIMIT), { at: Date.now(), tasks: currentTasks, slots: slotsRef.current, planId: currentPlanIdRef.current }])
     const result = await fn(db)
     setTasks(await fetchAll(db))
     return result
@@ -339,11 +344,20 @@ export function useTauriTaskStore() {
     } finally { checkInFlightRef.current = false }
   }, [applyExternalRefresh])
 
+  // Drop expired undo snapshots so `canUndo` (menu state) stays honest.
+  // Keeps the same array reference when nothing expired — no re-render churn.
+  const pruneHistory = useCallback(() => {
+    setHistory(h => {
+      const kept = h.filter(historyFresh)
+      return kept.length === h.length ? h : kept
+    })
+  }, [])
+
   // Poll every 3s + re-check on window focus/visibility — fast feedback when
   // the user switches back from the agent's window. Same wake-up pattern as
   // the midnight date rollover in TaskOrchestrator.tsx.
   useEffect(() => {
-    const iv = setInterval(() => { checkExternalChanges() }, 3000)
+    const iv = setInterval(() => { pruneHistory(); checkExternalChanges() }, 3000)
     const onFocus = () => { checkExternalChanges() }
     const onVisibility = () => { if (document.visibilityState === 'visible') checkExternalChanges() }
     window.addEventListener('focus', onFocus)
@@ -353,11 +367,11 @@ export function useTauriTaskStore() {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisibility)
     }
-  }, [checkExternalChanges])
+  }, [checkExternalChanges, pruneHistory])
 
   // ── Sub-hooks (must be before inline code that uses their state/setters) ──
   const pushHistory = useCallback((currentTasks) => {
-    setHistory(h => [...h.slice(-HISTORY_LIMIT), { tasks: currentTasks, slots: slotsRef.current, planId: currentPlanIdRef.current }])
+    setHistory(h => [...h.filter(historyFresh).slice(-HISTORY_LIMIT), { at: Date.now(), tasks: currentTasks, slots: slotsRef.current, planId: currentPlanIdRef.current }])
   }, [])
 
   const planner = usePlannerOps({ dbRef, deviceIdRef, pushHistory })
@@ -909,8 +923,10 @@ export function useTauriTaskStore() {
 
   const doUndo = useCallback((onDone) => {
     setHistory(h => {
-      if (h.length === 0) return h
-      const entry = h[h.length - 1]
+      // Expired snapshots (app left open across days) must not be restorable.
+      const fresh = h.filter(historyFresh)
+      if (fresh.length === 0) return fresh.length === h.length ? h : fresh
+      const entry = fresh[fresh.length - 1]
       // Backward compat: older entries were plain tasks[]
       const prev = Array.isArray(entry) ? entry : entry.tasks
       const prevSlots = Array.isArray(entry) ? [] : (entry.slots || [])
@@ -1001,7 +1017,7 @@ export function useTauriTaskStore() {
         }
         if (onDone) onDone()
       })()
-      return h.slice(0, -1)
+      return fresh.slice(0, -1)
     })
   }, [])
 
