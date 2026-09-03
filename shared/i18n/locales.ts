@@ -65,6 +65,8 @@ export const LOCALES = {
     "edit.field.flow": "Task Flow", "edit.field.dependsOn": "Depends on",
     "edit.addTag": "Add tag…", "edit.addPersona": "Add persona…",
     "edit.newList": "New list…",
+    "edit.refCopy": "Copy task reference for an AI agent",
+    "edit.refCopied": "Copied",
     // rtm import
     "rtm.importBtn": "Import from RTM",
     "rtm.dialogTitle": "Import from Remember The Milk",
@@ -226,6 +228,7 @@ export const LOCALES = {
     "ctx.markDone": "Mark as done",
     "ctx.markDoneMulti": "Mark as done",
     "ctx.duplicate": "Duplicate",
+    "ctx.copyRefs": "Copy for AI agent",
     "ctx.delete": "Delete",
     "ctx.deleteSelected": "Delete selected",
     "ctx.setStatus": "Set status",
@@ -485,6 +488,8 @@ export const LOCALES = {
     "edit.field.flow": "Task Flow", "edit.field.dependsOn": "Зависит от",
     "edit.addTag": "Добавить тег…", "edit.addPersona": "Добавить персонаж…",
     "edit.newList": "Новый список…",
+    "edit.refCopy": "Скопировать ссылку на задачу для ИИ-агента",
+    "edit.refCopied": "Скопировано",
     // rtm import
     "rtm.importBtn": "Импорт из RTM",
     "rtm.dialogTitle": "Импорт из Remember The Milk",
@@ -639,6 +644,7 @@ export const LOCALES = {
     "ctx.markDone": "Отметить выполненной",
     "ctx.markDoneMulti": "Отметить выполненными",
     "ctx.duplicate": "Дублировать",
+    "ctx.copyRefs": "Копировать для ИИ-агента",
     "ctx.delete": "Удалить",
     "ctx.deleteSelected": "Удалить выбранные",
     "ctx.setStatus": "Установить статус",

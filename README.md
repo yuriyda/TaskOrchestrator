@@ -52,6 +52,7 @@ Smart date parsing with live preview:
 | `Del` | Delete |
 | `1`-`4` | Set priority |
 | `Shift+P` | Postpone +1 day |
+| `Ctrl+C` | Copy task references for AI agents |
 | `Ctrl+Z` | Undo |
 | `Ctrl+N` | Focus Quick Entry |
 | `Ctrl+E` | Focus search bar |
@@ -147,6 +148,11 @@ so agents can work while it is open.
 
 The skill also ships an MCP server, so Claude Desktop and Claude Cowork can
 create tasks from documents and meeting notes through the same guarded engine.
+
+To point an agent at exact tasks, select them and press `Ctrl+C` (or pick
+"Copy for AI agent" in the context menu) — the clipboard gets short references
+(`to:7K3MZ Task title`) that agents resolve in any command; the same code is
+shown in the task edit dialog.
 
 **Guide:** [skills/task-orchestrator-db](skills/task-orchestrator-db/README.md) (English + Russian)
 

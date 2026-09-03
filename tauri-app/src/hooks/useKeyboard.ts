@@ -40,6 +40,7 @@ interface UseKeyboardParams {
   dragStartRef: MutableRefObject<any>;
   didDragRef: MutableRefObject<boolean>;
   setDragRect: (v: any) => void;
+  copyTaskRefs: (ids: Set<TaskId>) => void;
 }
 
 export function useKeyboard(params: UseKeyboardParams) {
@@ -51,7 +52,7 @@ export function useKeyboard(params: UseKeyboardParams) {
     renamingTaskId, setRenamingTaskId,
     contextMenu, setContextMenu,
     clearAllFilters, autoSyncTimerRef, setShowPlanner, setShowDbSwitched,
-    dragStartRef, didDragRef, setDragRect, filtered,
+    dragStartRef, didDragRef, setDragRect, filtered, copyTaskRefs,
   } = params;
 
   // ── Rubber-band drag (window-level) ──────────────────────────────────────
@@ -155,6 +156,16 @@ export function useKeyboard(params: UseKeyboardParams) {
 
       // ── Ctrl/Cmd shortcuts ──────────────────────────────────────────────
       if (e.ctrlKey || e.metaKey) {
+        // Ctrl+C: copy selected tasks as agent references ("to:CODE Title",
+        // one per line). Never hijacks copying of manually selected text.
+        if (e.code === "KeyC" && !e.shiftKey && !e.altKey) {
+          if (window.getSelection()?.toString()) return;
+          const ids = getTargetIds();
+          if (!ids.size) return;
+          e.preventDefault();
+          copyTaskRefs(ids);
+          return;
+        }
         const handlers: Record<string, () => void> = {
           KeyZ: () => { if (store.canUndo) { clearTimeout(autoSyncTimerRef.current!); store.undo(() => addToast(t("toast.undone"))); } },
           KeyN: () => document.getElementById("quick-entry")?.focus(),

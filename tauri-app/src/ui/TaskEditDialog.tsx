@@ -14,6 +14,7 @@ import { Combobox } from "./Combobox";
 import { DateField } from "./DatePicker";
 import { STATUSES, PRIORITY_COLORS } from "../core/constants";
 import { wouldCreateCycle } from "../core/taskActions.js";
+import { formatTaskRef } from "../core/taskRef.js";
 import type { Task } from "../types";
 
 function normalizeEstimate(raw) {
@@ -104,6 +105,17 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
   const deleteNote = (id) => set("notes", form.notes.filter(n => n.id !== id));
 
   const set = (field, value) => setForm(f => ({ ...f, [field]: value }));
+
+  // Short agent reference (to:XXXXX) — click copies "to:CODE Title" for
+  // pasting into an AI agent chat. Computed live, never stored.
+  const taskRef = formatTaskRef(String(task.id), allTasks.map(x => String(x.id)));
+  const [refCopied, setRefCopied] = useState(false);
+  const copyRef = () => {
+    navigator.clipboard?.writeText(`${taskRef} ${task.title}`).then(() => {
+      setRefCopied(true);
+      setTimeout(() => setRefCopied(false), 1500);
+    }, () => {});
+  };
 
   const addTag = (tag) => {
     const cleaned = tag.trim().replace(/^#/, "");
@@ -426,17 +438,23 @@ export function TaskEditDialog({ task, tasks: allTasks = [], onSave, onCancel }:
         </div>
 
         {/* Footer */}
-        <div className={`flex gap-2 justify-end px-6 py-4 border-t flex-shrink-0 ${TC.borderClass}`}>
-          <button onClick={onCancel}
-            className={`px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${TC.elevated} ${TC.textSec} hover:opacity-80`}>
-            {t("confirm.cancel")}
-            <kbd className={`text-xs px-1 py-0.5 rounded font-mono leading-none opacity-60 ${TC.surface}`}>Esc</kbd>
+        <div className={`flex gap-2 items-center justify-between px-6 py-4 border-t flex-shrink-0 ${TC.borderClass}`}>
+          <button onClick={copyRef} type="button" title={t("edit.refCopy")}
+            className={`text-xs font-mono transition-opacity ${TC.textMuted} hover:opacity-70`}>
+            {refCopied ? t("edit.refCopied") : taskRef}
           </button>
-          <button onClick={handleSave}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-sky-600 hover:bg-sky-500 text-white transition-colors flex items-center gap-2">
-            {t("edit.save")}
-            <kbd className="text-xs bg-sky-500/40 text-white/80 px-1 py-0.5 rounded font-mono leading-none">↵</kbd>
-          </button>
+          <div className="flex gap-2">
+            <button onClick={onCancel}
+              className={`px-4 py-2 rounded-lg text-sm transition-colors flex items-center gap-2 ${TC.elevated} ${TC.textSec} hover:opacity-80`}>
+              {t("confirm.cancel")}
+              <kbd className={`text-xs px-1 py-0.5 rounded font-mono leading-none opacity-60 ${TC.surface}`}>Esc</kbd>
+            </button>
+            <button onClick={handleSave}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-sky-600 hover:bg-sky-500 text-white transition-colors flex items-center gap-2">
+              {t("edit.save")}
+              <kbd className="text-xs bg-sky-500/40 text-white/80 px-1 py-0.5 rounded font-mono leading-none">↵</kbd>
+            </button>
+          </div>
         </div>
     </Modal>
   );

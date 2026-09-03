@@ -61,6 +61,23 @@ node <skill-dir>/bin/to-db.mjs <command> [args]
    (spawned next occurrences, auto-activated dependents, warnings). Report them
    to the user; they are real changes you made.
 
+## Task references (to:XXXXX)
+
+Tasks are cited in dialogue by short references: `to:` + the unique trailing
+part of the task id (5+ chars, like a git short hash). Every command that takes
+a task id also accepts a reference — with or without the `to:` prefix,
+case-insensitive, O/I/L typos forgiven. `list`/`get`/`add` results include each
+task's current `ref`.
+
+- The user may paste lines copied from the app: `to:7K3MZ Task title`. Resolve
+  each reference and **verify the title matches** the pasted one before acting;
+  on mismatch or an "ambiguous" error (it lists the candidates), ask the user
+  instead of guessing.
+- A reference prefers a live task over a deleted one with the same suffix (the
+  result warns when that happens, or when it resolves to a deleted task).
+- When reporting a task you created or changed, mention its `ref` so the user
+  can refer back to it; omit refs in plain overview listings.
+
 ## Standard workflow
 
 ```
@@ -81,7 +98,7 @@ a journal, and prints a `rollbackHint`.
 Read:
 - `status` — paths, schema, app process, counts, vector clock, integrity, last op.
 - `list [--status inbox,active] [--search text] [--list L] [--tag T] [--flow F] [--persona P] [--due-before YYYY-MM-DD] [--due-after ...] [--overdue] [--recurring] [--include-deleted] [--limit N]`
-- `get <id>` — full task + notes + blockers + dependents + planner slots.
+- `get <id|to:ref>` — full task + notes + blockers + dependents + planner slots.
 - `verify [--deep]` — invariant audit of the whole DB.
 - `journal [--limit N]` — history of agent operations.
 
@@ -110,7 +127,7 @@ Write (all accept `--dry-run`, `--batch-id <id>` for idempotent retries):
 - `recurrence`: `"daily" | "weekly" | "monthly" | "yearly"` or an RTM-style
   `FREQ=...` RRULE, or null. The next occurrence is computed from the
   *completion day*, not the old due date.
-- `dependsOn`: array of task ids or null. The CLI rejects unknown ids,
+- `dependsOn`: array of task ids (or `to:` refs) or null. The CLI rejects unknown ids,
   self-references and cycles. A task with unfinished dependencies cannot be
   completed (order ops inside one batch so blockers complete first, or pass
   `--skip-blocked` to skip those with a warning).

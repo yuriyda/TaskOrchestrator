@@ -76,6 +76,10 @@ try {
   r = await call('get_task', { id: alphaId })
   check('get_task returns fields + notes', !r.isError && r.json?.task?.title === 'MCP-TEST alpha' &&
     r.json.task.recurrence === 'weekly' && r.json.task.notes?.length === 1, r.text)
+  const alphaRef = r.json?.task?.ref
+  check('get_task returns a to: ref', typeof alphaRef === 'string' && /^to:[0-9A-HJKMNP-TV-Z]{5,26}$/.test(alphaRef), alphaRef)
+  r = await call('get_task', { id: alphaRef })
+  check('get_task resolves a to: reference', !r.isError && r.json?.task?.id === alphaId, r.text)
 
   // ── validation errors surface as tool errors ───────────────────────────
   r = await call('create_task', { title: 'MCP-TEST bad', due: 'next friday' })

@@ -9,6 +9,7 @@ import { PRIORITY_COLORS, TOAST_DURATION_MS, Z } from "./core/constants.js";
 import { parseDateInput, fmtDate, localIsoDate } from "./core/date.js";
 import { buildDemoTasks } from "./core/demo.js";
 import { wouldCreateCycle } from "./core/taskActions.js";
+import { formatTaskRef } from "./core/taskRef.js";
 import { useTaskStore } from "./store/memoryStore.js";
 export { useTaskStore };
 
@@ -274,6 +275,27 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     pendingSlotTimeRef,
   } = useDayPlanner({ store, tasks, settings, t, handleUpdate, showPlanner, plannerDate });
 
+  // Copy tasks as agent references ("to:CODE Title", one line per task) —
+  // shared by Ctrl+C and the context menu item.
+  const copyTaskRefs = (ids) => {
+    const chosen = displayFiltered.filter(tk => ids.has(tk.id));
+    for (const id of ids) {
+      if (!chosen.some(tk => tk.id === id)) {
+        const tk = tasks.find(x => x.id === id);
+        if (tk) chosen.push(tk);
+      }
+    }
+    if (!chosen.length) return;
+    const allIds = tasks.map(tk => String(tk.id));
+    const text = chosen.map(tk => `${formatTaskRef(String(tk.id), allIds)} ${tk.title}`).join("\n");
+    navigator.clipboard?.writeText(text).then(
+      () => addToast(locale === "ru"
+        ? `Скопировано: ${chosen.length} ${chosen.length === 1 ? "задача" : "задач"}`
+        : `Copied: ${chosen.length} ${chosen.length === 1 ? "task" : "tasks"}`),
+      () => {},
+    );
+  };
+
   // ── Keyboard, rubber-band, context menu suppression ────────────────────────
   useKeyboard({
     store, tasks, displayFiltered, cursor, setCursor, selected, setSelected,
@@ -283,7 +305,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
     renamingTaskId, setRenamingTaskId,
     contextMenu, setContextMenu,
     clearAllFilters, autoSyncTimerRef, setShowPlanner, setShowDbSwitched,
-    dragStartRef, didDragRef, setDragRect, filtered,
+    dragStartRef, didDragRef, setDragRect, filtered, copyTaskRefs,
   });
 
   // ── Task actions (context menu, flow, bulk, add, edit, RTM, confirm) ─────
@@ -847,6 +869,7 @@ export default function TaskOrchestrator({ storeHook = useTaskStore }: TaskOrche
             onSetStatus={handleCtxSetStatus}
             onMarkDone={handleCtxMarkDone}
             onDuplicate={handleCtxDuplicate}
+            onCopyRefs={(ids) => { setContextMenu(null); copyTaskRefs(ids); }}
             onDelete={handleCtxDelete}
           />
         )}

@@ -80,6 +80,19 @@ sessions automatically. Tools exposed: `create_task`, `create_tasks_batch`
 overrides, mass deletes) are not exposed at all. A custom DB path can be passed
 via an `"env": {"TO_DB_PATH": "..."}` entry in the server config.
 
+## Task references
+
+In a conversation you can point the agent at an exact task with a short
+reference like `to:7K3MZ` — the unique trailing part of the task id, like a
+git short hash. Select tasks in the app and press **Ctrl+C** (or pick "Copy
+for AI agent" in the context menu) to copy ready-to-paste lines
+(`to:CODE Task title`, one per line), or click the code in the task edit
+dialog. Every CLI command and MCP tool accepts references
+wherever a task id is expected (case-insensitive, O/I/L typos forgiven); the
+agent verifies the title matches before acting and asks when a reference is
+ambiguous. Agents cite tasks with the same references in their replies, so you
+can refer back to them.
+
 ## Safety model
 
 - **Reads anytime; writes are guarded per database** — each running app
@@ -208,6 +221,19 @@ Claude Desktop запускает сервер на хосте и автомат
 `db_status`. Опасные операции (восстановление бэкапа, обход защит, массовые
 удаления) не экспонируются вовсе. Нестандартный путь к базе передаётся через
 `"env": {"TO_DB_PATH": "..."}` в конфиге сервера.
+
+## Ссылки на задачи
+
+В диалоге можно указать агенту на конкретную задачу короткой ссылкой вида
+`to:7K3MZ` — это уникальная концовка id задачи, как короткий хэш в git.
+Выделите задачи в приложении и нажмите **Ctrl+C** (или выберите «Копировать
+для ИИ-агента» в контекстном меню) — в буфер лягут готовые строки
+(`to:КОД Название задачи`, по строке на задачу); код есть и в диалоге
+редактирования задачи (клик копирует). Все команды CLI и инструменты MCP
+принимают ссылки везде, где ожидается id задачи (регистр не важен, опечатки
+O/I/L прощаются); агент сверяет название перед действием и переспрашивает при
+неоднозначности. В ответах агенты ссылаются на задачи теми же кодами, чтобы на
+них можно было сослаться в следующем сообщении.
 
 ## Модель безопасности
 

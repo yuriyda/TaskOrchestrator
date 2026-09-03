@@ -150,6 +150,28 @@ check('delete sync_log entry', dbq("SELECT id FROM sync_log WHERE entity='tasks'
 r = run(['restore', depId])
 check('restore ok', r.json?.ok && dbq('SELECT deleted_at FROM tasks WHERE id=?', depId)[0].deleted_at === null)
 
+// ── 7b. task references (to:XXXXX — unique ULID suffixes) ──────────────────
+r = run(['list', '--search', 'AGENT-TEST'])
+const alphaListed = r.json?.tasks?.find(t => t.id === alphaId)
+check('list attaches ref to every task', r.json?.ok && r.json.tasks.every(t => /^to:[0-9A-HJKMNP-TV-Z]{5,26}$/.test(t.ref || '') && t.id.endsWith(t.ref.slice(3))), r.json?.tasks?.map(t => t.ref))
+const alphaRef = alphaListed?.ref
+r = run(['get', alphaRef])
+check('get resolves to: reference', r.json?.ok && r.json.task?.id === alphaId, r.json)
+r = run(['get', alphaRef.slice(3).toLowerCase()])
+check('bare lowercase suffix resolves too', r.json?.ok && r.json.task?.id === alphaId, r.json)
+r = run(['get', 'to:' + 'Z'.repeat(24)], { expectFail: true })
+check('unknown reference -> exit 2 with guidance', r.code === 2 && /no task matches reference/.test(r.json?.error || ''), r.json)
+r = run(['update', alphaRef, '--json', '{"url":"https://example.com/ref-test"}'])
+check('update by reference ok', r.json?.ok && dbq('SELECT url FROM tasks WHERE id=?', alphaId)[0].url === 'https://example.com/ref-test')
+const depRef = 'to:' + depId.slice(-6)
+r = run(['delete', depRef])
+check('delete by reference ok', r.json?.ok && dbq('SELECT deleted_at FROM tasks WHERE id=?', depId)[0].deleted_at !== null, r.json)
+r = run(['get', depRef])
+check('ref to deleted task resolves with warning', r.json?.ok && r.json.task?.id === depId &&
+  (r.json.warnings || []).some(w => /DELETED task/.test(w)), r.json)
+r = run(['restore', depRef])
+check('restore by reference ok', r.json?.ok && dbq('SELECT deleted_at FROM tasks WHERE id=?', depId)[0].deleted_at === null)
+
 // ── 8. batch + dry-run + idempotency + atomicity ───────────────────────────
 const batchFile = join(workDir, 'batch.json')
 writeFileSync(batchFile, JSON.stringify({

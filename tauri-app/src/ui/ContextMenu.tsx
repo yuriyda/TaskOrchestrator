@@ -25,10 +25,11 @@ interface ContextMenuProps {
   onSetStatus: (ids: Set<TaskId>, status: TaskStatus) => void;
   onMarkDone: (ids: Set<TaskId>) => void;
   onDuplicate: (taskId: TaskId) => void;
+  onCopyRefs: (ids: Set<TaskId>) => void;
   onDelete: (ids: Set<TaskId>) => void;
 }
 
-export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onFocusTask, onSnooze, onAssignToday, onSetStatus, onMarkDone, onDuplicate, onDelete }: ContextMenuProps) {
+export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onFocusTask, onSnooze, onAssignToday, onSetStatus, onMarkDone, onDuplicate, onCopyRefs, onDelete }: ContextMenuProps) {
   const { t, TC } = useApp();
   const ref = useRef(null);
   const isMulti = selectedIds.size > 1 && selectedIds.has(task.id);
@@ -137,6 +138,7 @@ export function ContextMenu({ x, y, task, selectedIds, onClose, onOpen, onFocusT
       <Item label={t("ctx.snooze1m")} onClick={() => onSnooze(ids, 0, 1)} />
       <Sep id="s2" />
       {!isMulti && <Item label={t("ctx.duplicate")} onClick={() => onDuplicate(task.id)} />}
+      <Item label={t("ctx.copyRefs")} onClick={() => onCopyRefs(ids)} />
       <Sep id="s3" />
       <Item label={isMulti ? t("ctx.deleteSelected") : t("ctx.delete")} onClick={() => onDelete(ids)} danger />
     </div>

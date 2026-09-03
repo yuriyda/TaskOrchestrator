@@ -484,6 +484,7 @@ function upsertLookup(ctx, kind, name, logIt) {
 
 async function doAdd(ctx, data) {
   const { db, domain } = ctx
+  resolveDependsOnRefs(ctx, data)
   const errors = validateChanges(db, data, { forAdd: true })
   if (errors.length) throw new OpError(2, errors)
   const dup = db.prepare('SELECT id FROM tasks WHERE title=? AND deleted_at IS NULL').get(data.title.trim())
@@ -516,11 +517,55 @@ async function doAdd(ctx, data) {
   if (Array.isArray(data.notes) && data.notes.length) {
     await domain.saveNotes(makeNoteAdapter(ctx), task.id, data.notes, { overrideLts: ctx.lamport, overrideDid: ctx.agentId })
   }
-  return { action: 'add', id: task.id, title: task.title, status: task.status }
+  const liveIds = db.prepare('SELECT id FROM tasks WHERE deleted_at IS NULL').all().map(r => r.id)
+  return { action: 'add', id: task.id, ref: domain.formatTaskRef(task.id, liveIds), title: task.title, status: task.status }
 }
 
 class OpError extends Error {
   constructor(code, errors) { super(Array.isArray(errors) ? errors.join('; ') : String(errors)); this.code = code; this.errors = errors }
+}
+
+// ─── Task references (to:XXXXX — unique ULID suffixes, see shared/core/taskRef) ──
+
+/**
+ * Resolve a task id OR a short reference ("to:7K3MZ", bare suffix, any case,
+ * Crockford-forgiving) to a full task id. Live tasks win over tombstones;
+ * ambiguity is an explicit error listing the candidates. Inputs that don't
+ * look like a reference pass through unchanged so downstream "not found"
+ * errors keep their original shape.
+ */
+function resolveTaskRef(db, domain, raw) {
+  const s = String(raw ?? '').trim()
+  const norm = domain.normalizeTaskRef(s)
+  if (!norm) return { id: s }
+  if (norm.length === 26) return { id: norm }
+  const rows = db.prepare('SELECT id, title, deleted_at FROM tasks WHERE id LIKE ?').all('%' + norm)
+  const live = rows.filter(r => !r.deleted_at)
+  const pool = live.length ? live : rows
+  if (!pool.length) throw new OpError(2, [`no task matches reference "${s}" — find the task with "list" (never guess ids)`])
+  if (pool.length > 1) throw new OpError(2, [
+    `reference "${s}" is ambiguous — matches: ${pool.map(r => `${r.id} "${r.title}"${r.deleted_at ? ' (deleted)' : ''}`).join(', ')}. Ask the user which one, then use a longer suffix or the full id.`])
+  const hit = pool[0]
+  let warning
+  if (!live.length) warning = `reference "${s}" resolved to DELETED task ${hit.id} "${hit.title}"`
+  else if (rows.length > live.length) warning = `reference "${s}" also matches ${rows.length - live.length} deleted task(s) — resolved to the live one: ${hit.id} "${hit.title}"`
+  return { id: hit.id, title: hit.title, warning }
+}
+
+function resolveDependsOnRefs(ctx, changes) {
+  if (!Array.isArray(changes.dependsOn)) return
+  changes.dependsOn = changes.dependsOn.map(d => {
+    const r = resolveTaskRef(ctx.db, ctx.domain, d)
+    if (r.warning) ctx.warnings.push(r.warning)
+    return r.id
+  })
+}
+
+// Attach a `ref` (shortest unique suffix among live tasks) to task objects.
+function attachRefs(db, domain, tasks) {
+  const liveIds = db.prepare('SELECT id FROM tasks WHERE deleted_at IS NULL').all().map(r => r.id)
+  for (const t of tasks) if (t && t.id) t.ref = domain.formatTaskRef(t.id, liveIds)
+  return tasks
 }
 
 const COL = {
@@ -535,6 +580,7 @@ async function doUpdate(ctx, id, changes, opts = {}) {
   const prevRow = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
   if (!prevRow) throw new OpError(2, [`task ${id} not found`])
   if (prevRow.deleted_at && !opts.allowDeleted) throw new OpError(2, [`task ${id} is deleted — use action "restore" first`])
+  resolveDependsOnRefs(ctx, changes)
   const errors = validateChanges(db, changes, { forAdd: false, taskId: id })
   if (errors.length) throw new OpError(2, errors)
   if ('dependsOn' in changes && changes.dependsOn) {
@@ -826,8 +872,13 @@ async function applyOps(ctx, ops, flags) {
     throw new OpError(2, [`batch deletes ${deletes} of ${alive} live tasks — confirm with the user first, then pass --confirm-mass-delete`])
 
   for (let i = 0; i < ops.length; i++) {
-    const op = ops[i]
+    let op = ops[i]
     try {
+      if (op.id != null) {
+        const ref = resolveTaskRef(ctx.db, ctx.domain, op.id)
+        if (ref.warning) ctx.warnings.push(ref.warning)
+        op = { ...op, id: ref.id }
+      }
       let r
       switch (op.action) {
         case 'add': r = await doAdd(ctx, op.task || {}); break
@@ -879,7 +930,7 @@ function collectFieldFlags(flags) {
 
 const LIST_FIELDS = 'id,title,status,priority,list_name,due,date_start,recurrence,flow_id,depends_on,tags,personas,url,estimate,postponed,rtm_series_id,completed_at,created_at,updated_at,deleted_at'
 
-function cmdList(flags) {
+function cmdList(flags, domain) {
   const db = openDb({ readonly: true })
   preflightSchema(db)
   const where = [], params = []
@@ -898,14 +949,21 @@ function cmdList(flags) {
   const rows = db.prepare(
     `SELECT ${LIST_FIELDS} FROM tasks ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY priority, due IS NULL, due, created_at LIMIT ?`
   ).all(...params, limit)
+  const tasks = attachRefs(db, domain, rows.map(rowToTask))
   db.close()
-  out({ ok: true, count: rows.length, tasks: rows.map(rowToTask) })
+  out({ ok: true, count: tasks.length, tasks })
 }
 
-function cmdGet(flags, id) {
-  if (!id) fail(2, 'usage: get <taskId>')
+function cmdGet(flags, idArg, domain) {
+  if (!idArg) fail(2, 'usage: get <taskId|to:ref>')
   const db = openDb({ readonly: true })
   preflightSchema(db)
+  let resolved
+  try { resolved = resolveTaskRef(db, domain, idArg) } catch (e) {
+    if (e instanceof OpError) { db.close(); fail(e.code, e.message) }
+    throw e
+  }
+  const id = resolved.id
   const row = db.prepare('SELECT * FROM tasks WHERE id=?').get(id)
   if (!row) { db.close(); fail(2, `task ${id} not found`) }
   const task = rowToTask(row)
@@ -925,8 +983,9 @@ function cmdGet(flags, id) {
     return b ? { id: b.id, title: b.title, status: b.status, deleted: !!b.deleted_at } : { id: d, missing: true }
   })
   const slots = db.prepare(`SELECT s.id, p.date, s.start_time, s.end_time FROM day_plan_slots s JOIN day_plans p ON p.id = s.plan_id WHERE s.task_id = ?`).all(id)
+  attachRefs(db, domain, [task, ...dependents, ...blockers])
   db.close()
-  out({ ok: true, task, dependents, blockers, plannerSlots: slots })
+  out({ ok: true, task, dependents, blockers, plannerSlots: slots, warnings: resolved.warning ? [resolved.warning] : undefined })
 }
 
 function cmdStatus() {
@@ -1130,8 +1189,8 @@ async function main() {
   const f = args.flags
   switch (cmd) {
     case 'status': return cmdStatus()
-    case 'list': return cmdList(f)
-    case 'get': return cmdGet(f, args._[0])
+    case 'list': return cmdList(f, await loadDomain())
+    case 'get': return cmdGet(f, args._[0], await loadDomain())
     case 'verify': return cmdVerify(f)
     case 'journal': {
       const j = journalRead().slice(-(parseInt(f.limit || '20')))
@@ -1150,7 +1209,11 @@ async function main() {
       const changes = json?.changes || json || {}
       Object.assign(changes, collectFieldFlags(f))
       if (!Object.keys(changes).length) fail(2, 'no changes given')
-      return runMutation('update', f, process.argv.slice(2), async ctx => { ctx.results.push(await doUpdate(ctx, id, changes, { skipBlocked: !!f['skip-blocked'] })) })
+      return runMutation('update', f, process.argv.slice(2), async ctx => {
+        const ref = resolveTaskRef(ctx.db, ctx.domain, id)
+        if (ref.warning) ctx.warnings.push(ref.warning)
+        ctx.results.push(await doUpdate(ctx, ref.id, changes, { skipBlocked: !!f['skip-blocked'] }))
+      })
     }
     case 'complete': case 'reopen': case 'delete': case 'restore': {
       const ids = args._

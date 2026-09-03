@@ -78,6 +78,10 @@ function tool(handler) {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const dateField = z.string().regex(ISO_DATE, 'must be YYYY-MM-DD')
+const idField = z.string().min(4).describe(
+  'Task id (26-char ULID) or a short task reference like "to:7K3MZ" — the unique trailing part of the id, ' +
+  'case-insensitive. Users paste references copied from the app as lines "to:CODE Title"; pass them as-is (with or ' +
+  'without the to: prefix). An ambiguous or unknown reference returns an error listing candidates — ask the user, never guess.')
 const noteField = z.object({
   content: z.string().min(1),
   id: z.string().optional(),
@@ -96,7 +100,7 @@ const TASK_FIELDS = {
   personas: z.array(z.string().min(1)).optional(),
   url: z.string().optional(),
   estimate: z.string().optional().describe('Free string; prefer "30 min" / "2 hours" so the Day Planner can parse it'),
-  dependsOn: z.array(z.string()).optional().describe('Ids of blocker tasks (must exist; no cycles)'),
+  dependsOn: z.array(z.string()).optional().describe('Ids or to:REF references of blocker tasks (must exist; no cycles)'),
   notes: z.array(noteField).optional().describe('Notes to attach'),
 }
 
@@ -127,7 +131,11 @@ const server = new McpServer(
       'when named explicitly). Safe management via a guarded CLI: dates are always ISO YYYY-MM-DD; every write is ' +
       'transactional, backed up and journaled; mutation results include side effects (spawnedNext for recurring tasks, ' +
       'activatedDependents) — report them to the user. If a write fails because an app version without live-refresh ' +
-      'support is running, ask the user to close or update the app.',
+      'support is running, ask the user to close or update the app. TASK REFERENCES: tasks are cited as "to:XXXXX" ' +
+      '(the unique trailing part of the id); every id parameter accepts them, and results carry a "ref" field. When the ' +
+      'user pastes copied lines like "to:7K3MZ Title", resolve each ref and VERIFY the fetched title matches the pasted ' +
+      'one — on mismatch or ambiguity, ask instead of acting. Mention the ref when reporting a task you created or ' +
+      'changed (so the user can refer back to it), but omit refs in plain overview listings.',
   },
 )
 
@@ -160,7 +168,7 @@ server.registerTool('create_tasks_batch', {
 
 server.registerTool('list_tasks', {
   title: 'List / search tasks',
-  description: 'List tasks with filters. Use this to find task ids — never guess ids. Returns live (non-deleted) tasks by default.',
+  description: 'List tasks with filters. Use this to find task ids — never guess ids. Returns live (non-deleted) tasks by default; each task includes a short "ref" (to:XXXXX) for citing it.',
   inputSchema: {
     status: z.array(z.enum(['inbox', 'active', 'done', 'cancelled'])).optional(),
     search: z.string().optional().describe('Case-insensitive substring match on the title'),
@@ -191,7 +199,7 @@ server.registerTool('list_tasks', {
 server.registerTool('get_task', {
   title: 'Get a task',
   description: 'Full task details: all fields, notes, blockers (dependencies), dependents, day-planner slots.',
-  inputSchema: { id: z.string() },
+  inputSchema: { id: idField },
 }, tool(async ({ id }) => {
   const r = await runCli(['get', id])
   return { task: r.task, blockers: r.blockers, dependents: r.dependents, plannerSlots: r.plannerSlots }
@@ -200,7 +208,7 @@ server.registerTool('get_task', {
 server.registerTool('update_task', {
   title: 'Update a task',
   description: 'Update fields of one task. Only the fields you pass are changed; pass null to clear a nullable field. tags/notes REPLACE the full list.',
-  inputSchema: { id: z.string(), changes: z.object(UPDATE_FIELDS) },
+  inputSchema: { id: idField, changes: z.object(UPDATE_FIELDS) },
 }, tool(async ({ id, changes }) => {
   if (!changes || !Object.keys(changes).length) throw new CliError('changes must contain at least one field')
   const r = await runCli(['update', id, '--json', JSON.stringify(changes)])
@@ -214,7 +222,7 @@ server.registerTool('complete_tasks', {
     'inbox tasks whose blockers are now all done get activated (activatedDependents). A task with unfinished dependencies ' +
     'is refused — complete the blockers first, or set skipBlocked to skip it with a warning.',
   inputSchema: {
-    ids: z.array(z.string()).min(1).max(20),
+    ids: z.array(idField).min(1).max(20),
     skipBlocked: z.boolean().optional(),
   },
 }, tool(async ({ ids, skipBlocked }) => {
@@ -227,7 +235,7 @@ server.registerTool('complete_tasks', {
 server.registerTool('reopen_task', {
   title: 'Reopen a task',
   description: 'Reopen a completed task (done → active). If it is recurring and its spawned next occurrence is still untouched, that occurrence is removed.',
-  inputSchema: { id: z.string() },
+  inputSchema: { id: idField },
 }, tool(async ({ id }) => {
   const r = await runCli(['reopen', id])
   return { result: r.results?.[0], opId: r.opId, warnings: r.warnings }
@@ -236,7 +244,7 @@ server.registerTool('reopen_task', {
 server.registerTool('delete_task', {
   title: 'Delete a task',
   description: 'Soft-delete one task (recoverable tombstone; propagates correctly to synced devices). There is no permanent delete.',
-  inputSchema: { id: z.string() },
+  inputSchema: { id: idField },
 }, tool(async ({ id }) => {
   const r = await runCli(['delete', id])
   return { result: r.results?.[0], opId: r.opId, warnings: r.warnings }
@@ -245,7 +253,7 @@ server.registerTool('delete_task', {
 server.registerTool('restore_task', {
   title: 'Restore a deleted task',
   description: 'Bring a soft-deleted task back to life (counterpart of delete_task; works for deletions made elsewhere too).',
-  inputSchema: { id: z.string() },
+  inputSchema: { id: idField },
 }, tool(async ({ id }) => {
   const r = await runCli(['restore', id])
   return { result: r.results?.[0], opId: r.opId, warnings: r.warnings }

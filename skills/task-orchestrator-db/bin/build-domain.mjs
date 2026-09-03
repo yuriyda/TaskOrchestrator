@@ -45,6 +45,7 @@ export {
 export { saveNotes } from './shared/core/saveNotes.js'
 export { runLookupGc } from './shared/core/lookup.js'
 export { localIsoDate, safeIsoDate, parseDateInput, ISO_DATE_RE } from './shared/core/date.js'
+export { normalizeTaskRef, taskRefSuffix, formatTaskRef } from './shared/core/taskRef.js'
 export { ulid } from './tauri-app/src/ulid.js'
 export { MIGRATIONS_V1, VERSIONED_MIGRATIONS, LATEST_SCHEMA_VERSION } from './tauri-app/src/store/migrations.js'
 `
